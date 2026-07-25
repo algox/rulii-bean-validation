@@ -39,7 +39,8 @@
         <slf4j.version>2.0.18</slf4j.version>
         <logback.classic.version>1.5.38</logback.classic.version>
         <junit.version>6.1.1</junit.version>
-        <rulii.version>2.0.0</rulii.version>
+        <rulii.version>2.1.0-SNAPSHOT</rulii.version>
+        <jakarta.validation.api.version>3.1.1</jakarta.validation.api.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
@@ -54,18 +55,33 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>${logback.classic.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.rulii</groupId>
             <artifactId>rulii</artifactId>
             <version>${rulii.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <version>${jakarta.validation.api.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.classic.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
 
     </dependencies>
