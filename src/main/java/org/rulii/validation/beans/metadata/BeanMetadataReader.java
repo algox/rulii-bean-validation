@@ -472,11 +472,19 @@ public final class BeanMetadataReader {
         // --------------------------------------------------------------------
 
         private ContainerMetadata buildContainer(AnnotatedType annotatedType, String propertyName) {
+            return buildContainer(annotatedType, propertyName, false);
+        }
+
+        private ContainerMetadata buildContainer(AnnotatedType annotatedType, String propertyName,
+                                                 boolean declarationCascaded) {
             if (annotatedType == null) return null;
 
             if (annotatedType instanceof AnnotatedArrayType arrayType) {
+                // @Valid is TYPE_USE: on an array property the JLS mirrors the declaration
+                // annotation onto the component. That copy is the property-level cascade
+                // (which iterates elements anyway), not an element cascade of its own.
                 ContainerElement element = buildElement(ContainerElementRole.ELEMENT,
-                        arrayType.getAnnotatedGenericComponentType(), propertyName);
+                        arrayType.getAnnotatedGenericComponentType(), propertyName, declarationCascaded);
                 return new ContainerMetadata(ContainerKind.ARRAY, List.of(element));
             }
 
@@ -504,10 +512,15 @@ public final class BeanMetadataReader {
         }
 
         private ContainerElement buildElement(ContainerElementRole role, AnnotatedType argumentType, String propertyName) {
+            return buildElement(role, argumentType, propertyName, false);
+        }
+
+        private ContainerElement buildElement(ContainerElementRole role, AnnotatedType argumentType,
+                                              String propertyName, boolean suppressMirroredValid) {
             checkConvertGroup(argumentType, propertyName);
             Type elementType = typeResolver.resolve(argumentType.getType());
             List<ConstraintMetadata> constraints = extractConstraints(argumentType, propertyName, elementType);
-            boolean cascaded = argumentType.isAnnotationPresent(Valid.class);
+            boolean cascaded = !suppressMirroredValid && argumentType.isAnnotationPresent(Valid.class);
             ContainerMetadata nested = buildContainer(argumentType, propertyName);
 
             return new ContainerElement(role, elementType, constraints, cascaded, nested);
@@ -649,13 +662,16 @@ public final class BeanMetadataReader {
             }
 
             private ContainerMetadata buildPropertyContainer() {
-                if (recordComponent != null) return buildContainer(recordComponent.getAnnotatedType(), name);
+                if (recordComponent != null) {
+                    return buildContainer(recordComponent.getAnnotatedType(), name,
+                            recordComponent.isAnnotationPresent(Valid.class));
+                }
 
                 ContainerMetadata primary = getter != null
-                        ? buildContainer(getter.getAnnotatedReturnType(), name)
-                        : buildContainer(field.getAnnotatedType(), name);
+                        ? buildContainer(getter.getAnnotatedReturnType(), name, getter.isAnnotationPresent(Valid.class))
+                        : buildContainer(field.getAnnotatedType(), name, field.isAnnotationPresent(Valid.class));
                 ContainerMetadata secondary = getter != null && field != null
-                        ? buildContainer(field.getAnnotatedType(), name)
+                        ? buildContainer(field.getAnnotatedType(), name, field.isAnnotationPresent(Valid.class))
                         : null;
 
                 return mergeContainers(name, primary, secondary);

@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.rulii.validation.beans.flow;
+package org.rulii.validation.beans.assembly;
 
 import org.rulii.bind.Binding;
 import org.rulii.bind.Bindings;

@@ -23,10 +23,10 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Runnable;
 import org.rulii.validation.beans.BeanRuleViolations;
-import org.rulii.validation.beans.flow.ClassValidationModel;
-import org.rulii.validation.beans.flow.MaterializedContainer;
-import org.rulii.validation.beans.flow.MaterializedElement;
-import org.rulii.validation.beans.flow.MaterializedRule;
+import org.rulii.validation.beans.assembly.ClassValidationModel;
+import org.rulii.validation.beans.assembly.MaterializedContainer;
+import org.rulii.validation.beans.assembly.MaterializedElement;
+import org.rulii.validation.beans.assembly.MaterializedRule;
 import org.rulii.validation.beans.path.Path;
 
 import java.lang.reflect.Array;
@@ -267,6 +267,16 @@ public final class TraversalState {
     }
 
     private void descendObject(RuleContext ruleContext, Object bean) {
+        // Platform types carry no constraint metadata and their internals are not
+        // reflectively accessible on modern JVMs (mirrors the reader's eager-read skip).
+        // Also absorbs @Valid mirrored onto array components by the JLS: cascading a
+        // boxed primitive or String must be a no-op, not a metadata read of java.base.
+        String packageName = bean.getClass().getPackageName();
+        if (packageName.startsWith("java.") || packageName.startsWith("javax.")
+                || packageName.startsWith("jakarta.")) {
+            return;
+        }
+
         if (!markValidated(bean)) return;
 
         ClassValidationModel model = modelLookup.apply(bean.getClass());
