@@ -17,26 +17,11 @@
  */
 package org.rulii.test.validation.beans.metadata;
 
-import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Positive;
-import jakarta.validation.constraints.Size;
 import org.rulii.validation.beans.ConstraintMapperRegistry;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-
 /**
- * Test-scope mapper registry with spec-shaped supported types for the constraints used
- * by the metadata fixtures. The real built-in mappers arrive with the flow
- * materialization layer; metadata-read behavior only needs the applicability knowledge.
+ * Shared mapper registry for the metadata tests — the real standard mappers, which
+ * carry the applicability knowledge the metadata reader consults.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -48,17 +33,6 @@ public final class TestConstraintMappers {
     }
 
     public static ConstraintMapperRegistry registry() {
-        return ConstraintMapperRegistry.builder()
-                .register(NotNull.class, List::of)
-                .register(NotBlank.class, () -> List.of(CharSequence.class))
-                .register(NotEmpty.class, () -> List.of(CharSequence.class, Collection.class, Map.class, Object[].class))
-                .register(Size.class, () -> List.of(CharSequence.class, Collection.class, Map.class, Object[].class))
-                .register(Email.class, () -> List.of(CharSequence.class))
-                .register(Pattern.class, () -> List.of(CharSequence.class))
-                .register(Min.class, () -> List.of(Number.class))
-                .register(Max.class, () -> List.of(Number.class))
-                .register(Positive.class, () -> List.of(Number.class))
-                .register(AssertTrue.class, () -> List.of(Boolean.class))
-                .build();
+        return ConstraintMapperRegistry.builder().standard().build();
     }
 }

@@ -17,21 +17,26 @@
  */
 package org.rulii.validation.beans;
 
+import org.rulii.rule.Rule;
+import org.rulii.validation.beans.metadata.ConstraintMetadata;
+
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Maps a constraint annotation type onto rulii rules. A mapper is registered per
- * annotation type (see {@link ConstraintMapperRegistry}) — the same mechanism the
- * standard jakarta constraints use internally is the extension point for custom
+ * annotation type (see {@link ConstraintMapperRegistry}) — the standard jakarta
+ * constraints ride the exact same mechanism that is the extension point for custom
  * constraints.
  *
- * <p>The supported types declared here are consulted at metadata-read time: a constraint
- * placed on a declared type none of the supported types are assignable from fails fast,
- * rather than silently validating nothing. An empty list means the constraint is not
- * restricted by type.</p>
- *
- * <p>The rule-materialization side of the contract is introduced with the flow
- * materialization layer.</p>
+ * <p>Two responsibilities: applicability ({@link #getSupportedTypes()}, consulted at
+ * metadata-read time — a constraint placed on a declared type none of the supported
+ * types are assignable from fails fast, rather than silently validating nothing) and
+ * materialization ({@link #map} — one constraint occurrence to one or more rules,
+ * threading the target's pre-computed config into core rule builders). Mappers own the
+ * jakarta null-skip semantics of their constraint: every rule skips null values
+ * ({@code failOnNull(false)}) except the presence constraints.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -46,4 +51,29 @@ public interface ConstraintMapper {
      * @return the list of supported types; never null.
      */
     List<Class<?>> getSupportedTypes();
+
+    /**
+     * Materializes one constraint occurrence into rules. Most constraints produce a
+     * single rule; producers of multiple rules suffix the target's base rule name for
+     * the secondary ones.
+     *
+     * @param constraint the normalized constraint occurrence (attributes, groups,
+     *                   severity — never a live annotation).
+     * @param target what the constraint is applied to and the pre-computed reporting config.
+     * @return the materialized rules, in execution order; never null or empty.
+     */
+    List<Rule> map(ConstraintMetadata constraint, ConstraintTarget target);
+
+    /**
+     * Returns the mapping of jakarta attribute names to rule parameter names for this
+     * constraint, applied when translating message templates ({@code {value}} in a
+     * jakarta \@Min template must become {@code ${min}} — the parameter the core rule
+     * actually emits). Constraints whose attribute names match their rule's parameter
+     * names need no mapping.
+     *
+     * @return the attribute-name mapping; empty by default.
+     */
+    default Map<String, String> getAttributeNameMapping() {
+        return Collections.emptyMap();
+    }
 }

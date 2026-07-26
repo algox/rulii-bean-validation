@@ -84,6 +84,38 @@ public final class ConstraintMapperRegistry {
         return mappers.keySet();
     }
 
+    /**
+     * Retrieves the attribute-name mappings of all registered mappers, keyed by their
+     * error code (the jakarta template key). Feeds render-time template translation:
+     * a bundle entry for a code is translated with that constraint's attribute names.
+     *
+     * @return an unmodifiable map of error code to attribute-name mapping; constraints
+     * with no mapping are omitted.
+     */
+    public Map<String, Map<String, String>> getAttributeNameMappingsByCode() {
+        Map<String, Map<String, String>> result = new LinkedHashMap<>();
+
+        for (Map.Entry<Class<? extends Annotation>, ConstraintMapper> entry : mappers.entrySet()) {
+            Map<String, String> mapping = entry.getValue().getAttributeNameMapping();
+            if (!mapping.isEmpty()) result.put(errorCode(entry.getKey()), mapping);
+        }
+
+        return Collections.unmodifiableMap(result);
+    }
+
+    /**
+     * Computes the error code of a constraint annotation type: the jakarta template key
+     * ({@code jakarta.validation.constraints.Size.message}). An org's existing bundle
+     * keys match with zero mapping; spec-familiar for code-matching consumers.
+     *
+     * @param annotationType the constraint annotation type.
+     * @return the error code.
+     */
+    public static String errorCode(Class<? extends Annotation> annotationType) {
+        Assert.notNull(annotationType, "annotationType cannot be null.");
+        return annotationType.getName() + ".message";
+    }
+
     @Override
     public String toString() {
         return "ConstraintMapperRegistry{types=" + mappers.keySet() + '}';
