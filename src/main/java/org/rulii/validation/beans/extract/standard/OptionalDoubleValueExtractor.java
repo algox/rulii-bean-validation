@@ -1,0 +1,43 @@
+/*
+ * This software is licensed under the Apache 2 license, quoted below.
+ *
+ * Copyright (c) 1999-2026, Algorithmx Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.rulii.validation.beans.extract.standard;
+
+import jakarta.validation.valueextraction.ExtractedValue;
+import jakarta.validation.valueextraction.UnwrapByDefault;
+import jakarta.validation.valueextraction.ValueExtractor;
+
+import java.util.OptionalDouble;
+
+/**
+ * Built-in extractor for {@link OptionalDouble}, unwrapped by default.
+ *
+ * @author Max Arulananthan
+ * @since 1.0
+ */
+@UnwrapByDefault
+public final class OptionalDoubleValueExtractor implements ValueExtractor<@ExtractedValue(type = Double.class) OptionalDouble> {
+
+    public OptionalDoubleValueExtractor() {
+        super();
+    }
+
+    @Override
+    public void extractValues(OptionalDouble originalValue, ValueReceiver receiver) {
+        receiver.value(null, originalValue.isPresent() ? originalValue.getAsDouble() : null);
+    }
+}
