@@ -29,6 +29,7 @@ import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
 import org.rulii.model.SourceDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.beans.model.PropertyDeclaration;
 
 import java.lang.annotation.Annotation;
 import java.lang.annotation.Documented;
@@ -56,24 +57,24 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void noAnnotations() throws Exception {
-        assertTrue(ConstraintDefinition.load(field("plain")).isEmpty());
+        assertTrue(ConstraintDefinition.load(source("plain")).isEmpty());
     }
 
     @Test
     public void singleConstraint() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("name"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("name"));
         assertEquals(1, result.size());
 
         ConstraintDefinition definition = result.get(0);
         assertEquals(NotBlank.class, definition.getAnnotationType());
         assertEquals("NotBlank", definition.getName());
         assertNull(definition.getDescription());
-        assertEquals(field("name"), definition.getField());
+        assertEquals(field("name"), definition.getSourceDeclaration().getMember());
     }
 
     @Test
     public void multipleConstraintsInDeclarationOrder() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("age"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("age"));
         assertEquals(3, result.size());
         assertEquals(NotNull.class, result.get(0).getAnnotationType());
         assertEquals(Min.class, result.get(1).getAnnotationType());
@@ -85,13 +86,13 @@ public class ConstraintDefinitionTest {
     @Test
     public void originalAnnotationInstanceIsKept() throws Exception {
         Field field = field("name");
-        ConstraintDefinition definition = ConstraintDefinition.load(field).get(0);
+        ConstraintDefinition definition = ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0);
         assertSame(field.getAnnotation(NotBlank.class), definition.getAnnotation());
     }
 
     @Test
     public void sourceIsTheField() throws Exception {
-        SourceDefinition source = ConstraintDefinition.load(field("name")).get(0).getSource();
+        SourceDefinition source = ConstraintDefinition.load(source("name")).get(0).getSource();
         assertEquals(Sample.class.getName(), source.getClassName());
         assertEquals("name", source.getFieldName());
         assertNull(source.getMethodName());
@@ -99,7 +100,7 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void defaultStandardAttributes() throws Exception {
-        ConstraintDefinition definition = ConstraintDefinition.load(field("name")).get(0);
+        ConstraintDefinition definition = ConstraintDefinition.load(source("name")).get(0);
         assertEquals("{jakarta.validation.constraints.NotBlank.message}", definition.getMessage());
         assertTrue(definition.getGroups().isEmpty());
         assertTrue(definition.getPayload().isEmpty());
@@ -107,7 +108,7 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void explicitStandardAttributes() throws Exception {
-        ConstraintDefinition definition = ConstraintDefinition.load(field("email")).get(0);
+        ConstraintDefinition definition = ConstraintDefinition.load(source("email")).get(0);
         assertEquals("email required", definition.getMessage());
         assertEquals(List.of(OnCreate.class, OnUpdate.class), definition.getGroups());
         assertEquals(List.of(Critical.class), definition.getPayload());
@@ -117,19 +118,19 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void nonConstraintAnnotationsAreIgnored() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("mixed"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("mixed"));
         assertEquals(1, result.size());
         assertEquals(Size.class, result.get(0).getAnnotationType());
     }
 
     @Test
     public void validAloneIsNotAConstraint() throws Exception {
-        assertTrue(ConstraintDefinition.load(field("child")).isEmpty());
+        assertTrue(ConstraintDefinition.load(source("child")).isEmpty());
     }
 
     @Test
     public void customConstraintIsDetected() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("code"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("code"));
         assertEquals(1, result.size());
         assertEquals(CustomCode.class, result.get(0).getAnnotationType());
         assertEquals("invalid code", result.get(0).getMessage());
@@ -138,7 +139,7 @@ public class ConstraintDefinitionTest {
     @Test
     public void repeatedConstraintIsUnwrapped() throws Exception {
         // Two @Pattern compile to a single @Pattern.List container.
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("repeated"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("repeated"));
         assertEquals(2, result.size());
         assertEquals(Pattern.class, result.get(0).getAnnotationType());
         assertEquals(Pattern.class, result.get(1).getAnnotationType());
@@ -148,7 +149,7 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void explicitContainerIsUnwrapped() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("explicitList"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("explicitList"));
         assertEquals(2, result.size());
         assertEquals("c", ((Pattern) result.get(0).getAnnotation()).regexp());
         assertEquals("d", ((Pattern) result.get(1).getAnnotation()).regexp());
@@ -158,14 +159,14 @@ public class ConstraintDefinitionTest {
     public void unwrappedConstraintsAreTheOriginalInstances() throws Exception {
         Field field = field("repeated");
         Pattern[] originals = field.getAnnotation(Pattern.List.class).value();
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field);
+        List<ConstraintDefinition> result = ConstraintDefinition.load(PropertyDeclaration.ofField(field));
         assertSame(originals[0], result.get(0).getAnnotation());
         assertSame(originals[1], result.get(1).getAnnotation());
     }
 
     @Test
     public void containerIsUnwrappedInPlace() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("surrounded"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("surrounded"));
         assertEquals(4, result.size());
         assertEquals(NotNull.class, result.get(0).getAnnotationType());
         assertEquals("e", ((Pattern) result.get(1).getAnnotation()).regexp());
@@ -177,7 +178,7 @@ public class ConstraintDefinitionTest {
     public void legacyContainerWithoutRepeatableIsUnwrapped() throws Exception {
         // Spec-defined container: value() returns an array of a constraint type,
         // but the constraint is not @Repeatable (pre-Java 8 style).
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("legacy"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("legacy"));
         assertEquals(2, result.size());
         assertEquals(LegacyCode.class, result.get(0).getAnnotationType());
         assertEquals("x", ((LegacyCode) result.get(0).getAnnotation()).value());
@@ -187,7 +188,7 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void containerOfNonConstraintsIsIgnored() throws Exception {
-        assertTrue(ConstraintDefinition.load(field("tagged")).isEmpty());
+        assertTrue(ConstraintDefinition.load(source("tagged")).isEmpty());
     }
 
     @Test
@@ -202,7 +203,7 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void resultIsUnmodifiable() throws Exception {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(field("name"));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(source("name"));
         assertThrows(UnsupportedOperationException.class, () -> result.add(null));
     }
 
@@ -210,14 +211,14 @@ public class ConstraintDefinitionTest {
     public void loadSingleRejectsNonConstraint() throws Exception {
         Field field = field("child");
         assertThrows(IllegalArgumentException.class,
-                () -> ConstraintDefinition.load(field, field.getAnnotation(Valid.class)));
+                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), field.getAnnotation(Valid.class)));
     }
 
     @Test
     public void malformedConstraintFailsFast() throws Exception {
         Field field = field("broken");
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> ConstraintDefinition.load(field));
+                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
         assertTrue(e.getMessage().contains("[message]"));
         assertTrue(e.getMessage().contains(MissingMessage.class.getName()));
     }
@@ -227,8 +228,8 @@ public class ConstraintDefinitionTest {
         Field field = field("name");
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null, field.getAnnotation(NotBlank.class)));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(field, (Annotation) null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(field, (AnnotatedElement) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (Annotation) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (AnnotatedElement) null));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null, field.getAnnotatedType()));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.isConstraint(null));
     }
@@ -241,16 +242,20 @@ public class ConstraintDefinitionTest {
 
     @Test
     public void equalityAndToString() throws Exception {
-        ConstraintDefinition a = ConstraintDefinition.load(field("name")).get(0);
-        ConstraintDefinition b = ConstraintDefinition.load(field("name")).get(0);
-        ConstraintDefinition c = ConstraintDefinition.load(field("code")).get(0);
+        ConstraintDefinition a = ConstraintDefinition.load(source("name")).get(0);
+        ConstraintDefinition b = ConstraintDefinition.load(source("name")).get(0);
+        ConstraintDefinition c = ConstraintDefinition.load(source("code")).get(0);
 
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, c);
         assertNotEquals(a, null);
-        assertTrue(a.toString().contains("field=" + Sample.class.getName() + ".name"));
+        assertTrue(a.toString().contains("source=" + Sample.class.getName() + ".name"));
         assertTrue(a.toString().contains("NotBlank"));
+    }
+
+    private static PropertyDeclaration source(String name) throws NoSuchFieldException {
+        return PropertyDeclaration.ofField(field(name));
     }
 
     private static Field field(String name) throws NoSuchFieldException {

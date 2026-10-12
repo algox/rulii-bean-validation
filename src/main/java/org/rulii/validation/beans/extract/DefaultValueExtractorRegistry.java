@@ -53,6 +53,7 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
     private final Map<LookupKey, Optional<ValueExtractorDescriptor>> cache = new ConcurrentHashMap<>();
 
     private record LookupKey(Class<?> containerType, int typeArgumentIndex) {}
+    private final Map<Class<?>, List<ValueExtractorDescriptor>> containerCache = new ConcurrentHashMap<>();
 
     public DefaultValueExtractorRegistry(boolean registerDefaults) {
         super();
@@ -63,10 +64,13 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
     public ValueExtractorDescriptor register(ValueExtractor<?> extractor) {
         Assert.notNull(extractor, "extractor cannot be null.");
         ValueExtractorDescriptor descriptor = ValueExtractorDescriptor.of(extractor);
+
         descriptors.removeIf(existing -> existing.getContainerType().equals(descriptor.getContainerType())
                 && existing.getTypeArgumentIndex() == descriptor.getTypeArgumentIndex());
         descriptors.add(descriptor);
         cache.clear();
+        containerCache.clear();
+
         return descriptor;
     }
 
@@ -75,6 +79,69 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
         Assert.notNull(containerType, "containerType cannot be null.");
         return cache.computeIfAbsent(new LookupKey(containerType, typeArgumentIndex),
                 key -> Optional.ofNullable(resolve(key.containerType(), key.typeArgumentIndex()))).orElse(null);
+    }
+
+    @Override
+    public List<ValueExtractorDescriptor> find(Class<?> containerType) {
+        Assert.notNull(containerType, "containerType cannot be null.");
+        return containerCache.computeIfAbsent(containerType, this::resolveAll);
+    }
+
+    private List<ValueExtractorDescriptor> resolveAll(Class<?> containerType) {
+        List<ValueExtractorDescriptor> candidates = new ArrayList<>();
+
+        synchronized (descriptors) {
+            for (ValueExtractorDescriptor descriptor : descriptors) {
+                if (descriptor.getContainerType().isAssignableFrom(containerType)) candidates.add(descriptor);
+            }
+        }
+
+        // Per position, the most specific container type wins: drop a candidate when another
+        // candidate of a strict subtype serves the same position (mapped through the hierarchy).
+        List<ValueExtractorDescriptor> result = new ArrayList<>();
+        for (ValueExtractorDescriptor candidate : candidates) {
+            boolean dominated = false;
+
+            for (ValueExtractorDescriptor other : candidates) {
+                if (other != candidate && isStrictSubtype(other.getContainerType(), candidate.getContainerType())
+                        && servesSamePosition(other, candidate)) {
+                    dominated = true;
+                    break;
+                }
+            }
+
+            if (!dominated) result.add(candidate);
+        }
+
+        for (int i = 0; i < result.size(); i++) {
+            for (int j = i + 1; j < result.size(); j++) {
+                if (result.get(i).getContainerType().equals(result.get(j).getContainerType())
+                        && result.get(i).getTypeArgumentIndex() == result.get(j).getTypeArgumentIndex()) {
+                    throw new ConstraintDeclarationException("ambiguous value extractors for ["
+                            + containerType.getName() + "]: " + result.get(i) + " and " + result.get(j));
+                }
+            }
+        }
+
+        return Collections.unmodifiableList(result);
+    }
+
+    private static boolean isStrictSubtype(Class<?> type, Class<?> supertype) {
+        return supertype.isAssignableFrom(type) && !supertype.equals(type);
+    }
+
+    /**
+     * Whether a descriptor of a subtype serves the same position as a descriptor of one of its
+     * supertypes: both the container value, or the subtype's type argument maps to the supertype's.
+     */
+    private static boolean servesSamePosition(ValueExtractorDescriptor subtype, ValueExtractorDescriptor supertype) {
+        if (subtype.getTypeArgumentIndex() == ValueExtractorDescriptor.CONTAINER
+                || supertype.getTypeArgumentIndex() == ValueExtractorDescriptor.CONTAINER) {
+            return subtype.getTypeArgumentIndex() == supertype.getTypeArgumentIndex();
+        }
+
+        return mapTypeArgument(subtype.getContainerType(), subtype.getTypeArgumentIndex(), supertype.getContainerType())
+                == supertype.getTypeArgumentIndex();
     }
 
     private ValueExtractorDescriptor resolve(Class<?> containerType, int typeArgumentIndex) {
@@ -88,8 +155,10 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
 
         // Most specific container type wins: drop any candidate that is a strict supertype of another.
         List<ValueExtractorDescriptor> mostSpecific = new ArrayList<>();
+
         for (ValueExtractorDescriptor candidate : candidates) {
             boolean dominated = false;
+
             for (ValueExtractorDescriptor other : candidates) {
                 if (other != candidate
                         && candidate.getContainerType().isAssignableFrom(other.getContainerType())
@@ -98,6 +167,7 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
                     break;
                 }
             }
+
             if (!dominated) mostSpecific.add(candidate);
         }
 
@@ -114,6 +184,7 @@ public class DefaultValueExtractorRegistry implements ValueExtractorRegistry {
         if (typeArgumentIndex == ValueExtractorDescriptor.CONTAINER || descriptor.getTypeArgumentIndex() == ValueExtractorDescriptor.CONTAINER) {
             return typeArgumentIndex == descriptor.getTypeArgumentIndex();
         }
+
         return mapTypeArgument(containerType, typeArgumentIndex, descriptor.getContainerType()) == descriptor.getTypeArgumentIndex();
     }
 

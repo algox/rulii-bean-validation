@@ -18,8 +18,9 @@
 package org.rulii.validation.beans.extract;
 
 import jakarta.validation.ConstraintDeclarationException;
+import org.rulii.validation.beans.util.reflect.Members;
 
-import java.lang.reflect.Field;
+import java.lang.reflect.Member;
 
 /**
  * Thrown at metadata-read time when a constraint (or {@code @Valid}) is declared on a
@@ -31,21 +32,26 @@ import java.lang.reflect.Field;
  */
 public class NoValueExtractorException extends ConstraintDeclarationException {
 
-    private final Field field;
+    private final Member member;
     private final Class<?> containerType;
     private final int typeArgumentIndex;
 
-    public NoValueExtractorException(Field field, Class<?> containerType, int typeArgumentIndex) {
+    public NoValueExtractorException(Member member, Class<?> containerType, int typeArgumentIndex) {
         super("no value extractor found for type argument [" + typeArgumentIndex + "] of ["
-                + containerType.getName() + "] declared on field [" + field.getDeclaringClass().getName()
-                + "." + field.getName() + "]; register a jakarta.validation.valueextraction.ValueExtractor for it");
-        this.field = field;
+                + containerType.getName() + "] declared on property [" + Members.describe(member)
+                + "]; register a jakarta.validation.valueextraction.ValueExtractor for it");
+        this.member = member;
         this.containerType = containerType;
         this.typeArgumentIndex = typeArgumentIndex;
     }
 
-    public Field getField() {
-        return field;
+    /**
+     * The property member (field, getter or record accessor) whose type declares the position.
+     *
+     * @return the member.
+     */
+    public Member getMember() {
+        return member;
     }
 
     public Class<?> getContainerType() {

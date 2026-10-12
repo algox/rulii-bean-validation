@@ -146,7 +146,62 @@ public class ValueExtractorRegistryTest {
     public void nullContainerTypeIsRejected() {
         ValueExtractorRegistry registry = ValueExtractorRegistry.builder().build();
         assertThrows(IllegalArgumentException.class, () -> registry.find(null, 0));
+        assertThrows(IllegalArgumentException.class, () -> registry.find(null));
         assertThrows(IllegalArgumentException.class, () -> registry.register(null));
+    }
+
+    @Test
+    public void allExtractorsOfAContainerType() {
+        ValueExtractorRegistry registry = ValueExtractorRegistry.builder().build();
+
+        List<ValueExtractorDescriptor> optional = registry.find(Optional.class);
+        assertEquals(1, optional.size());
+        assertInstanceOf(OptionalValueExtractor.class, optional.get(0).getExtractor());
+        assertFalse(optional.get(0).isUnwrapByDefault());
+
+        List<ValueExtractorDescriptor> optionalInt = registry.find(OptionalInt.class);
+        assertEquals(1, optionalInt.size());
+        assertEquals(ValueExtractorDescriptor.CONTAINER, optionalInt.get(0).getTypeArgumentIndex());
+        assertTrue(optionalInt.get(0).isUnwrapByDefault());
+
+        assertEquals(2, registry.find(Map.class).size());
+        assertEquals(2, registry.find(LinkedHashMap.class).size());
+        assertTrue(registry.find(String.class).isEmpty());
+        assertTrue(registry.find(Object.class).isEmpty());
+    }
+
+    @Test
+    public void allExtractorsKeepOnlyTheMostSpecificPerPosition() {
+        ValueExtractorRegistry registry = ValueExtractorRegistry.builder().build();
+
+        // List and Iterable both serve position 0 of an ArrayList: List wins, one entry.
+        List<ValueExtractorDescriptor> list = registry.find(ArrayList.class);
+        assertEquals(1, list.size());
+        assertInstanceOf(ListValueExtractor.class, list.get(0).getExtractor());
+
+        // A Set is only an Iterable.
+        List<ValueExtractorDescriptor> set = registry.find(HashSet.class);
+        assertEquals(1, set.size());
+        assertInstanceOf(IterableValueExtractor.class, set.get(0).getExtractor());
+    }
+
+    @Test
+    public void allExtractorsReportsDistinctPositionsOfDifferentSupertypes() {
+        ValueExtractorRegistry registry = ValueExtractorRegistry.builder().extractor(new TaggedExtractor()).build();
+        // TaggedList<E> is a List<E> and a Tagged<E>: both serve the same position with unrelated
+        // container types, so neither dominates and both are reported; the position lookup is the
+        // one that flags that ambiguity.
+        assertEquals(2, registry.find(TaggedList.class).size());
+        assertThrows(ConstraintDeclarationException.class, () -> registry.find(TaggedList.class, 0));
+    }
+
+    @Test
+    public void allExtractorsIsCachedAndInvalidatedOnRegistration() {
+        ValueExtractorRegistry registry = ValueExtractorRegistry.builder().build();
+        assertSame(registry.find(Optional.class), registry.find(Optional.class));
+        assertTrue(registry.find(Tagged.class).isEmpty());
+        registry.register(new TaggedExtractor());
+        assertEquals(1, registry.find(Tagged.class).size());
     }
 
     @SuppressWarnings("serial")

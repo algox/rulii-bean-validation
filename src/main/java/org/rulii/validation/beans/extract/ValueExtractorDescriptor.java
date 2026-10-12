@@ -133,16 +133,19 @@ public final class ValueExtractorDescriptor {
     private static AnnotatedType findInInterfaces(Class<?> type) {
         for (AnnotatedType itf : type.getAnnotatedInterfaces()) {
             Class<?> raw = AnnotatedTypes.rawClass(itf.getType());
+
             if (raw == ValueExtractor.class) {
                 return itf instanceof AnnotatedParameterizedType
                         ? ((AnnotatedParameterizedType) itf).getAnnotatedActualTypeArguments()[0]
                         : null;
             }
+
             if (raw != null) {
                 AnnotatedType nested = findInInterfaces(raw);
                 if (nested != null) return nested;
             }
         }
+
         return null;
     }
 

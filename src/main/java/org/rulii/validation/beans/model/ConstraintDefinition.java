@@ -24,10 +24,10 @@ import org.rulii.lib.spring.core.annotation.AnnotationUtils;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
+import org.rulii.model.UnrulyException;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -37,72 +37,78 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Definition of a single Bean Validation constraint declared on a field.
+ * Definition of a single Bean Validation constraint declared on a property declaration (field, getter
+ * or record component) or at a container element position within its type.
  *
  * <p>A constraint is any annotation whose type is meta-annotated with {@link Constraint}.
  * The original annotation instance is kept and exposed as-is; the three attributes every
  * constraint must declare ({@code message}, {@code groups}, {@code payload}) are read off it
  * once at load time and exposed through getters.</p>
  *
- * <p>Only the field's own declaration annotations are inspected; annotations on the
- * field's type arguments (container elements) are not. Repeated constraints are unwrapped
- * from their container (e.g. {@code @Pattern.List}) in place, so the result keeps
- * declaration order.</p>
+ * <p>{@link #load(PropertyDeclaration)} inspects only the declaration annotations of the source;
+ * annotations on its type arguments (container elements) are read per position through
+ * {@link #load(PropertyDeclaration, AnnotatedElement)}. Repeated constraints are unwrapped from their
+ * container (e.g. {@code @Pattern.List}) in place, so the result keeps declaration order.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
  */
 public final class ConstraintDefinition implements Definition {
 
-    private final Field field;
+    private final PropertyDeclaration sourceDeclaration;
     private final Annotation annotation;
     private final String message;
     private final List<Class<?>> groups;
     private final List<Class<? extends Payload>> payload;
     private final SourceDefinition source;
 
-    private ConstraintDefinition(Field field, Annotation annotation, String message,
+    private ConstraintDefinition(PropertyDeclaration sourceDeclaration, Annotation annotation, String message,
                                  List<Class<?>> groups, List<Class<? extends Payload>> payload) {
         super();
-        this.field = field;
+        this.sourceDeclaration = sourceDeclaration;
         this.annotation = annotation;
         this.message = message;
         this.groups = groups;
         this.payload = payload;
-        this.source = SourceDefinition.forField(field);
+        this.source = sourceDeclaration.getSourceDefinition();
     }
 
     /**
-     * Loads the constraint definitions declared on the given field.
+     * Loads the constraint definitions declared on the given property declaration (its declaration
+     * annotations only).
      *
-     * @param field the field to inspect.
+     * @param sourceDeclaration the property declaration to inspect.
      * @return the constraint definitions, in declaration order; empty if none.
      */
-    public static List<ConstraintDefinition> load(Field field) {
-        Assert.notNull(field, "field cannot be null.");
-        return load(field, field);
+    public static List<ConstraintDefinition> load(PropertyDeclaration sourceDeclaration) {
+        Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
+        return load(sourceDeclaration, sourceDeclaration.getDeclaredAnnotations());
     }
 
     /**
-     * Loads the constraint definitions declared on the given element of a field: the field
-     * itself, or an {@link java.lang.reflect.AnnotatedType} position within the field's type
-     * (a container element such as the {@code String} in {@code List<@NotBlank String>}).
+     * Loads the constraint definitions declared on an element within the given property declaration:
+     * an {@link java.lang.reflect.AnnotatedType} position within its type (a container element
+     * such as the {@code String} in {@code List<@NotBlank String>}).
      *
-     * @param field the field the constraints belong to.
+     * @param sourceDeclaration the property declaration the constraints belong to.
      * @param element the element whose declared annotations are inspected.
      * @return the constraint definitions, in declaration order; empty if none.
      */
-    public static List<ConstraintDefinition> load(Field field, AnnotatedElement element) {
-        Assert.notNull(field, "field cannot be null.");
+    public static List<ConstraintDefinition> load(PropertyDeclaration sourceDeclaration, AnnotatedElement element) {
+        Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
         Assert.notNull(element, "element cannot be null.");
+        return load(sourceDeclaration, Arrays.asList(element.getDeclaredAnnotations()));
+    }
+
+    private static List<ConstraintDefinition> load(PropertyDeclaration sourceDeclaration, List<Annotation> annotations) {
         List<ConstraintDefinition> result = new ArrayList<>();
 
-        for (Annotation annotation : element.getDeclaredAnnotations()) {
+        for (Annotation annotation : annotations) {
             if (isConstraint(annotation)) {
-                result.add(load(field, annotation));
+                result.add(load(sourceDeclaration, annotation));
             } else if (isConstraintContainer(annotation)) {
                 for (Annotation repeated : repeatedConstraints(annotation)) {
-                    result.add(load(field, repeated));
+                    result.add(load(sourceDeclaration, repeated));
                 }
             }
         }
@@ -111,27 +117,28 @@ public final class ConstraintDefinition implements Definition {
     }
 
     /**
-     * Loads the definition of one constraint annotation declared on the given field.
+     * Loads the definition of one constraint annotation declared on (or within) the given
+     * property declaration.
      *
-     * @param field the field the constraint is declared on.
+     * @param sourceDeclaration the property declaration the constraint belongs to.
      * @param annotation the constraint annotation.
      * @return the constraint definition.
      * @throws IllegalArgumentException if the annotation is not a constraint or does not
      *         declare the mandatory {@code message}, {@code groups} and {@code payload} attributes.
      */
     @SuppressWarnings("unchecked")
-    public static ConstraintDefinition load(Field field, Annotation annotation) {
-        Assert.notNull(field, "field cannot be null.");
+    public static ConstraintDefinition load(PropertyDeclaration sourceDeclaration, Annotation annotation) {
+        Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
         Assert.notNull(annotation, "annotation cannot be null.");
         Assert.isTrue(isConstraint(annotation), "annotation [" + annotation.annotationType().getName()
                 + "] is not a constraint; it must be meta-annotated with @" + Constraint.class.getName());
 
-        AnnotationAttributes attributes = AnnotationUtils.getAnnotationAttributes(field, annotation);
+        AnnotationAttributes attributes = AnnotationUtils.getAnnotationAttributes(sourceDeclaration.getDeclaration(), annotation);
         String message = (String) attribute(annotation, attributes, "message", String.class);
         Class<?>[] groups = (Class<?>[]) attribute(annotation, attributes, "groups", Class[].class);
         Class<? extends Payload>[] payload = (Class<? extends Payload>[]) attribute(annotation, attributes, "payload", Class[].class);
 
-        return new ConstraintDefinition(field, annotation, message,
+        return new ConstraintDefinition(sourceDeclaration, annotation, message,
                 Collections.unmodifiableList(Arrays.asList(groups)),
                 Collections.unmodifiableList(Arrays.asList(payload)));
     }
@@ -172,7 +179,7 @@ public final class ConstraintDefinition implements Definition {
         try {
             return (Annotation[]) value.invoke(container);
         } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new IllegalStateException("unable to read the repeated constraints of container ["
+            throw new UnrulyException("unable to read the repeated constraints of container ["
                     + container.annotationType().getName() + "]", e);
         }
     }
@@ -213,8 +220,14 @@ public final class ConstraintDefinition implements Definition {
         return source;
     }
 
-    public Field getField() {
-        return field;
+    /**
+     * The property declaration this constraint belongs to: the field, getter or record component it is
+     * declared on, or whose type declares the position it is declared at.
+     *
+     * @return the source declaration.
+     */
+    public PropertyDeclaration getSourceDeclaration() {
+        return sourceDeclaration;
     }
 
     public Annotation getAnnotation() {
@@ -242,18 +255,18 @@ public final class ConstraintDefinition implements Definition {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ConstraintDefinition that = (ConstraintDefinition) o;
-        return field.equals(that.field) && annotation.equals(that.annotation);
+        return sourceDeclaration.equals(that.sourceDeclaration) && annotation.equals(that.annotation);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(field, annotation);
+        return Objects.hash(sourceDeclaration, annotation);
     }
 
     @Override
     public String toString() {
         return "ConstraintDefinition{" +
-                "field=" + field.getDeclaringClass().getName() + "." + field.getName() +
+                "source=" + sourceDeclaration.describe() +
                 ", annotation=" + annotation +
                 ", message='" + message + '\'' +
                 ", groups=" + groups +

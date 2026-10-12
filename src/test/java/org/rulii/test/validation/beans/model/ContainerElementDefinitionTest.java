@@ -17,6 +17,8 @@
  */
 package org.rulii.test.validation.beans.model;
 
+import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -25,6 +27,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.groups.ConvertGroup;
+import jakarta.validation.groups.Default;
 import org.junit.jupiter.api.Test;
 import jakarta.validation.valueextraction.ExtractedValue;
 import jakarta.validation.valueextraction.ValueExtractor;
@@ -32,7 +36,13 @@ import org.rulii.validation.beans.extract.NoValueExtractorException;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
+import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
+import org.rulii.validation.beans.model.PropertyDeclaration;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
@@ -57,18 +67,18 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void nonGenericFieldHasNoElements() throws Exception {
-        assertTrue(ContainerElementDefinition.load(field("plain"), REGISTRY).isEmpty());
+        assertTrue(ContainerElementDefinition.load(source("plain"), REGISTRY).isEmpty());
     }
 
     @Test
     public void unconstrainedGenericIsPruned() throws Exception {
-        assertTrue(ContainerElementDefinition.load(field("unconstrained"), REGISTRY).isEmpty());
-        assertTrue(ContainerElementDefinition.load(field("deepUnconstrained"), REGISTRY).isEmpty());
+        assertTrue(ContainerElementDefinition.load(source("unconstrained"), REGISTRY).isEmpty());
+        assertTrue(ContainerElementDefinition.load(source("deepUnconstrained"), REGISTRY).isEmpty());
     }
 
     @Test
     public void listElement() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("names"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("names"), REGISTRY);
         assertEquals(1, result.size());
 
         ContainerElementDefinition element = result.get(0);
@@ -86,15 +96,15 @@ public class ContainerElementDefinitionTest {
     public void fieldLevelConstraintsAreNotCollectedHere() throws Exception {
         // @NotEmpty is on the field; only the element @NotBlank belongs to the element node.
         Field field = field("names");
-        assertEquals(NotEmpty.class, ConstraintDefinition.load(field).get(0).getAnnotationType());
-        ContainerElementDefinition element = ContainerElementDefinition.load(field, REGISTRY).get(0);
+        assertEquals(NotEmpty.class, ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0).getAnnotationType());
+        ContainerElementDefinition element = ContainerElementDefinition.load(PropertyDeclaration.ofField(field), REGISTRY).get(0);
         assertEquals(1, element.getConstraints().size());
         assertEquals(NotBlank.class, element.getConstraints().get(0).getAnnotationType());
     }
 
     @Test
     public void mapKeyAndValue() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("contacts"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("contacts"), REGISTRY);
         assertEquals(2, result.size());
 
         ContainerElementDefinition key = result.get(0);
@@ -111,7 +121,7 @@ public class ContainerElementDefinitionTest {
     @Test
     public void onlyConstrainedPositionsAreKept() throws Exception {
         // Map<String, @Positive Integer>: key position pruned, value kept with index 1.
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("scores"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("scores"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals(1, result.get(0).getTypeArgumentIndex());
     }
@@ -119,7 +129,7 @@ public class ContainerElementDefinitionTest {
     @Test
     public void nestedPositions() throws Exception {
         // Map<@NotBlank String, List<@Valid @Size(max = 5) String>>
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("nested"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("nested"), REGISTRY);
         assertEquals(2, result.size());
 
         ContainerElementDefinition value = result.get(1);
@@ -140,7 +150,7 @@ public class ContainerElementDefinitionTest {
     @Test
     public void intermediateUnconstrainedPositionIsKeptForItsChildren() throws Exception {
         // List<Map<String, @Size(max = 5) String>>: the element node has no constraints but owns the value node.
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("listOfMaps"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("listOfMaps"), REGISTRY);
         assertEquals(1, result.size());
         ContainerElementDefinition element = result.get(0);
         assertTrue(element.getConstraints().isEmpty());
@@ -150,7 +160,7 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void optionalValue() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("email"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("email"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals(Optional.class, result.get(0).getContainerType());
         assertEquals(Email.class, result.get(0).getConstraints().get(0).getAnnotationType());
@@ -158,7 +168,7 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void cascadeOnlyPositionIsKept() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("orders"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("orders"), REGISTRY);
         assertEquals(1, result.size());
         assertTrue(result.get(0).isCascaded());
         assertTrue(result.get(0).getConstraints().isEmpty());
@@ -166,7 +176,7 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void repeatedConstraintAtPositionIsUnwrapped() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("codes"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("codes"), REGISTRY);
         List<ConstraintDefinition> constraints = result.get(0).getConstraints();
         assertEquals(2, constraints.size());
         assertEquals("a", ((Pattern) constraints.get(0).getAnnotation()).regexp());
@@ -175,7 +185,7 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void typeVariablePosition() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("items"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("items"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals("T", result.get(0).getType().getTypeName());
         assertEquals(NotNull.class, result.get(0).getConstraints().get(0).getAnnotationType());
@@ -183,20 +193,20 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void annotatedWildcardPosition() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("anything"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("anything"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals(NotNull.class, result.get(0).getConstraints().get(0).getAnnotationType());
     }
 
     @Test
     public void wildcardBoundsAreNotDescended() throws Exception {
-        assertTrue(ContainerElementDefinition.load(field("boundedUnconstrained"), REGISTRY).isEmpty());
+        assertTrue(ContainerElementDefinition.load(source("boundedUnconstrained"), REGISTRY).isEmpty());
     }
 
     @Test
     public void arrayComponentInsideContainer() throws Exception {
         // List<String @Size(min = 1) []>: constraint on the array (the element) itself.
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("arrays"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("arrays"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals(List.class, result.get(0).getContainerType());
         assertEquals(Size.class, result.get(0).getConstraints().get(0).getAnnotationType());
@@ -205,28 +215,55 @@ public class ContainerElementDefinitionTest {
         // List<@NotBlank String[]>: Java puts the annotation on the component String, and
         // arrays are not a built-in container, so there is no extractor for it.
         NoValueExtractorException e = assertThrows(NoValueExtractorException.class,
-                () -> ContainerElementDefinition.load(field("arrayComponents"), REGISTRY));
+                () -> ContainerElementDefinition.load(source("arrayComponents"), REGISTRY));
         assertEquals(String[].class, e.getContainerType());
         assertEquals(0, e.getTypeArgumentIndex());
-        assertEquals(field("arrayComponents"), e.getField());
+        assertEquals(field("arrayComponents"), e.getMember());
         assertTrue(e.getMessage().contains("arrayComponents"));
     }
 
     @Test
-    public void arrayFieldDeclarationAnnotationIsReportedOnTheComponentForNow() throws Exception {
+    public void arrayFieldDeclarationAnnotationsAreDroppedFromTheComponent() throws Exception {
         // @NotBlank String[] tags: Java applies the annotation to the field AND the component type.
-        // The field-level read sees it as a field constraint. The container walk sees the duplicate
-        // on the component and, arrays having no extractor, fails. PropertyDefinition will drop
-        // component annotations that duplicate a declaration annotation before this walk runs.
+        // The field-level read sees it as a field constraint; the container walk drops the mirrored
+        // duplicate, so the (extractor-less) array component is not constrained.
         Field field = field("tags");
-        assertEquals(NotBlank.class, ConstraintDefinition.load(field).get(0).getAnnotationType());
-        assertThrows(NoValueExtractorException.class, () -> ContainerElementDefinition.load(field, REGISTRY));
+        assertEquals(NotBlank.class, ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0).getAnnotationType());
+        assertTrue(ContainerElementDefinition.load(PropertyDeclaration.ofField(field), REGISTRY).isEmpty());
+    }
+
+    @Test
+    public void mirroredValidOnArrayComponentIsDropped() throws Exception {
+        assertTrue(ContainerElementDefinition.load(source("cascadedArray"), REGISTRY).isEmpty());
+    }
+
+    @Test
+    public void typeUseOnlyConstraintOnArrayComponentIsAnElementConstraint() throws Exception {
+        // @TypeUseOnly cannot target the field, so it is a genuine component constraint, and arrays
+        // have no built-in extractor.
+        NoValueExtractorException e = assertThrows(NoValueExtractorException.class,
+                () -> ContainerElementDefinition.load(source("typeUseArray"), REGISTRY));
+        assertEquals(String[].class, e.getContainerType());
+    }
+
+    @Test
+    public void groupConversionAtPositionFailsFast() throws Exception {
+        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class,
+                () -> ContainerElementDefinition.load(source("convertedElements"), REGISTRY));
+        assertEquals(field("convertedElements"), e.getSourceDeclaration().getMember());
+        assertTrue(e.getMessage().contains("convertedElements"));
+    }
+
+    @Test
+    public void nestedArrayComponentsAreNotDeduped() throws Exception {
+        // The dedup applies to the root array only: List<@NotBlank String[]> keeps failing.
+        assertThrows(NoValueExtractorException.class, () -> ContainerElementDefinition.load(source("arrayComponents"), REGISTRY));
     }
 
     @Test
     public void constrainedPositionWithoutExtractorFailsFast() throws Exception {
         NoValueExtractorException e = assertThrows(NoValueExtractorException.class,
-                () -> ContainerElementDefinition.load(field("pair"), REGISTRY));
+                () -> ContainerElementDefinition.load(source("pair"), REGISTRY));
         assertEquals(Pair.class, e.getContainerType());
         assertEquals(1, e.getTypeArgumentIndex());
         assertTrue(e.getMessage().contains("Pair"));
@@ -236,13 +273,13 @@ public class ContainerElementDefinitionTest {
 
     @Test
     public void cascadedPositionWithoutExtractorFailsFast() throws Exception {
-        assertThrows(NoValueExtractorException.class, () -> ContainerElementDefinition.load(field("cascadedPair"), REGISTRY));
+        assertThrows(NoValueExtractorException.class, () -> ContainerElementDefinition.load(source("cascadedPair"), REGISTRY));
     }
 
     @Test
     public void registeredExtractorMakesThePositionValid() throws Exception {
         ValueExtractorRegistry registry = ValueExtractorRegistry.builder().extractor(new PairSecondExtractor()).build();
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("pair"), registry);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("pair"), registry);
         assertEquals(1, result.size());
         assertEquals(Pair.class, result.get(0).getContainerType());
         assertEquals(1, result.get(0).getTypeArgumentIndex());
@@ -253,7 +290,7 @@ public class ContainerElementDefinitionTest {
     public void intermediateUnconstrainedPositionIsNotChecked() throws Exception {
         // Pair<String, List<@NotBlank String>>: no extractor for Pair, but nothing is applied at
         // Pair's position; only the List element is constrained and List has an extractor.
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("pairOfList"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("pairOfList"), REGISTRY);
         assertEquals(1, result.size());
         assertEquals(Pair.class, result.get(0).getContainerType());
         assertTrue(result.get(0).getConstraints().isEmpty());
@@ -263,23 +300,23 @@ public class ContainerElementDefinitionTest {
     @Test
     public void nullRegistryIsRejected() throws Exception {
         Field field = field("names");
-        assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(field, null));
+        assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(PropertyDeclaration.ofField(field), null));
     }
 
     @Test
     public void sourceAndFieldAreCarried() throws Exception {
-        ContainerElementDefinition element = ContainerElementDefinition.load(field("names"), REGISTRY).get(0);
-        assertEquals(field("names"), element.getField());
+        ContainerElementDefinition element = ContainerElementDefinition.load(source("names"), REGISTRY).get(0);
+        assertEquals(field("names"), element.getSourceDeclaration().getMember());
         assertEquals(Sample.class.getName(), element.getSource().getClassName());
         assertEquals("names", element.getSource().getFieldName());
-        assertEquals(field("names"), element.getConstraints().get(0).getField());
+        assertEquals(field("names"), element.getConstraints().get(0).getSourceDeclaration().getMember());
         assertNotNull(element.getAnnotatedType());
         assertTrue(element.toString().contains("List<0>"));
     }
 
     @Test
     public void resultsAreUnmodifiable() throws Exception {
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(field("nested"), REGISTRY);
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("nested"), REGISTRY);
         assertThrows(UnsupportedOperationException.class, () -> result.add(null));
         assertThrows(UnsupportedOperationException.class, () -> result.get(1).getChildren().clear());
     }
@@ -287,6 +324,10 @@ public class ContainerElementDefinitionTest {
     @Test
     public void nullFieldIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(null, REGISTRY));
+    }
+
+    private static PropertyDeclaration source(String name) throws NoSuchFieldException {
+        return PropertyDeclaration.ofField(field(name));
     }
 
     private static Field field(String name) throws NoSuchFieldException {
@@ -327,5 +368,17 @@ public class ContainerElementDefinitionTest {
         private List<String @Size(min = 1) []> arrays;
         private List<@NotBlank String[]> arrayComponents;
         @NotBlank private String[] tags;
+        @Valid private Sample<?>[] cascadedArray;
+        private @TypeUseOnly String[] typeUseArray;
+        private List<@Valid @ConvertGroup(from = Default.class, to = Default.class) Sample<?>> convertedElements;
+    }
+
+    @Target(ElementType.TYPE_USE)
+    @Retention(RetentionPolicy.RUNTIME)
+    @Constraint(validatedBy = {})
+    @interface TypeUseOnly {
+        String message() default "type use only";
+        Class<?>[] groups() default {};
+        Class<? extends Payload>[] payload() default {};
     }
 }

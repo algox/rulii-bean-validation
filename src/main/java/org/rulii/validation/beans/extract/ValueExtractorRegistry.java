@@ -79,6 +79,21 @@ public interface ValueExtractorRegistry {
     ValueExtractorDescriptor find(Class<?> containerType, int typeArgumentIndex);
 
     /**
+     * Finds every extractor applicable to a container class, one per served position: the
+     * maximally specific extractor for each type-argument position (or the container value
+     * itself) that some registered extractor serves. Used to resolve value unwrapping for
+     * constraints declared on the container property: {@code @Positive OptionalInt} applies
+     * to the int through the one {@code @UnwrapByDefault} extractor of {@code OptionalInt};
+     * {@code @NotNull(payload = Unwrapping.Unwrap.class) Optional<String>} applies to the
+     * content through the single extractor of {@code Optional}.
+     *
+     * @param containerType the container class as declared on the property.
+     * @return the applicable extractors, in registration order; empty if none.
+     * @throws jakarta.validation.ConstraintDeclarationException if two equally specific extractors serve a position.
+     */
+    List<ValueExtractorDescriptor> find(Class<?> containerType);
+
+    /**
      * All registered extractors, in registration order.
      *
      * @return the descriptors.
