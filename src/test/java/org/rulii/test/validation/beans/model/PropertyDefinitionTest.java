@@ -552,6 +552,49 @@ public class PropertyDefinitionTest {
         throw new IllegalArgumentException(name);
     }
 
+    // --- generics (R7.4) ----------------------------------------------------------------------
+
+    @Test
+    public void typeVariablesResolveAgainstTheOwningClass() throws Exception {
+        PropertyDefinition items = PropertyDefinition.load(discovered(Names.class, "items"), REGISTRY);
+        assertEquals(List.class, items.getType());
+        assertEquals("java.util.List<java.lang.String>", items.getGenericType().getTypeName());
+        assertEquals(1, items.getContainerElements().size());
+        assertEquals(String.class, items.getContainerElements().get(0).getType());
+        assertEquals(List.of(NotBlank.class), types(items.getContainerElements().get(0).getConstraints()));
+
+        PropertyDefinition single = PropertyDefinition.load(discovered(Names.class, "single"), REGISTRY);
+        assertEquals(String.class, single.getType());
+        assertEquals(List.of(NotNull.class), types(single.getConstraints()));
+
+        // Loaded on the generic class itself, the variable erases to its bound.
+        assertEquals(Object.class, PropertyDefinition.load(discovered(Wrapper.class, "single"), REGISTRY).getType());
+    }
+
+    @Test
+    public void unwrappingResolvesTheExtractorPositionThroughTheDeclaredSubtype() throws Exception {
+        // MyList<E> implements List<E>: the List extractor position 0 is the E of MyList.
+        PropertyDefinition property = PropertyDefinition.load(discovered(Generics.class, "numbers"), REGISTRY);
+        assertTrue(property.getConstraints().isEmpty());
+        assertEquals(1, property.getContainerElements().size());
+
+        ContainerElementDefinition unwrapped = property.getContainerElements().get(0);
+        assertEquals(List.class, unwrapped.getContainerType());
+        assertEquals(0, unwrapped.getTypeArgumentIndex());
+        assertEquals(Integer.class, unwrapped.getType());
+        assertNotNull(unwrapped.getAnnotatedType(), "the annotated argument of MyList is located");
+        assertEquals(List.of(Positive.class), types(unwrapped.getConstraints()));
+    }
+
+    @Test
+    public void unwrappingThroughAFixedSupertypeArgumentResolvesTheTypeWithoutAnAnnotatedPosition() throws Exception {
+        PropertyDefinition property = PropertyDefinition.load(discovered(Generics.class, "words"), REGISTRY);
+        ContainerElementDefinition unwrapped = property.getContainerElements().get(0);
+        assertEquals(String.class, unwrapped.getType());
+        assertNull(unwrapped.getAnnotatedType());
+        assertEquals(List.of(NotBlank.class), types(unwrapped.getConstraints()));
+    }
+
     // --- arguments ----------------------------------------------------------------------------
 
     @Test
@@ -719,5 +762,21 @@ public class PropertyDefinitionTest {
         @Size(max = 10) private String label;
         @Override @Email public String getLabel() { return label; }
         @Override public List<@Min(1) Integer> getScores() { return List.of(); }
+    }
+    @SuppressWarnings("unused")
+    private static class Wrapper<T> {
+        @NotNull private T single;
+        private List<@NotBlank T> items;
+    }
+
+    private static class Names extends Wrapper<String> { }
+
+    private abstract static class MyList<E> extends java.util.AbstractList<E> { }
+    private abstract static class Words extends java.util.AbstractList<String> { }
+
+    @SuppressWarnings("unused")
+    private static class Generics {
+        @Positive(payload = Unwrapping.Unwrap.class) private MyList<Integer> numbers;
+        @NotBlank(payload = Unwrapping.Unwrap.class) private Words words;
     }
 }

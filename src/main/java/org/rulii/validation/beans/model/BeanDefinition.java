@@ -93,7 +93,7 @@ public final class BeanDefinition implements Definition {
         Assert.notNull(beanClass, "beanClass cannot be null.");
         Assert.notNull(registry, "registry cannot be null.");
 
-        Loader loader = new Loader();
+        Loader loader = new Loader(beanClass);
         TypeHierarchies.walk(beanClass, loader);
 
         List<PropertySource> sources = loader.discovery.getSources();
@@ -201,11 +201,12 @@ public final class BeanDefinition implements Definition {
      */
     private static final class Loader implements TypeHierarchyVisitor {
 
-        private final PropertyDiscovery discovery = new PropertyDiscovery();
+        private final PropertyDiscovery discovery;
         private final List<ConstraintDefinition> classConstraints = new ArrayList<>();
 
-        private Loader() {
+        private Loader(Class<?> beanClass) {
             super();
+            this.discovery = new PropertyDiscovery(beanClass);
         }
 
         @Override

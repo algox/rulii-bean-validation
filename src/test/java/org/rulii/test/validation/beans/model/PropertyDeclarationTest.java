@@ -139,6 +139,45 @@ public class PropertyDeclarationTest {
     }
 
     @Test
+    public void genericTypesAreResolvedAgainstTheOwner() throws Exception {
+        Field items = Wrapper.class.getDeclaredField("items");
+        PropertyDeclaration declaration = PropertyDeclaration.ofField(items, Names.class);
+
+        assertEquals(Names.class, declaration.getOwner());
+        assertEquals(Wrapper.class, declaration.getDeclaringClass());
+        assertEquals(List.class, declaration.getType());
+        assertEquals("java.util.List<java.lang.String>", declaration.getGenericType().getTypeName());
+        assertEquals("java.util.List<T>", declaration.getDeclaredGenericType().getTypeName());
+        assertEquals(items.getAnnotatedType(), declaration.getAnnotatedType(), "annotations stay on the declared tree");
+
+        assertEquals(String.class, PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("single"), Names.class).getType());
+        assertEquals(String[].class, PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("array"), Names.class).getType());
+        assertEquals(String.class, PropertyDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Names.class).getType());
+        assertEquals(String.class, declaration.resolve(Wrapper.class.getTypeParameters()[0]));
+        assertEquals(Integer.class, PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"), Leaf.class).getType());
+    }
+
+    @Test
+    public void withoutAnOwnerTheDeclaringClassIsTheOwnerAndVariablesErase() throws Exception {
+        PropertyDeclaration declaration = PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("single"));
+        assertEquals(Wrapper.class, declaration.getOwner());
+        assertEquals(Object.class, declaration.getType());
+        assertTrue(declaration.getGenericType() instanceof java.lang.reflect.TypeVariable);
+        assertEquals(declaration.getGenericType(), declaration.getDeclaredGenericType());
+    }
+
+    @Test
+    public void ownerMattersForEqualityAndMustBeASubtype() throws Exception {
+        Field single = Wrapper.class.getDeclaredField("single");
+        assertNotEquals(PropertyDeclaration.ofField(single), PropertyDeclaration.ofField(single, Names.class));
+        assertEquals(PropertyDeclaration.ofField(single, Names.class), PropertyDeclaration.ofField(single, Names.class));
+        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single, Bean.class));
+        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single, null));
+        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Bean.class));
+        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single).resolve(null));
+    }
+
+    @Test
     public void nullArgumentsAreRejected() {
         assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(null));
         assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofGetter(null));
@@ -174,4 +213,16 @@ public class PropertyDeclarationTest {
 
     @SuppressWarnings("unused")
     private record Customer(@NotBlank @Size(max = 10) String name) {}
+    @SuppressWarnings("unused")
+    private static class Wrapper<T> {
+        private T single;
+        private List<T> items;
+        private T[] array;
+        public T getSingle() { return single; }
+    }
+
+    private static class Names extends Wrapper<String> { }
+
+    private interface Identified<ID> { ID getId(); }
+    private static class Leaf implements Identified<Integer> { @Override public Integer getId() { return 1; } }
 }

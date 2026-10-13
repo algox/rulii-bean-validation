@@ -122,8 +122,8 @@ public class PropertySourceTest {
 
     @Test
     public void shadowedFieldsKeepInputOrderAndTheSubclassFieldIsPrimary() throws Exception {
-        PropertyDeclaration parent = PropertyDeclaration.ofField(Parent.class.getDeclaredField("name"));
-        PropertyDeclaration child = PropertyDeclaration.ofField(Child.class.getDeclaredField("name"));
+        PropertyDeclaration parent = PropertyDeclaration.ofField(Parent.class.getDeclaredField("name"), Child.class);
+        PropertyDeclaration child = PropertyDeclaration.ofField(Child.class.getDeclaredField("name"), Child.class);
 
         PropertySource source = PropertySource.of(List.of(parent, child));
         assertEquals(List.of(parent, child), source.getDeclarations());
@@ -139,10 +139,10 @@ public class PropertySourceTest {
 
     @Test
     public void overriddenGettersMostDerivedIsPrimary() throws Exception {
-        PropertyDeclaration field = PropertyDeclaration.ofField(Parent.class.getDeclaredField("id"));
-        PropertyDeclaration parent = PropertyDeclaration.ofGetter(Parent.class.getDeclaredMethod("getId"));
-        PropertyDeclaration child = PropertyDeclaration.ofGetter(Child.class.getDeclaredMethod("getId"));
-        PropertyDeclaration iface = PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"));
+        PropertyDeclaration field = PropertyDeclaration.ofField(Parent.class.getDeclaredField("id"), Child.class);
+        PropertyDeclaration parent = PropertyDeclaration.ofGetter(Parent.class.getDeclaredMethod("getId"), Child.class);
+        PropertyDeclaration child = PropertyDeclaration.ofGetter(Child.class.getDeclaredMethod("getId"), Child.class);
+        PropertyDeclaration iface = PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"), Child.class);
 
         PropertySource source = PropertySource.of(List.of(iface, child, field, parent));
         assertEquals(List.of(field, iface, child, parent), source.getDeclarations());
@@ -156,8 +156,8 @@ public class PropertySourceTest {
 
     @Test
     public void unrelatedDeclaringTypesFirstGivenWins() throws Exception {
-        PropertyDeclaration a = PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"));
-        PropertyDeclaration b = PropertyDeclaration.ofGetter(Keyed.class.getDeclaredMethod("getId"));
+        PropertyDeclaration a = PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"), Both.class);
+        PropertyDeclaration b = PropertyDeclaration.ofGetter(Keyed.class.getDeclaredMethod("getId"), Both.class);
         assertEquals(a, PropertySource.of(List.of(a, b)).getPrimary());
         assertEquals(b, PropertySource.of(List.of(b, a)).getPrimary());
     }
@@ -176,13 +176,28 @@ public class PropertySourceTest {
     public void recordComponentMayBeJoinedByGettersAndStaysPrimary() throws Exception {
         PropertyDeclaration component = PropertyDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]);
         PropertyDeclaration own = PropertyDeclaration.ofGetter(Customer.class.getDeclaredMethod("getName"));
-        PropertyDeclaration iface = PropertyDeclaration.ofGetter(Named.class.getDeclaredMethod("getName"));
+        PropertyDeclaration iface = PropertyDeclaration.ofGetter(Named.class.getDeclaredMethod("getName"), Customer.class);
 
         PropertySource source = PropertySource.of(List.of(own, component, iface));
         assertEquals(List.of(component, own, iface), source.getDeclarations());
         assertEquals(component, source.getPrimary());
         assertEquals(Customer.class.getDeclaredMethod("name"), source.getMember());
         assertTrue(source.hasMultipleDeclarations());
+    }
+
+    @Test
+    public void declarationsMustShareTheOwner() throws Exception {
+        PropertyDeclaration parent = PropertyDeclaration.ofField(Parent.class.getDeclaredField("name"));
+        PropertyDeclaration child = PropertyDeclaration.ofField(Child.class.getDeclaredField("name"));
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> PropertySource.of(List.of(parent, child)));
+        assertTrue(e.getMessage().contains("different owners"));
+
+        // The field + getter convenience picks the more derived class as the owner.
+        PropertySource source = PropertySource.of(Parent.class.getDeclaredField("id"), Child.class.getDeclaredMethod("getId"));
+        assertEquals(Child.class, source.getPrimary().getOwner());
+        assertEquals(Child.class, source.getDeclarations().get(0).getOwner());
+        assertThrows(IllegalArgumentException.class,
+                () -> PropertySource.of(Bean.class.getDeclaredField("name"), Flags.class.getDeclaredMethod("getActive")));
     }
 
     @Test
@@ -209,7 +224,7 @@ public class PropertySourceTest {
         e = assertThrows(IllegalArgumentException.class, () -> PropertySource.of(List.of(
                 PropertyDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]),
                 PropertyDeclaration.ofRecordComponent(Other.class.getRecordComponents()[0]))));
-        assertTrue(e.getMessage().contains("two record components"));
+        assertTrue(e.getMessage().contains("different owners"));
     }
 
     @Test
@@ -256,6 +271,7 @@ public class PropertySourceTest {
     private interface Identified { Number getId(); }
     private interface Keyed { Object getId(); }
     private interface Named { String getName(); }
+    private abstract static class Both implements Identified, Keyed { }
 
     @SuppressWarnings("unused")
     private static class Parent implements Identified {

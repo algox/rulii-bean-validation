@@ -89,9 +89,11 @@ public class PropertyDiscoveryTest {
 
     @Test
     public void discoveryIsAVisitorUsableFromAnotherWalk() {
-        PropertyDiscovery discovery = new PropertyDiscovery();
+        PropertyDiscovery discovery = new PropertyDiscovery(Employee.class);
         assertEquals(List.of(), discovery.getSources());
 
+        assertEquals(Employee.class, discovery.getOwner());
+        assertThrows(IllegalArgumentException.class, () -> new PropertyDiscovery(null));
         TypeHierarchies.walk(Employee.class, discovery);
         assertEquals(PropertyDiscovery.discover(Employee.class), discovery.getSources());
         assertThrows(IllegalArgumentException.class, () -> discovery.visitField(null));
@@ -106,16 +108,16 @@ public class PropertyDiscoveryTest {
         Map<String, PropertySource> sources = byName(PropertyDiscovery.discover(Employee.class));
         PropertySource name = sources.get("name");
 
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("name")),
-                PropertyDeclaration.ofField(Employee.class.getDeclaredField("name"))), name.getDeclarations(Kind.FIELD));
+        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("name"), Employee.class),
+                PropertyDeclaration.ofField(Employee.class.getDeclaredField("name"), Employee.class)), name.getDeclarations(Kind.FIELD));
         assertTrue(name.getDeclarations().get(0).isAnnotationPresent(NotNull.class));
         assertTrue(name.getDeclarations().get(1).isAnnotationPresent(Size.class));
         // A getter exists for name, so it is primary; code has no getter and the subclass field wins.
         assertEquals(Person.class.getDeclaredMethod("getName"), name.getMember());
 
         PropertySource code = sources.get("code");
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("code")),
-                PropertyDeclaration.ofField(Employee.class.getDeclaredField("code"))), code.getDeclarations());
+        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("code"), Employee.class),
+                PropertyDeclaration.ofField(Employee.class.getDeclaredField("code"), Employee.class)), code.getDeclarations());
         assertEquals(Employee.class, code.getDeclaringClass());
         assertEquals(Kind.FIELD, code.getPrimary().getKind());
         assertTrue(code.hasMultipleDeclarations());
@@ -126,9 +128,9 @@ public class PropertyDiscoveryTest {
         Map<String, PropertySource> sources = byName(PropertyDiscovery.discover(Employee.class));
         PropertySource id = sources.get("id");
 
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("id")),
-                PropertyDeclaration.ofGetter(Person.class.getDeclaredMethod("getId")),
-                PropertyDeclaration.ofGetter(Employee.class.getDeclaredMethod("getId"))), id.getDeclarations());
+        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("id"), Employee.class),
+                PropertyDeclaration.ofGetter(Person.class.getDeclaredMethod("getId"), Employee.class),
+                PropertyDeclaration.ofGetter(Employee.class.getDeclaredMethod("getId"), Employee.class)), id.getDeclarations());
         assertEquals(Employee.class.getDeclaredMethod("getId"), id.getMember());
         assertEquals(Integer.class, id.getType());
     }

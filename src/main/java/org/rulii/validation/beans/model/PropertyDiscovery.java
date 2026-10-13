@@ -66,11 +66,29 @@ import java.util.Map;
  */
 public final class PropertyDiscovery implements TypeHierarchyVisitor {
 
+    private final Class<?> owner;
     private final Map<String, List<PropertyDeclaration>> fields = new LinkedHashMap<>();
     private final List<PropertyDeclaration> getters = new ArrayList<>();
 
-    public PropertyDiscovery() {
+    /**
+     * Discovery for the given bean class: the owner every declaration is read for, against which
+     * generic types declared on superclasses and interfaces are resolved.
+     *
+     * @param owner the bean class being loaded.
+     */
+    public PropertyDiscovery(Class<?> owner) {
         super();
+        Assert.notNull(owner, "owner cannot be null.");
+        this.owner = owner;
+    }
+
+    /**
+     * The bean class the declarations are read for.
+     *
+     * @return the owner.
+     */
+    public Class<?> getOwner() {
+        return owner;
     }
 
     /**
@@ -84,7 +102,7 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
      */
     public static List<PropertySource> discover(Class<?> beanClass) {
         Assert.notNull(beanClass, "beanClass cannot be null.");
-        PropertyDiscovery discovery = new PropertyDiscovery();
+        PropertyDiscovery discovery = new PropertyDiscovery(beanClass);
         TypeHierarchies.walk(beanClass, discovery);
         return discovery.getSources();
     }
@@ -92,7 +110,7 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
     @Override
     public void visitField(Field field) {
         Assert.notNull(field, "field cannot be null.");
-        add(fields, PropertyDeclaration.ofField(field));
+        add(fields, PropertyDeclaration.ofField(field, owner));
     }
 
     @Override
@@ -114,7 +132,7 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
         Assert.notNull(method, "method cannot be null.");
 
         if (PropertyDeclaration.isGetter(method)) {
-            getters.add(PropertyDeclaration.ofGetter(method));
+            getters.add(PropertyDeclaration.ofGetter(method, owner));
             return;
         }
 

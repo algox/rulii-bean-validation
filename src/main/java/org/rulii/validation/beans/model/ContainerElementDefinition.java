@@ -130,13 +130,15 @@ public final class ContainerElementDefinition implements Definition {
      * @param sourceDeclaration the property declaration.
      * @param descriptor the extractor unwrapping the property value.
      * @param annotatedType the annotated type argument the extractor serves; null when it serves
-     *                      the container value itself.
+     *                      the container value itself or the argument cannot be located.
+     * @param type the resolved type of the unwrapped value; null to fall back to the extractor's
+     *             extracted type.
      * @param constraints the property constraints that apply to the unwrapped value.
      * @return the node.
      */
     static ContainerElementDefinition unwrapped(PropertyDeclaration sourceDeclaration, ValueExtractorDescriptor descriptor,
-                                                AnnotatedType annotatedType, List<ConstraintDefinition> constraints) {
-        Type type = annotatedType != null ? annotatedType.getType() : descriptor.getExtractedType();
+                                                AnnotatedType annotatedType, Type type, List<ConstraintDefinition> constraints) {
+        if (type == null) type = descriptor.getExtractedType();
 
         return new ContainerElementDefinition(sourceDeclaration, descriptor.getContainerType(), descriptor.getTypeArgumentIndex(),
                 annotatedType, type, constraints, false, Collections.emptyList());
@@ -360,8 +362,9 @@ public final class ContainerElementDefinition implements Definition {
                 throw new NoValueExtractorException(sourceDeclaration.getMember(), containerType, typeArgumentIndex);
             }
 
-            return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, type, type.getType(),
-                    constraints, cascaded, Collections.unmodifiableList(children));
+            // The annotated tree carries the annotations as declared; the type is resolved against the owning class.
+            return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, type,
+                    sourceDeclaration.resolve(type.getType()), constraints, cascaded, Collections.unmodifiableList(children));
         }
 
         private List<ConstraintDefinition> constraints(AnnotatedType type) {

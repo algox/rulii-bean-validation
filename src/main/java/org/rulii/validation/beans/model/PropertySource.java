@@ -108,7 +108,8 @@ public final class PropertySource {
     public static PropertySource of(Field field, Method getter) {
         Assert.notNull(field, "field cannot be null.");
         Assert.notNull(getter, "getter cannot be null.");
-        return of(List.of(PropertyDeclaration.ofField(field), PropertyDeclaration.ofGetter(getter)));
+        Class<?> owner = mostDerived(field.getDeclaringClass(), getter.getDeclaringClass());
+        return of(List.of(PropertyDeclaration.ofField(field, owner), PropertyDeclaration.ofGetter(getter, owner)));
     }
 
     /**
@@ -129,6 +130,7 @@ public final class PropertySource {
         List<PropertyDeclaration> ordered = new ArrayList<>(declarations);
         ordered.sort(Comparator.comparingInt(d -> d.getKind() == PropertyDeclaration.Kind.GETTER ? 1 : 0));
         String name = ordered.get(0).getName();
+        Class<?> owner = ordered.get(0).getOwner();
         PropertyDeclaration component = null;
         PropertyDeclaration field = null;
         PropertyDeclaration getter = null;
@@ -137,6 +139,8 @@ public final class PropertySource {
             PropertyDeclaration declaration = ordered.get(i);
             Assert.isTrue(name.equals(declaration.getName()), "declarations describe different properties: ["
                     + name + "] and [" + declaration.getName() + "] (" + declaration.describe() + ").");
+            Assert.isTrue(owner == declaration.getOwner(), "declarations of property [" + name + "] have different owners: ["
+                    + owner.getName() + "] and [" + declaration.getOwner().getName() + "] (" + declaration.describe() + ").");
             Assert.isTrue(ordered.indexOf(declaration) == i, "property [" + name + "] has the same declaration twice; "
                     + declaration.describe());
 
@@ -156,6 +160,17 @@ public final class PropertySource {
 
         PropertyDeclaration primary = component != null ? component : getter != null ? getter : field;
         return new PropertySource(name, Collections.unmodifiableList(ordered), primary);
+    }
+
+    /**
+     * The more derived of two related classes: the owner of a property declared by a field of one and
+     * a getter of the other.
+     */
+    private static Class<?> mostDerived(Class<?> first, Class<?> second) {
+        if (first.isAssignableFrom(second)) return second;
+        Assert.isTrue(second.isAssignableFrom(first), "classes [" + first.getName() + "] and [" + second.getName()
+                + "] are unrelated; a field and a getter of one property must be declared in one class hierarchy.");
+        return first;
     }
 
     /**

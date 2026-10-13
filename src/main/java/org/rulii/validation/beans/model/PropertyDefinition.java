@@ -25,11 +25,13 @@ import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
+import org.rulii.validation.beans.util.reflect.TypeResolver;
 
 import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -284,24 +286,25 @@ public final class PropertyDefinition implements Definition {
         }
 
         AnnotatedType position = null;
-        if (unwrapper.getTypeArgumentIndex() != ValueExtractorDescriptor.CONTAINER
-                && annotatedType instanceof AnnotatedParameterizedType parameterized) {
-            AnnotatedType[] arguments = parameterized.getAnnotatedActualTypeArguments();
-            int index = positionIn(declaration.getType(), unwrapper);
+        Type elementType = null;
 
-            if (index >= 0 && index < arguments.length) position = arguments[index];
+        if (unwrapper.getTypeArgumentIndex() != ValueExtractorDescriptor.CONTAINER) {
+            // The extractor position is declared on its own container type; view the property type as that container.
+            Type container = TypeResolver.supertype(declaration.getGenericType(), unwrapper.getContainerType());
+
+            if (container instanceof ParameterizedType parameterized) {
+                elementType = parameterized.getActualTypeArguments()[unwrapper.getTypeArgumentIndex()];
+            }
+
+            if (annotatedType instanceof AnnotatedParameterizedType parameterized) {
+                AnnotatedType[] arguments = parameterized.getAnnotatedActualTypeArguments();
+                int index = TypeResolver.parameterIndex(declaration.getType(), unwrapper.getContainerType(), unwrapper.getTypeArgumentIndex());
+
+                if (index >= 0 && index < arguments.length) position = arguments[index];
+            }
         }
 
-        elements.add(ContainerElementDefinition.unwrapped(declaration, unwrapper, position, Collections.unmodifiableList(unwrapped)));
-    }
-
-    /**
-     * Maps the extractor's position, declared in terms of its own container type, onto the type
-     * arguments of the declared property class; -1 when the class has no matching parameter.
-     */
-    private static int positionIn(Class<?> propertyType, ValueExtractorDescriptor unwrapper) {
-        if (propertyType.equals(unwrapper.getContainerType())) return unwrapper.getTypeArgumentIndex();
-        return -1;
+        elements.add(ContainerElementDefinition.unwrapped(declaration, unwrapper, position, elementType, Collections.unmodifiableList(unwrapped)));
     }
 
     /**
