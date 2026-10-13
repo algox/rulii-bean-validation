@@ -32,6 +32,7 @@ import org.rulii.validation.beans.model.PropertyDeclaration;
 import org.rulii.validation.beans.model.PropertyDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDiscovery;
 import org.rulii.validation.beans.model.PropertySource;
+import org.rulii.validation.beans.util.reflect.TypeHierarchies;
 
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,18 @@ public class PropertyDiscoveryTest {
     @Test
     public void nullIsRejected() {
         assertThrows(IllegalArgumentException.class, () -> PropertyDiscovery.discover(null));
+    }
+
+    @Test
+    public void discoveryIsAVisitorUsableFromAnotherWalk() {
+        PropertyDiscovery discovery = new PropertyDiscovery();
+        assertEquals(List.of(), discovery.getSources());
+
+        TypeHierarchies.walk(Employee.class, discovery);
+        assertEquals(PropertyDiscovery.discover(Employee.class), discovery.getSources());
+        assertThrows(IllegalArgumentException.class, () -> discovery.visitField(null));
+        assertThrows(IllegalArgumentException.class, () -> discovery.visitMethod(null));
+        assertThrows(IllegalArgumentException.class, () -> discovery.visitRecordComponent(null));
     }
 
     // --- hierarchy ----------------------------------------------------------------------------

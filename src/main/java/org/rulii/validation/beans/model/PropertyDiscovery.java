@@ -47,6 +47,11 @@ import java.util.Map;
  * {@link PropertySource property sources}. Constraints on superclasses and interfaces are thereby
  * cumulative; static members are ignored at every level.
  *
+ * <p>This is a {@link TypeHierarchyVisitor}: walk a class with it through
+ * {@link TypeHierarchies#walk(Class, TypeHierarchyVisitor)} and read {@link #getSources()}, or use
+ * {@link #discover(Class)} when nothing else needs the same walk. Fields and record components are
+ * grouped as they are visited; getters are collected and joined to their property at the end.</p>
+ *
  * <p>Properties are returned in a deterministic order: properties declared by a field (or a record
  * component) in hierarchy order top-down and declaration order within a class, then getter-only
  * properties in the same order. Within a property the declarations follow the hierarchy top-down,
@@ -59,9 +64,12 @@ import java.util.Map;
  * @author Max Arulananthan
  * @since 1.0
  */
-public final class PropertyDiscovery {
+public final class PropertyDiscovery implements TypeHierarchyVisitor {
 
-    private PropertyDiscovery() {
+    private final Map<String, List<PropertyDeclaration>> fields = new LinkedHashMap<>();
+    private final List<PropertyDeclaration> getters = new ArrayList<>();
+
+    public PropertyDiscovery() {
         super();
     }
 
@@ -76,9 +84,68 @@ public final class PropertyDiscovery {
      */
     public static List<PropertySource> discover(Class<?> beanClass) {
         Assert.notNull(beanClass, "beanClass cannot be null.");
-        Collector collector = new Collector();
-        TypeHierarchies.walk(beanClass, collector);
-        return collector.sources();
+        PropertyDiscovery discovery = new PropertyDiscovery();
+        TypeHierarchies.walk(beanClass, discovery);
+        return discovery.getSources();
+    }
+
+    @Override
+    public void visitField(Field field) {
+        Assert.notNull(field, "field cannot be null.");
+        add(fields, PropertyDeclaration.ofField(field));
+    }
+
+    @Override
+    public void visitRecordComponent(RecordComponent component) {
+        Assert.notNull(component, "component cannot be null.");
+        add(fields, PropertyDeclaration.ofRecordComponent(component));
+    }
+
+    /**
+     * Collects the method as a getter, or fails fast if a method that is not a getter carries an
+     * annotation only a property may carry.
+     *
+     * @param method the method.
+     * @throws ConstraintOnNonGetterException if the method is not a getter and carries a constraint,
+     *         {@code @Valid} or {@code @ConvertGroup}, directly or within its return type.
+     */
+    @Override
+    public void visitMethod(Method method) {
+        Assert.notNull(method, "method cannot be null.");
+
+        if (PropertyDeclaration.isGetter(method)) {
+            getters.add(PropertyDeclaration.ofGetter(method));
+            return;
+        }
+
+        Annotation annotation = findPropertyAnnotation(method);
+        if (annotation != null) throw new ConstraintOnNonGetterException(method, annotation);
+    }
+
+    /**
+     * The properties discovered so far: field (or record component) properties first, then
+     * getter-only properties, each in hierarchy order.
+     *
+     * @return the property sources; empty before any walk.
+     */
+    public List<PropertySource> getSources() {
+        Map<String, List<PropertyDeclaration>> properties = new LinkedHashMap<>();
+
+        for (Map.Entry<String, List<PropertyDeclaration>> entry : fields.entrySet()) {
+            properties.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+
+        for (PropertyDeclaration getter : getters) {
+            add(properties, getter);
+        }
+
+        List<PropertySource> result = new ArrayList<>(properties.size());
+
+        for (List<PropertyDeclaration> declarations : properties.values()) {
+            result.add(PropertySource.of(declarations));
+        }
+
+        return List.copyOf(result);
     }
 
     /**
@@ -103,67 +170,12 @@ public final class PropertyDiscovery {
                 return annotation;
             }
         }
+
         return null;
     }
 
-    /**
-     * Groups the visited members by property name. Fields and record components are grouped as
-     * they are visited; getters are collected and joined to their property at the end, so that
-     * getter-only properties come after all field properties.
-     */
-    private static final class Collector implements TypeHierarchyVisitor {
-
-        private final Map<String, List<PropertyDeclaration>> fields = new LinkedHashMap<>();
-        private final List<PropertyDeclaration> getters = new ArrayList<>();
-
-        private Collector() {
-            super();
-        }
-
-        @Override
-        public void visitField(Field field) {
-            add(fields, PropertyDeclaration.ofField(field));
-        }
-
-        @Override
-        public void visitRecordComponent(RecordComponent component) {
-            add(fields, PropertyDeclaration.ofRecordComponent(component));
-        }
-
-        @Override
-        public void visitMethod(Method method) {
-            if (PropertyDeclaration.isGetter(method)) {
-                getters.add(PropertyDeclaration.ofGetter(method));
-                return;
-            }
-
-            Annotation annotation = findPropertyAnnotation(method);
-            if (annotation != null) throw new ConstraintOnNonGetterException(method, annotation);
-        }
-
-        private List<PropertySource> sources() {
-            Map<String, List<PropertyDeclaration>> properties = new LinkedHashMap<>();
-
-            for (Map.Entry<String, List<PropertyDeclaration>> entry : fields.entrySet()) {
-                properties.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-            }
-
-            for (PropertyDeclaration getter : getters) {
-                add(properties, getter);
-            }
-
-            List<PropertySource> result = new ArrayList<>(properties.size());
-
-            for (List<PropertyDeclaration> declarations : properties.values()) {
-                result.add(PropertySource.of(declarations));
-            }
-
-            return List.copyOf(result);
-        }
-
-        private static void add(Map<String, List<PropertyDeclaration>> target, PropertyDeclaration declaration) {
-            target.computeIfAbsent(declaration.getName(), name -> new ArrayList<>()).add(declaration);
-        }
+    private static void add(Map<String, List<PropertyDeclaration>> target, PropertyDeclaration declaration) {
+        target.computeIfAbsent(declaration.getName(), name -> new ArrayList<>()).add(declaration);
     }
 
     /**

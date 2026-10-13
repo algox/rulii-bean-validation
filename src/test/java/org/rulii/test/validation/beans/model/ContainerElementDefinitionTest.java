@@ -309,7 +309,7 @@ public class ContainerElementDefinitionTest {
         assertEquals(field("names"), element.getSourceDeclaration().getMember());
         assertEquals(Sample.class.getName(), element.getSource().getClassName());
         assertEquals("names", element.getSource().getFieldName());
-        assertEquals(field("names"), element.getConstraints().get(0).getSourceDeclaration().getMember());
+        assertEquals(field("names"), element.getConstraints().get(0).getConstraintSource().getElement());
         assertNotNull(element.getAnnotatedType());
         assertTrue(element.toString().contains("List<0>"));
     }

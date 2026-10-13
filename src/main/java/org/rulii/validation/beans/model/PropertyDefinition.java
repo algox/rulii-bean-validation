@@ -353,7 +353,7 @@ public final class PropertyDefinition implements Definition {
 
     /**
      * Constraints that apply to the property value itself, in declaration order (field constraints,
-     * then getter constraints); each knows its {@link ConstraintDefinition#getSourceDeclaration()
+     * then getter constraints); each knows its {@link ConstraintDefinition#getConstraintSource()
      * declaration}. Constraints declared on the property but applying to its unwrapped value appear
      * under {@link #getContainerElements()} instead.
      *

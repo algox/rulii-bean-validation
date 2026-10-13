@@ -45,6 +45,7 @@ import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
 import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.PropertyConstraintSource;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.PropertyDiscovery;
 import org.rulii.validation.beans.model.PropertySource;
@@ -313,7 +314,7 @@ public class PropertyDefinitionTest {
         assertEquals(Bean.class.getName(), property.getSource().getClassName());
         assertEquals("getEmail", property.getSource().getMethodName());
         assertEquals(List.of(NotBlank.class, Email.class), types(property.getConstraints()));
-        assertEquals(PropertyDeclaration.Kind.GETTER, property.getConstraints().get(0).getSourceDeclaration().getKind());
+        assertEquals(PropertyDeclaration.Kind.GETTER, ((PropertyConstraintSource) property.getConstraints().get(0).getConstraintSource()).getDeclaration().getKind());
         assertTrue(property.getContainerElements().isEmpty());
         assertFalse(property.isCascaded());
         assertTrue(property.toString().contains("getEmail()"));
@@ -386,8 +387,8 @@ public class PropertyDefinitionTest {
         assertEquals(String.class, property.getType());
 
         assertEquals(List.of(NotNull.class, Size.class), types(property.getConstraints()));
-        assertEquals(field, property.getConstraints().get(0).getSourceDeclaration().getMember());
-        assertEquals(getter, property.getConstraints().get(1).getSourceDeclaration().getMember());
+        assertEquals(field, property.getConstraints().get(0).getConstraintSource().getElement());
+        assertEquals(getter, property.getConstraints().get(1).getConstraintSource().getElement());
         assertTrue(property.getContainerElements().isEmpty());
         assertFalse(property.isCascaded());
     }
@@ -406,8 +407,8 @@ public class PropertyDefinitionTest {
         // Field position constraints first, then getter position constraints; node kept from the field.
         assertEquals(List.of(NotBlank.class, Size.class), types(element.getConstraints()));
         assertEquals(field, element.getSourceDeclaration().getMember());
-        assertEquals(field, element.getConstraints().get(0).getSourceDeclaration().getMember());
-        assertEquals(getter, element.getConstraints().get(1).getSourceDeclaration().getMember());
+        assertEquals(field, element.getConstraints().get(0).getConstraintSource().getElement());
+        assertEquals(getter, element.getConstraints().get(1).getConstraintSource().getElement());
         assertTrue(element.isCascaded());
         assertThrows(UnsupportedOperationException.class, () -> element.getConstraints().clear());
     }
@@ -525,9 +526,9 @@ public class PropertyDefinitionTest {
         // Parent.label, Child.label, then Parent.getLabel (none), Child.getLabel, Labelled.getLabel.
         assertEquals(List.of(NotNull.class, Size.class, Size.class, Email.class, NotBlank.class), types(property.getConstraints()));
         assertEquals(List.of(Parent.class, Parent.class, Child.class, Child.class, Labelled.class),
-                property.getConstraints().stream().<Class<?>>map(c -> c.getSourceDeclaration().getDeclaringClass()).toList());
-        assertEquals(PropertyDeclaration.Kind.FIELD, property.getConstraints().get(2).getSourceDeclaration().getKind());
-        assertEquals(PropertyDeclaration.Kind.GETTER, property.getConstraints().get(3).getSourceDeclaration().getKind());
+                property.getConstraints().stream().<Class<?>>map(c -> c.getConstraintSource().getDeclaringClass()).toList());
+        assertEquals(PropertyDeclaration.Kind.FIELD, ((PropertyConstraintSource) property.getConstraints().get(2).getConstraintSource()).getDeclaration().getKind());
+        assertEquals(PropertyDeclaration.Kind.GETTER, ((PropertyConstraintSource) property.getConstraints().get(3).getConstraintSource()).getDeclaration().getKind());
         assertFalse(property.isCascaded());
     }
 
@@ -541,7 +542,7 @@ public class PropertyDefinitionTest {
         // Parent.scores type use, Child.getScores type use, Labelled.getScores type use.
         assertEquals(List.of(Positive.class, Min.class, Positive.class), types(element.getConstraints()));
         assertEquals(List.of(Parent.class, Child.class, Labelled.class),
-                element.getConstraints().stream().<Class<?>>map(c -> c.getSourceDeclaration().getDeclaringClass()).toList());
+                element.getConstraints().stream().<Class<?>>map(c -> c.getConstraintSource().getDeclaringClass()).toList());
     }
 
     private static PropertySource discovered(Class<?> beanClass, String name) {

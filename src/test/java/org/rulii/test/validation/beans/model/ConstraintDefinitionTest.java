@@ -69,7 +69,7 @@ public class ConstraintDefinitionTest {
         assertEquals(NotBlank.class, definition.getAnnotationType());
         assertEquals("NotBlank", definition.getName());
         assertNull(definition.getDescription());
-        assertEquals(field("name"), definition.getSourceDeclaration().getMember());
+        assertEquals(field("name"), definition.getConstraintSource().getElement());
     }
 
     @Test
@@ -226,11 +226,11 @@ public class ConstraintDefinitionTest {
     @Test
     public void nullArgumentsAreRejected() throws Exception {
         Field field = field("name");
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null, field.getAnnotation(NotBlank.class)));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null, field.getAnnotation(NotBlank.class)));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (Annotation) null));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (AnnotatedElement) null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(null, field.getAnnotatedType()));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null, field.getAnnotatedType()));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.isConstraint(null));
     }
 
