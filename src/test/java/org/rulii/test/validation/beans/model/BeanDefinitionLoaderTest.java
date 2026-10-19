@@ -74,7 +74,7 @@ public class BeanDefinitionLoaderTest {
         assertEquals(Address.class, first.getBeanClass());
 
         assertNotSame(first, loader().load(Address.class));
-        assertNotNull(loader.getRegistry());
+        assertNotNull(loader.getValueExtractorRegistry());
     }
 
     @Test

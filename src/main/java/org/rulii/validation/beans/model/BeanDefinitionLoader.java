@@ -21,6 +21,7 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
+import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.util.reflect.Types;
 
 import java.lang.reflect.ParameterizedType;
@@ -46,6 +47,11 @@ import java.util.concurrent.ConcurrentMap;
  * the root. Container types (anything a value extractor serves), {@code Object} and primitives are
  * never loaded as beans; runtime subtypes are loaded lazily when first encountered.</p>
  *
+ * <p><b>Constraint support.</b> Once a definition is read, every constraint in it is checked against
+ * the {@link ConstraintMapperRegistry constraint mappers}: an unmapped constraint that is not a pure
+ * composition, or a constraint declared on a type it cannot apply to, fails the load (see
+ * {@code ConstraintSupportCheck}). The failure poisons the class like any other read-time error.</p>
+ *
  * <p><b>Poisoned entries.</b> A class whose load fails is cached with its failure, together with
  * every class on the path from the requested root to it, and later requests for any of them rethrow
  * the same exception instance immediately, without rescanning. Classes resolved before the failure
@@ -61,13 +67,31 @@ import java.util.concurrent.ConcurrentMap;
  */
 public final class BeanDefinitionLoader {
 
-    private final ValueExtractorRegistry registry;
+    private final ValueExtractorRegistry extractorRegistry;
+    private final ConstraintMapperRegistry mapperRegistry;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
-    public BeanDefinitionLoader(ValueExtractorRegistry registry) {
+    /**
+     * Creates a loader using the given value extractors and the standard constraint mappers.
+     *
+     * @param extractorRegistry the value extractors available at validation time.
+     */
+    public BeanDefinitionLoader(ValueExtractorRegistry extractorRegistry) {
+        this(extractorRegistry, ConstraintMapperRegistry.builder().build());
+    }
+
+    /**
+     * Creates a loader.
+     *
+     * @param extractorRegistry the value extractors available at validation time.
+     * @param mapperRegistry the constraint mappers available at validation time.
+     */
+    public BeanDefinitionLoader(ValueExtractorRegistry extractorRegistry, ConstraintMapperRegistry mapperRegistry) {
         super();
-        Assert.notNull(registry, "registry cannot be null.");
-        this.registry = registry;
+        Assert.notNull(extractorRegistry, "extractorRegistry cannot be null.");
+        Assert.notNull(mapperRegistry, "mapperRegistry cannot be null.");
+        this.extractorRegistry = extractorRegistry;
+        this.mapperRegistry = mapperRegistry;
     }
 
     /**
@@ -75,8 +99,17 @@ public final class BeanDefinitionLoader {
      *
      * @return the registry.
      */
-    public ValueExtractorRegistry getRegistry() {
-        return registry;
+    public ValueExtractorRegistry getValueExtractorRegistry() {
+        return extractorRegistry;
+    }
+
+    /**
+     * The constraint mappers the definitions are checked against.
+     *
+     * @return the registry.
+     */
+    public ConstraintMapperRegistry getConstraintMapperRegistry() {
+        return mapperRegistry;
     }
 
     /**
@@ -157,7 +190,8 @@ public final class BeanDefinitionLoader {
         if (resolution.resolved.containsKey(type) || !resolution.inProgress.add(type)) return;
 
         try {
-            BeanDefinition definition = BeanDefinition.load(type, registry);
+            BeanDefinition definition = BeanDefinition.load(type, extractorRegistry);
+            ConstraintSupportCheck.check(definition, mapperRegistry);
 
             for (Class<?> target : cascadeTargets(definition)) {
                 resolve(target, resolution);
@@ -206,11 +240,11 @@ public final class BeanDefinitionLoader {
 
         if (raw.isArray()) {
             // Arrays are not a built-in container (R7.2): only a registered array extractor makes the elements reachable.
-            if (!registry.find(raw).isEmpty()) addTargets(Types.componentType(type), result);
+            if (!extractorRegistry.find(raw).isEmpty()) addTargets(Types.componentType(type), result);
             return;
         }
 
-        if (registry.find(raw).isEmpty()) {
+        if (extractorRegistry.find(raw).isEmpty()) {
             result.add(raw);
             return;
         }
@@ -231,7 +265,7 @@ public final class BeanDefinitionLoader {
         int chosen = -1;
 
         for (int i = 0; i < arguments.length; i++) {
-            ValueExtractorDescriptor descriptor = registry.find(raw, i);
+            ValueExtractorDescriptor descriptor = extractorRegistry.find(raw, i);
             if (descriptor == null) continue;
 
             if (Map.class.isAssignableFrom(raw)) {

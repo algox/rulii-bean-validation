@@ -18,7 +18,9 @@
 package org.rulii.validation.beans.model;
 
 import jakarta.validation.Constraint;
+import jakarta.validation.OverridesAttribute;
 import jakarta.validation.Payload;
+import jakarta.validation.ReportAsSingleViolation;
 import org.rulii.lib.spring.core.annotation.AnnotationAttributes;
 import org.rulii.lib.spring.core.annotation.AnnotationUtils;
 import org.rulii.lib.spring.util.Assert;
@@ -31,10 +33,14 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -47,6 +53,24 @@ import java.util.Objects;
  * constraint must declare ({@code message}, {@code groups}, {@code payload}) are read off it
  * once at load time and exposed through getters.</p>
  *
+ * <p><b>Composition.</b> A constraint whose annotation type is itself annotated with constraints is a
+ * composed constraint; those constraints are its {@link #getComposingConstraints() composing
+ * constraints}, read recursively through the same path (direct annotations and repeatable containers,
+ * in declaration order). Per the specification, a composing constraint inherits the {@code groups}
+ * and {@code payload} of the composed constraint it belongs to and keeps its own {@code message}.
+ * {@link OverridesAttribute @OverridesAttribute} declarations on the composed constraint are applied
+ * when it is read: the annotation exposed by a composing definition is <em>synthesized</em> with the
+ * effective attribute values (overrides applied, groups and payload inherited), so downstream code
+ * reads attributes directly off {@link #getAnnotation()} and never sees the declared values. The
+ * {@code constraintIndex} of an override follows Hibernate Validator: a directly declared composing
+ * constraint has index {@code -1} (the default, "the single declaration"), the constraints of a
+ * repeatable container are indexed {@code 0..n-1}; an override only applies to the exact index.
+ * {@link ReportAsSingleViolation @ReportAsSingleViolation} is recorded as a flag.</p>
+ *
+ * <p>Read-time failures: an override targeting an attribute the composing constraint does not
+ * declare, or whose type differs ({@link InvalidAttributeOverrideException}); a constraint that is
+ * composed of itself at any depth ({@link ConstraintCompositionCycleException}).</p>
+ *
  * <p>{@link #load(PropertyDeclaration)} inspects only the declaration annotations of a property;
  * annotations on its type arguments (container elements) are read per position through
  * {@link #load(PropertyDeclaration, AnnotatedElement)}; {@link #load(Class)} reads the class-level
@@ -58,21 +82,28 @@ import java.util.Objects;
  */
 public final class ConstraintDefinition implements Definition {
 
+    private static final int DIRECT_CONSTRAINT_INDEX = -1;
+
     private final ConstraintSource constraintSource;
     private final Annotation annotation;
     private final String message;
     private final List<Class<?>> groups;
     private final List<Class<? extends Payload>> payload;
+    private final List<ConstraintDefinition> composingConstraints;
+    private final boolean reportAsSingleViolation;
     private final SourceDefinition source;
 
     private ConstraintDefinition(ConstraintSource constraintSource, Annotation annotation, String message,
-                                 List<Class<?>> groups, List<Class<? extends Payload>> payload) {
+                                 List<Class<?>> groups, List<Class<? extends Payload>> payload,
+                                 List<ConstraintDefinition> composingConstraints, boolean reportAsSingleViolation) {
         super();
         this.constraintSource = constraintSource;
         this.annotation = annotation;
         this.message = message;
         this.groups = groups;
         this.payload = payload;
+        this.composingConstraints = composingConstraints;
+        this.reportAsSingleViolation = reportAsSingleViolation;
         this.source = constraintSource.getSourceDefinition();
     }
 
@@ -140,6 +171,9 @@ public final class ConstraintDefinition implements Definition {
      * @return the constraint definition.
      * @throws IllegalArgumentException if the annotation is not a constraint or does not
      *         declare the mandatory {@code message}, {@code groups} and {@code payload} attributes.
+     * @throws InvalidAttributeOverrideException if an {@code @OverridesAttribute} of the constraint
+     *         (or of a composing constraint) cannot be applied.
+     * @throws ConstraintCompositionCycleException if the constraint is composed of itself.
      */
     public static ConstraintDefinition load(PropertyDeclaration sourceDeclaration, Annotation annotation) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
@@ -147,29 +181,150 @@ public final class ConstraintDefinition implements Definition {
     }
 
     /**
-     * Loads the definition of one constraint annotation declared at the given source.
+     * Loads the definition of one constraint annotation declared at the given source, including its
+     * composing constraints.
      *
      * @param constraintSource where the constraint is declared.
      * @param annotation the constraint annotation.
      * @return the constraint definition.
      * @throws IllegalArgumentException if the annotation is not a constraint or does not
      *         declare the mandatory {@code message}, {@code groups} and {@code payload} attributes.
+     * @throws InvalidAttributeOverrideException if an {@code @OverridesAttribute} of the constraint
+     *         (or of a composing constraint) cannot be applied.
+     * @throws ConstraintCompositionCycleException if the constraint is composed of itself.
      */
-    @SuppressWarnings("unchecked")
     public static ConstraintDefinition load(ConstraintSource constraintSource, Annotation annotation) {
         Assert.notNull(constraintSource, "constraintSource cannot be null.");
         Assert.notNull(annotation, "annotation cannot be null.");
         Assert.isTrue(isConstraint(annotation), "annotation [" + annotation.annotationType().getName()
                 + "] is not a constraint; it must be meta-annotated with @" + Constraint.class.getName());
+        return create(constraintSource, annotation, constraintSource.getElement(), new ArrayDeque<>());
+    }
 
-        AnnotationAttributes attributes = AnnotationUtils.getAnnotationAttributes(constraintSource.getElement(), annotation);
+    /**
+     * Creates the definition of a constraint and, recursively, of its composing constraints.
+     *
+     * @param constraintSource where the outermost constraint is declared (shared by the whole tree).
+     * @param annotation the constraint annotation (original for the outermost, synthesized for
+     *                   composing constraints).
+     * @param element the element the annotation is declared on: the source element for the outermost
+     *                constraint, the composed annotation type for a composing constraint.
+     * @param path the annotation types on the composition path above this constraint (cycle guard).
+     */
+    @SuppressWarnings("unchecked")
+    private static ConstraintDefinition create(ConstraintSource constraintSource, Annotation annotation,
+                                               AnnotatedElement element, Deque<Class<? extends Annotation>> path) {
+        Class<? extends Annotation> type = annotation.annotationType();
+
+        if (path.contains(type)) {
+            throw new ConstraintCompositionCycleException(constraintSource, new ArrayList<>(path), type);
+        }
+
+        AnnotationAttributes attributes = AnnotationUtils.getAnnotationAttributes(element, annotation);
         String message = (String) attribute(annotation, attributes, "message", String.class);
         Class<?>[] groups = (Class<?>[]) attribute(annotation, attributes, "groups", Class[].class);
         Class<? extends Payload>[] payload = (Class<? extends Payload>[]) attribute(annotation, attributes, "payload", Class[].class);
 
+        List<ConstraintDefinition> composingConstraints;
+        path.addLast(type);
+
+        try {
+            composingConstraints = loadComposing(constraintSource, annotation, attributes, groups, payload, path);
+        } finally {
+            path.removeLast();
+        }
+
         return new ConstraintDefinition(constraintSource, annotation, message,
                 Collections.unmodifiableList(Arrays.asList(groups)),
-                Collections.unmodifiableList(Arrays.asList(payload)));
+                Collections.unmodifiableList(Arrays.asList(payload)),
+                composingConstraints,
+                type.isAnnotationPresent(ReportAsSingleViolation.class));
+    }
+
+    /**
+     * Loads the composing constraints of the given (host) constraint: the constraint annotations on
+     * its annotation type, each synthesized with the effective attribute values.
+     */
+    private static List<ConstraintDefinition> loadComposing(ConstraintSource constraintSource, Annotation host,
+                                                            AnnotationAttributes hostAttributes, Class<?>[] groups,
+                                                            Class<? extends Payload>[] payload,
+                                                            Deque<Class<? extends Annotation>> path) {
+        Class<? extends Annotation> hostType = host.annotationType();
+        List<AttributeOverride> overrides = overrides(hostType);
+        List<ConstraintDefinition> result = new ArrayList<>();
+
+        for (Annotation declared : hostType.getDeclaredAnnotations()) {
+            if (isConstraint(declared)) {
+                Annotation effective = compose(hostType, hostAttributes, overrides, declared, DIRECT_CONSTRAINT_INDEX, groups, payload);
+                result.add(create(constraintSource, effective, hostType, path));
+            } else if (isConstraintContainer(declared)) {
+                Annotation[] repeated = repeatedConstraints(declared);
+                for (int index = 0; index < repeated.length; index++) {
+                    Annotation effective = compose(hostType, hostAttributes, overrides, repeated[index], index, groups, payload);
+                    result.add(create(constraintSource, effective, hostType, path));
+                }
+            }
+        }
+
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * Synthesizes a composing constraint with its effective attributes: the declared values, the
+     * matching {@code @OverridesAttribute} values of the host applied on top, and the groups and
+     * payload of the host.
+     */
+    private static Annotation compose(Class<? extends Annotation> hostType, AnnotationAttributes hostAttributes,
+                                      List<AttributeOverride> overrides, Annotation composing, int index,
+                                      Class<?>[] groups, Class<? extends Payload>[] payload) {
+        Class<? extends Annotation> composingType = composing.annotationType();
+        Map<String, Object> effective = new LinkedHashMap<>(AnnotationUtils.getAnnotationAttributes(hostType, composing));
+
+        for (AttributeOverride override : overrides) {
+            if (!override.appliesTo(composingType, index)) continue;
+            String targetName = override.getTargetAttributeName();
+            Method target = ReflectionUtils.findMethod(composingType, targetName);
+
+            if (target == null) {
+                throw new InvalidAttributeOverrideException(hostType, override.getHostAttribute().getName(), composingType,
+                        targetName, "the composing constraint does not declare that attribute.");
+            }
+
+            if (!target.getReturnType().equals(override.getHostAttribute().getReturnType())) {
+                throw new InvalidAttributeOverrideException(hostType, override.getHostAttribute().getName(), composingType,
+                        targetName, "attribute types differ ([" + override.getHostAttribute().getReturnType().getName()
+                        + "] vs [" + target.getReturnType().getName() + "]).");
+            }
+
+            effective.put(targetName, hostAttributes.get(override.getHostAttribute().getName()));
+        }
+
+        effective.put("groups", groups);
+        effective.put("payload", payload);
+
+        return AnnotationUtils.synthesizeAnnotation(effective, composingType, hostType);
+    }
+
+    /**
+     * Collects the {@code @OverridesAttribute} declarations (direct and in {@code @OverridesAttribute.List})
+     * of the attributes of a composed constraint.
+     */
+    private static List<AttributeOverride> overrides(Class<? extends Annotation> hostType) {
+        List<AttributeOverride> result = new ArrayList<>();
+
+        for (Method attribute : hostType.getDeclaredMethods()) {
+            OverridesAttribute single = attribute.getAnnotation(OverridesAttribute.class);
+            if (single != null) result.add(new AttributeOverride(attribute, single));
+
+            OverridesAttribute.List list = attribute.getAnnotation(OverridesAttribute.List.class);
+            if (list != null) {
+                for (OverridesAttribute override : list.value()) {
+                    result.add(new AttributeOverride(attribute, override));
+                }
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -253,7 +408,8 @@ public final class ConstraintDefinition implements Definition {
 
     /**
      * Where this constraint is declared: the property declaration it is declared on (or whose type
-     * declares the position it is declared at), or the class for a class-level constraint.
+     * declares the position it is declared at), or the class for a class-level constraint. Composing
+     * constraints share the source of the constraint they compose.
      *
      * @return the constraint source.
      */
@@ -261,6 +417,13 @@ public final class ConstraintDefinition implements Definition {
         return constraintSource;
     }
 
+    /**
+     * The constraint annotation: the original instance for a declared constraint; for a composing
+     * constraint, an annotation synthesized with the effective attribute values (overrides applied,
+     * groups and payload inherited from the composed constraint).
+     *
+     * @return the annotation.
+     */
     public Annotation getAnnotation() {
         return annotation;
     }
@@ -279,6 +442,35 @@ public final class ConstraintDefinition implements Definition {
 
     public List<Class<? extends Payload>> getPayload() {
         return payload;
+    }
+
+    /**
+     * The constraints this constraint is composed of, in declaration order on its annotation type;
+     * empty for a non-composed constraint.
+     *
+     * @return the composing constraint definitions.
+     */
+    public List<ConstraintDefinition> getComposingConstraints() {
+        return composingConstraints;
+    }
+
+    /**
+     * Whether this is a composed constraint (its annotation type is annotated with constraints).
+     *
+     * @return true if there are composing constraints.
+     */
+    public boolean isComposed() {
+        return !composingConstraints.isEmpty();
+    }
+
+    /**
+     * Whether the annotation type is marked {@link ReportAsSingleViolation @ReportAsSingleViolation}:
+     * the composing constraints report a single violation carrying this constraint's message.
+     *
+     * @return true if marked.
+     */
+    public boolean isReportAsSingleViolation() {
+        return reportAsSingleViolation;
     }
 
     @Override
@@ -302,6 +494,39 @@ public final class ConstraintDefinition implements Definition {
                 ", message='" + message + '\'' +
                 ", groups=" + groups +
                 ", payload=" + payload +
+                (composingConstraints.isEmpty() ? "" : ", composing=" + composingConstraints.size()
+                        + ", reportAsSingleViolation=" + reportAsSingleViolation) +
                 '}';
+    }
+
+    /**
+     * One {@code @OverridesAttribute} declaration together with the host attribute carrying it.
+     */
+    private static final class AttributeOverride {
+
+        private final Method hostAttribute;
+        private final OverridesAttribute override;
+
+        private AttributeOverride(Method hostAttribute, OverridesAttribute override) {
+            super();
+            this.hostAttribute = hostAttribute;
+            this.override = override;
+        }
+
+        private boolean appliesTo(Class<? extends Annotation> composingType, int index) {
+            return override.constraint().equals(composingType) && override.constraintIndex() == index;
+        }
+
+        /**
+         * The attribute targeted on the composing constraint: {@code name()} if given, else the
+         * name of the host attribute (an empty {@code name()} means "same name").
+         */
+        private String getTargetAttributeName() {
+            return override.name().isEmpty() ? hostAttribute.getName() : override.name();
+        }
+
+        private Method getHostAttribute() {
+            return hostAttribute;
+        }
     }
 }

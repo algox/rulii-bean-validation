@@ -53,6 +53,7 @@ public final class BeanDefinition implements Definition {
     private final boolean constrained;
     private final boolean cascading;
 
+    
     private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints) {
         super();
         this.beanClass = beanClass;
