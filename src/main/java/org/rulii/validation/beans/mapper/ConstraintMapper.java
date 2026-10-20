@@ -19,22 +19,26 @@ package org.rulii.validation.beans.mapper;
 
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.lib.spring.util.ClassUtils;
+import org.rulii.rule.Rule;
 
 import java.lang.annotation.Annotation;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Maps one constraint annotation type to rulii rules. This is the extension point for custom
- * constraints: rulii bean validation never executes {@code jakarta.validation.ConstraintValidator}
- * implementations; a constraint is supported when a mapper is registered for its annotation type
- * (the standard {@code jakarta.validation.constraints} are registered through the same mechanism,
- * see {@link ConstraintMapperRegistry#builder()}).
+ * Maps a constraint annotation type to rulii rules. The 22 standard constraints are mapped through
+ * this same interface ({@link StandardConstraintMappers}); a custom constraint registers its mapper
+ * with the {@link ConstraintMapperRegistry}.
  *
- * <p>At metadata-read time a mapper answers which value types the constraint may be declared on
- * ({@link #getSupportedTypes()}, {@link #isApplicable(Class)}), so a misplaced constraint fails when
- * the bean class is read rather than when a value is validated. A mapper backed by a core
- * {@code ValueValidationRule} returns that rule's {@code SUPPORTED_TYPES}; it does not restate them.
- * Materialization into rules is added by the runtime half of the library.</p>
+ * <p>Two responsibilities: declaring the value types the constraint applies to, checked when the
+ * bean class is read so a misplaced constraint fails fast; and materializing the rules for one
+ * occurrence of the constraint. {@link #map} receives the annotation, to read the constraint's own
+ * attributes from, and a {@link ConstraintTarget} carrying everything else: the value function, the
+ * reporting names and the common configuration (error code, severity, message, null handling).
+ * A mapper threads the target through {@link ConstraintTarget#configure} rather than deciding policy
+ * itself. Rules built by other means are accepted as long as they read the target's value and their
+ * names are unique within the bean class.</p>
  *
  * @param <A> the constraint annotation type.
  * @author Max Arulananthan
@@ -58,6 +62,26 @@ public interface ConstraintMapper<A extends Annotation> {
      * @return the supported types; never null.
      */
     List<Class<?>> getSupportedTypes();
+
+    /**
+     * Materializes the rules for one occurrence of the constraint.
+     *
+     * @param annotation the constraint annotation, to read attributes from.
+     * @param target the value, reporting names and common configuration prepared for this occurrence.
+     * @return the rules, in execution order; at least one.
+     */
+    List<Rule> map(A annotation, ConstraintTarget target);
+
+    /**
+     * For constraint attributes the produced rules report under a different parameter name, the
+     * attribute name to parameter name mapping, so that a message template written with the
+     * attribute name ({@code {regexp}}) interpolates the rule's parameter ({@code pattern}).
+     *
+     * @return the mapping; empty when attribute and parameter names coincide.
+     */
+    default Map<String, String> getParameterNames() {
+        return Collections.emptyMap();
+    }
 
     /**
      * Determines whether the constraint may be declared on a value of the given static type.

@@ -28,6 +28,10 @@ import org.rulii.lib.spring.util.ReflectionUtils;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
 import org.rulii.model.UnrulyException;
+import org.rulii.validation.Severity;
+import org.rulii.validation.beans.payload.Fatal;
+import org.rulii.validation.beans.payload.Info;
+import org.rulii.validation.beans.payload.Warning;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
@@ -89,14 +93,16 @@ public final class ConstraintDefinition implements Definition {
     private final String message;
     private final List<Class<?>> groups;
     private final List<Class<? extends Payload>> payload;
+    private final Severity severity;
     private final List<ConstraintDefinition> composingConstraints;
     private final boolean reportAsSingleViolation;
     private final SourceDefinition source;
 
     private ConstraintDefinition(ConstraintSource constraintSource, Annotation annotation, String message,
-                                 List<Class<?>> groups, List<Class<? extends Payload>> payload,
+                                 List<Class<?>> groups, List<Class<? extends Payload>> payload, Severity severity,
                                  List<ConstraintDefinition> composingConstraints, boolean reportAsSingleViolation) {
         super();
+        this.severity = severity;
         this.constraintSource = constraintSource;
         this.annotation = annotation;
         this.message = message;
@@ -224,6 +230,8 @@ public final class ConstraintDefinition implements Definition {
         String message = (String) attribute(annotation, attributes, "message", String.class);
         Class<?>[] groups = (Class<?>[]) attribute(annotation, attributes, "groups", Class[].class);
         Class<? extends Payload>[] payload = (Class<? extends Payload>[]) attribute(annotation, attributes, "payload", Class[].class);
+        // Before the composing constraints, which inherit the payload: the host fails, once.
+        Severity severity = severity(constraintSource, type, payload);
 
         List<ConstraintDefinition> composingConstraints;
         path.addLast(type);
@@ -236,9 +244,36 @@ public final class ConstraintDefinition implements Definition {
 
         return new ConstraintDefinition(constraintSource, annotation, message,
                 Collections.unmodifiableList(Arrays.asList(groups)),
-                Collections.unmodifiableList(Arrays.asList(payload)),
+                Collections.unmodifiableList(Arrays.asList(payload)), severity,
                 composingConstraints,
                 type.isAnnotationPresent(ReportAsSingleViolation.class));
+    }
+
+    /**
+     * Severity from the payload: the one severity marker among the payload classes, {@code ERROR}
+     * when there is none. Other payload classes are vendor metadata by specification and ignored.
+     *
+     * @throws ConflictingSeverityException if more than one marker is present.
+     */
+    private static Severity severity(ConstraintSource constraintSource, Class<? extends Annotation> type,
+                                     Class<? extends Payload>[] payload) {
+        Severity result = Severity.ERROR;
+        List<Class<?>> markers = new ArrayList<>(1);
+
+        for (Class<? extends Payload> payloadClass : payload) {
+            Severity marker = payloadClass == Fatal.class ? Severity.FATAL
+                    : payloadClass == Warning.class ? Severity.WARNING
+                    : payloadClass == Info.class ? Severity.INFO
+                    : null;
+
+            if (marker == null) continue;
+            markers.add(payloadClass);
+            result = marker;
+        }
+
+        if (markers.size() > 1) throw new ConflictingSeverityException(constraintSource, type, markers);
+
+        return result;
     }
 
     /**
@@ -442,6 +477,17 @@ public final class ConstraintDefinition implements Definition {
 
     public List<Class<? extends Payload>> getPayload() {
         return payload;
+    }
+
+    /**
+     * Severity of the violations this constraint reports: the severity marker in its payload
+     * ({@code Fatal}, {@code Warning}, {@code Info}), or {@code ERROR} when there is none. Composing
+     * constraints inherit the payload of their host, and with it the severity.
+     *
+     * @return the severity; never null.
+     */
+    public Severity getSeverity() {
+        return severity;
     }
 
     /**

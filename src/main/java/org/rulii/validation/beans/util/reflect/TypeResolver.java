@@ -302,7 +302,9 @@ public final class TypeResolver {
         @Override
         public String toString() {
             StringJoiner joiner = new StringJoiner(", ", raw.getName() + "<", ">");
-            for (Type argument : arguments) joiner.add(argument.getTypeName());
+            for (Type argument : arguments) {
+                joiner.add(argument.getTypeName());
+            }
             return joiner.toString();
         }
     }

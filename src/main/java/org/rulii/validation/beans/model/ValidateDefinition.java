@@ -20,7 +20,7 @@ package org.rulii.validation.beans.model;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
-import org.rulii.validation.beans.annotation.Validate;
+import org.rulii.validation.beans.Validate;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;

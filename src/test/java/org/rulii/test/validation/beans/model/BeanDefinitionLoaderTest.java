@@ -211,10 +211,14 @@ public class BeanDefinitionLoaderTest {
         try {
             List<Future<BeanDefinition>> futures = new ArrayList<>();
             Callable<BeanDefinition> task = () -> loader.load(Order.class);
-            for (int i = 0; i < 16; i++) futures.add(executor.submit(task));
+            for (int i = 0; i < 16; i++) {
+                futures.add(executor.submit(task));
+            }
 
             BeanDefinition expected = loader.load(Order.class);
-            for (Future<BeanDefinition> future : futures) assertSame(expected, future.get());
+            for (Future<BeanDefinition> future : futures) {
+                assertSame(expected, future.get());
+            }
         } finally {
             executor.shutdownNow();
         }

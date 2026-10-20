@@ -18,14 +18,22 @@
 package org.rulii.validation.beans.mapper;
 
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.rule.Rule;
 
 import java.lang.annotation.Annotation;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
 
 /**
- * A {@link ConstraintMapper} defined by its values rather than by a class: the constraint annotation
- * type and the supported value types (typically the {@code SUPPORTED_TYPES} of the core rule the
- * constraint materializes to). The standard mappers are built this way, and so can a custom one.
+ * A mapper defined by its values: the annotation type, the supported types, the materializing
+ * function and, optionally, the attribute-to-parameter name mapping. The standard mappers are
+ * instances of this class; a custom constraint backed by a plain rule can be registered the same
+ * way:
+ * <pre>{@code
+ * new SimpleConstraintMapper<>(Iban.class, List.of(CharSequence.class),
+ *         (iban, target) -> List.of(target.configure(IbanValidationRule.builder(target.value())).build()))
+ * }</pre>
  *
  * @param <A> the constraint annotation type.
  * @author Max Arulananthan
@@ -35,19 +43,40 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
 
     private final Class<A> annotationType;
     private final List<Class<?>> supportedTypes;
+    private final BiFunction<A, ConstraintTarget, List<Rule>> materializer;
+    private final Map<String, String> parameterNames;
 
     /**
      * Creates the mapper.
      *
      * @param annotationType the constraint annotation type.
      * @param supportedTypes the supported value types; empty for no restriction.
+     * @param materializer produces the rules for one occurrence.
      */
-    public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes) {
+    public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes,
+                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer) {
+        this(annotationType, supportedTypes, materializer, Map.of());
+    }
+
+    /**
+     * Creates the mapper.
+     *
+     * @param annotationType the constraint annotation type.
+     * @param supportedTypes the supported value types; empty for no restriction.
+     * @param materializer produces the rules for one occurrence.
+     * @param parameterNames attribute name to rule parameter name, where they differ.
+     */
+    public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes,
+                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer, Map<String, String> parameterNames) {
         super();
         Assert.notNull(annotationType, "annotationType cannot be null.");
         Assert.notNull(supportedTypes, "supportedTypes cannot be null.");
+        Assert.notNull(materializer, "materializer cannot be null.");
+        Assert.notNull(parameterNames, "parameterNames cannot be null.");
         this.annotationType = annotationType;
         this.supportedTypes = List.copyOf(supportedTypes);
+        this.materializer = materializer;
+        this.parameterNames = Map.copyOf(parameterNames);
     }
 
     @Override
@@ -58,6 +87,18 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
     @Override
     public List<Class<?>> getSupportedTypes() {
         return supportedTypes;
+    }
+
+    @Override
+    public List<Rule> map(A annotation, ConstraintTarget target) {
+        Assert.notNull(annotation, "annotation cannot be null.");
+        Assert.notNull(target, "target cannot be null.");
+        return materializer.apply(annotation, target);
+    }
+
+    @Override
+    public Map<String, String> getParameterNames() {
+        return parameterNames;
     }
 
     @Override

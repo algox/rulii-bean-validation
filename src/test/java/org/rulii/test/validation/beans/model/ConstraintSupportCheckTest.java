@@ -101,7 +101,7 @@ public class ConstraintSupportCheckTest {
     @Test
     public void registeredMapperMakesTheConstraintLoad() {
         ConstraintMapperRegistry mappers = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(CustomCode.class, List.of(CharSequence.class)))
+                .mapper(new SimpleConstraintMapper<>(CustomCode.class, List.of(CharSequence.class), (a, t) -> List.of()))
                 .build();
         BeanDefinitionLoader loader = loader(mappers);
         assertNotNull(loader.load(Unmapped.class));
@@ -130,7 +130,7 @@ public class ConstraintSupportCheckTest {
         assertEquals(ValidNameWithValidator.class, e.getAnnotationType());
 
         ConstraintMapperRegistry mappers = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(ValidNameWithValidator.class, List.of(CharSequence.class)))
+                .mapper(new SimpleConstraintMapper<>(ValidNameWithValidator.class, List.of(CharSequence.class), (a, t) -> List.of()))
                 .build();
         assertNotNull(loader(mappers).load(ComposedWithValidator.class));
     }
@@ -146,7 +146,7 @@ public class ConstraintSupportCheckTest {
     @Test
     public void mappedCompositionHostIsCheckedForApplicabilityToo() {
         ConstraintMapperRegistry mappers = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(ValidName.class, List.of(CharSequence.class)))
+                .mapper(new SimpleConstraintMapper<>(ValidName.class, List.of(CharSequence.class), (a, t) -> List.of()))
                 .build();
         ConstraintNotApplicableException e = assertThrows(ConstraintNotApplicableException.class,
                 () -> loader(mappers).load(ComposedOnNumber.class));
@@ -234,12 +234,12 @@ public class ConstraintSupportCheckTest {
     @Test
     public void classLevelConstraintIsCheckedAgainstTheBeanClass() {
         ConstraintMapperRegistry accepting = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(ClassLevel.class)))
+                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(ClassLevel.class), (a, t) -> List.of()))
                 .build();
         assertNotNull(loader(accepting).load(ClassLevel.class));
 
         ConstraintMapperRegistry rejecting = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(CharSequence.class)))
+                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(CharSequence.class), (a, t) -> List.of()))
                 .build();
         ConstraintNotApplicableException e = assertThrows(ConstraintNotApplicableException.class,
                 () -> loader(rejecting).load(ClassLevel.class));
@@ -250,7 +250,7 @@ public class ConstraintSupportCheckTest {
     @Test
     public void inheritedClassLevelConstraintIsCheckedAgainstTheConcreteBeanClass() {
         ConstraintMapperRegistry mappers = ConstraintMapperRegistry.builder()
-                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(SubLevel.class)))
+                .mapper(new SimpleConstraintMapper<>(ClassCheck.class, List.of(SubLevel.class), (a, t) -> List.of()))
                 .build();
         assertNotNull(loader(mappers).load(SubLevel.class));
     }

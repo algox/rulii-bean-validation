@@ -47,6 +47,8 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
 import org.rulii.validation.beans.mapper.DefaultConstraintMapperRegistry;
 import org.rulii.validation.beans.mapper.SimpleConstraintMapper;
+import org.rulii.validation.beans.mapper.ConstraintTarget;
+import org.rulii.rule.Rule;
 import org.rulii.validation.beans.mapper.StandardConstraintMappers;
 
 import java.lang.annotation.Annotation;
@@ -131,6 +133,11 @@ public class ConstraintMapperRegistryTest {
             public List<Class<?>> getSupportedTypes() {
                 return List.of(Object.class);
             }
+
+            @Override
+            public List<Rule> map(Size annotation, ConstraintTarget target) {
+                return List.of();
+            }
         };
         registry.register(replacement);
 
@@ -142,7 +149,7 @@ public class ConstraintMapperRegistryTest {
     public void registrationOrderIsKept() {
         ConstraintMapperRegistry registry = ConstraintMapperRegistry.builder(false)
                 .mapper(new CustomMapper())
-                .mapper(new SimpleConstraintMapper<>(Size.class, List.of(CharSequence.class)))
+                .mapper(new SimpleConstraintMapper<>(Size.class, List.of(CharSequence.class), (a, t) -> List.of()))
                 .build();
         List<ConstraintMapper<?>> mappers = registry.getMappers();
         assertEquals(Custom.class, mappers.get(0).getAnnotationType());
@@ -170,6 +177,11 @@ public class ConstraintMapperRegistryTest {
 
             @Override
             public List<Class<?>> getSupportedTypes() {
+                return List.of();
+            }
+
+            @Override
+            public List<Rule> map(Custom annotation, ConstraintTarget target) {
                 return List.of();
             }
         };
@@ -218,6 +230,11 @@ public class ConstraintMapperRegistryTest {
         public List<Class<?>> getSupportedTypes() {
             return List.of(CharSequence.class);
         }
+
+        @Override
+        public List<Rule> map(Custom annotation, ConstraintTarget target) {
+            return List.of();
+        }
     }
 
     public static final class NotAConstraintMapper implements ConstraintMapper<NotAConstraint> {
@@ -233,6 +250,11 @@ public class ConstraintMapperRegistryTest {
 
         @Override
         public List<Class<?>> getSupportedTypes() {
+            return List.of();
+        }
+
+        @Override
+        public List<Rule> map(NotAConstraint annotation, ConstraintTarget target) {
             return List.of();
         }
     }

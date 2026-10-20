@@ -20,7 +20,7 @@ package org.rulii.validation.beans.model;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.ConvertGroup;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.validation.beans.annotation.Validate;
+import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.util.reflect.AnnotatedTypeVisitor;
 import org.rulii.validation.beans.util.reflect.AnnotatedTypes;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;

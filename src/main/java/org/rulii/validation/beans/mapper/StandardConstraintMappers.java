@@ -39,6 +39,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import org.rulii.rule.Rule;
+import org.rulii.validation.ValueValidationRuleBuilder;
+import org.rulii.validation.rules.Validators;
 import org.rulii.validation.rules.asssert.AssertFalseValidationRule;
 import org.rulii.validation.rules.asssert.AssertTrueValidationRule;
 import org.rulii.validation.rules.digits.DigitsValidationRule;
@@ -63,41 +66,59 @@ import org.rulii.validation.rules.positive.PositiveValidationRule;
 import org.rulii.validation.rules.size.SizeValidationRule;
 
 import java.lang.annotation.Annotation;
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
 
 /**
- * The mappers for the standard {@code jakarta.validation.constraints}: one table from each
- * constraint annotation to the core rule it materializes to, whose {@code SUPPORTED_TYPES} the
- * mapper reports.
+ * The mappers of the 22 {@code jakarta.validation.constraints} annotations onto the core validation
+ * rules: one table row per constraint, each naming the annotation type, the core rule's
+ * {@code SUPPORTED_TYPES} and the materializing function.
+ *
+ * <p>Policy comes from the {@link ConstraintTarget}: every rule is configured through
+ * {@link ConstraintTarget#configure}, which sets {@code failOnNull(false)} so a null value is
+ * skipped (the specification validates null everywhere except for the presence constraints);
+ * {@code @NotNull}, {@code @NotBlank} and {@code @NotEmpty} ask for {@code failOnNull(true)}, as
+ * does {@code @Null}, whose passing case is null. Attribute-to-parameter mappings cover the attributes
+ * the core rules report under another name ({@code regexp} as {@code pattern}, {@code value} as
+ * {@code min}/{@code max}, {@code integer}/{@code fraction} as {@code maxIntegerLength}/
+ * {@code maxFractionLength}).</p>
+ *
+ * <p>{@code @Email} with a {@code regexp} other than the default materializes two rules: the core
+ * email rule and a pattern rule.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
  */
 public final class StandardConstraintMappers {
 
+    private static final String EMAIL_ANY_REGEXP = ".*";
+
     private static final List<ConstraintMapper<?>> MAPPERS = List.of(
-            of(AssertFalse.class,     AssertFalseValidationRule.SUPPORTED_TYPES),
-            of(AssertTrue.class,      AssertTrueValidationRule.SUPPORTED_TYPES),
-            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES),
-            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES),
-            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES),
-            of(Email.class,           EmailValidationRule.SUPPORTED_TYPES),
-            of(Future.class,          FutureValidationRule.SUPPORTED_TYPES),
-            of(FutureOrPresent.class, FutureOrPresentValidationRule.SUPPORTED_TYPES),
-            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES),
-            of(Min.class,             MinValidationRule.SUPPORTED_TYPES),
-            of(Negative.class,        NegativeValidationRule.SUPPORTED_TYPES),
-            of(NegativeOrZero.class,  NegativeOrZeroValidationRule.SUPPORTED_TYPES),
-            of(NotBlank.class,        NotBlankValidationRule.SUPPORTED_TYPES),
-            of(NotEmpty.class,        NotEmptyValidationRule.SUPPORTED_TYPES),
-            of(NotNull.class,         NotNullValidationRule.SUPPORTED_TYPES),
-            of(Null.class,            NullValidationRule.SUPPORTED_TYPES),
-            of(Past.class,            PastValidationRule.SUPPORTED_TYPES),
-            of(PastOrPresent.class,   PastOrPresentValidationRule.SUPPORTED_TYPES),
-            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES),
-            of(Positive.class,        PositiveValidationRule.SUPPORTED_TYPES),
-            of(PositiveOrZero.class,  PositiveOrZeroValidationRule.SUPPORTED_TYPES),
-            of(Size.class,            SizeValidationRule.SUPPORTED_TYPES)
+            of(AssertFalse.class,     AssertFalseValidationRule.SUPPORTED_TYPES,     (a, t) -> single(t.configure(Validators.assertFalse(t.value())))),
+            of(AssertTrue.class,      AssertTrueValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.assertTrue(t.value())))),
+            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMax(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive())), Map.of("value", "max")),
+            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMin(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive())), Map.of("value", "min")),
+            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.digits(t.value(), a.integer(), a.fraction()))), Map.of("integer", "maxIntegerLength", "fraction", "maxFractionLength")),
+            of(Email.class,           EmailValidationRule.SUPPORTED_TYPES,           StandardConstraintMappers::email, Map.of("regexp", "pattern")),
+            of(Future.class,          FutureValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.future(t.value())))),
+            of(FutureOrPresent.class, FutureOrPresentValidationRule.SUPPORTED_TYPES, (a, t) -> single(t.configure(Validators.futureOrPresent(t.value())))),
+            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.max(t.value(), a.value()))), Map.of("value", "max")),
+            of(Min.class,             MinValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.min(t.value(), a.value()))), Map.of("value", "min")),
+            of(Negative.class,        NegativeValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.negative(t.value())))),
+            of(NegativeOrZero.class,  NegativeOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.negativeOrZero(t.value())))),
+            of(NotBlank.class,        NotBlankValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.notBlank(t.value()), true))),
+            of(NotEmpty.class,        NotEmptyValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.notEmpty(t.value()), true))),
+            of(NotNull.class,         NotNullValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.notNull(t.value()), true))),
+            of(Null.class,            NullValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.isNull(t.value()), true))),
+            of(Past.class,            PastValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.past(t.value())))),
+            of(PastOrPresent.class,   PastOrPresentValidationRule.SUPPORTED_TYPES,   (a, t) -> single(t.configure(Validators.pastOrPresent(t.value())))),
+            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.pattern(t.value(), a.regexp())).flags(flags(a.flags()))), Map.of("regexp", "pattern")),
+            of(Positive.class,        PositiveValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.positive(t.value())))),
+            of(PositiveOrZero.class,  PositiveOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.positiveOrZero(t.value())))),
+            of(Size.class,            SizeValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.size(t.value(), a.min(), a.max()))))
     );
 
     private StandardConstraintMappers() {
@@ -113,7 +134,44 @@ public final class StandardConstraintMappers {
         return MAPPERS;
     }
 
-    private static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes) {
-        return new SimpleConstraintMapper<>(annotationType, supportedTypes);
+    /**
+     * The regex flag bits of the given jakarta flags, as {@link java.util.regex.Pattern} understands
+     * them (each jakarta flag carries its JDK constant).
+     *
+     * @param flags the jakarta flags.
+     * @return the OR of their values; 0 for none.
+     */
+    public static int flags(Pattern.Flag[] flags) {
+        int result = 0;
+        for (Pattern.Flag flag : flags) {
+            result |= flag.getValue();
+        }
+        return result;
+    }
+
+    private static List<Rule> email(Email email, ConstraintTarget target) {
+        List<Rule> result = new ArrayList<>(2);
+        result.add(target.configure(Validators.email(target.value())).build());
+
+        if (!EMAIL_ANY_REGEXP.equals(email.regexp())) {
+            result.add(target.configure(Validators.pattern(target.value(), email.regexp())).flags(flags(email.flags())).build());
+        }
+
+        return result;
+    }
+
+    private static List<Rule> single(ValueValidationRuleBuilder<?, ?> builder) {
+        return List.of(builder.build());
+    }
+
+    private static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
+                                                                 BiFunction<A, ConstraintTarget, List<Rule>> materializer) {
+        return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer);
+    }
+
+    private static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
+                                                                 BiFunction<A, ConstraintTarget, List<Rule>> materializer,
+                                                                 Map<String, String> parameterNames) {
+        return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer, parameterNames);
     }
 }

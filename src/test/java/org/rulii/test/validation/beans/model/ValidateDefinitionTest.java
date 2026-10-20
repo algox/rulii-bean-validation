@@ -19,7 +19,7 @@ package org.rulii.test.validation.beans.model;
 
 import jakarta.validation.constraints.NotNull;
 import org.junit.jupiter.api.Test;
-import org.rulii.validation.beans.annotation.Validate;
+import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ClassConstraintSource;

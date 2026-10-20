@@ -93,13 +93,18 @@ public class StandardConstraintMappersTest {
 
     @Test
     public void simpleMapper() {
-        SimpleConstraintMapper<Size> mapper = new SimpleConstraintMapper<>(Size.class, new ArrayList<>(List.of(CharSequence.class)));
+        SimpleConstraintMapper<Size> mapper = new SimpleConstraintMapper<>(Size.class, new ArrayList<>(List.of(CharSequence.class)),
+                (a, t) -> List.of());
         assertEquals(Size.class, mapper.getAnnotationType());
         assertEquals(List.of(CharSequence.class), mapper.getSupportedTypes());
+        assertEquals(Map.of(), mapper.getParameterNames());
         assertThrows(UnsupportedOperationException.class, () -> mapper.getSupportedTypes().clear());
         assertTrue(mapper.toString().contains("Size"));
-        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(null, List.of()));
-        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(Size.class, null));
+        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(null, List.of(), (a, t) -> List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(Size.class, null, (a, t) -> List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(Size.class, List.of(), null));
+        assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(Size.class, List.of(), (a, t) -> List.of(), null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.map(null, null));
     }
 
     @Test
@@ -157,7 +162,7 @@ public class StandardConstraintMappersTest {
         assertTrue(notNull.isApplicable(int.class));
         assertTrue(notNull.isApplicable(LocalDate.class));
 
-        ConstraintMapper<NotNull> noRestriction = new SimpleConstraintMapper<>(NotNull.class, List.of());
+        ConstraintMapper<NotNull> noRestriction = new SimpleConstraintMapper<>(NotNull.class, List.of(), (a, t) -> List.of());
         assertTrue(noRestriction.isApplicable(Void.class));
     }
 
