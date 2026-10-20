@@ -34,8 +34,9 @@ import java.util.List;
 
 /**
  * Validation definition of one bean class: its {@link PropertyDefinition properties} in discovery
- * order, followed by its class-level {@link ConstraintDefinition constraints} in hierarchy order.
- * Everything declared on superclasses and interfaces is included, cumulatively.
+ * order, its class-level {@link ConstraintDefinition constraints} in hierarchy order, and the
+ * registry rules attached at class level with {@code @Validate} ({@link ValidateDefinition}), also
+ * in hierarchy order. Everything declared on superclasses and interfaces is included, cumulatively.
  *
  * <p>Loading walks the class hierarchy once ({@link TypeHierarchies}); the property declarations and
  * the class-level constraints are collected from the same walk. All declaration errors fail fast
@@ -49,19 +50,21 @@ public final class BeanDefinition implements Definition {
     private final Class<?> beanClass;
     private final List<PropertyDefinition> properties;
     private final List<ConstraintDefinition> classConstraints;
+    private final List<ValidateDefinition> validateRules;
     private final SourceDefinition source;
     private final boolean constrained;
     private final boolean cascading;
 
-    
-    private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints) {
+    private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints,
+                           List<ValidateDefinition> validateRules) {
         super();
         this.beanClass = beanClass;
         this.properties = properties;
         this.classConstraints = classConstraints;
+        this.validateRules = validateRules;
         this.source = SourceDefinition.forClass(beanClass);
 
-        boolean constrained = !classConstraints.isEmpty();
+        boolean constrained = !classConstraints.isEmpty() || !validateRules.isEmpty();
         boolean cascading = false;
 
         for (PropertyDefinition property : properties) {
@@ -81,9 +84,11 @@ public final class BeanDefinition implements Definition {
      * @return the bean definition.
      * @throws GroupSequenceNotSupportedException if {@code @GroupSequence} is declared on the class
      *         or one of its superclasses.
-     * @throws ConstraintOnNonGetterException if a constraint, {@code @Valid} or {@code @ConvertGroup}
-     *         is declared on a method that is not a getter, at any level.
+     * @throws ConstraintOnNonGetterException if a constraint, {@code @Valid}, {@code @ConvertGroup}
+     *         or {@code @Validate} is declared on a method that is not a getter, at any level.
      * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared on a property.
+     * @throws ValidateDeclarationException if a {@code @Validate} declares no name, a blank name, or
+     *         a name already referenced for the same property or at class level.
      * @throws org.rulii.validation.beans.extract.NoValueExtractorException if a constrained or
      *         cascaded container element position has no extractor.
      * @throws jakarta.validation.ConstraintDeclarationException for the other declaration errors
@@ -104,8 +109,10 @@ public final class BeanDefinition implements Definition {
             properties.add(PropertyDefinition.load(propertySource, registry));
         }
 
+        ValidateDefinition.checkDistinct(loader.validateRules, "class [" + beanClass.getName() + "]");
+
         return new BeanDefinition(beanClass, Collections.unmodifiableList(properties),
-                Collections.unmodifiableList(loader.classConstraints));
+                Collections.unmodifiableList(loader.classConstraints), Collections.unmodifiableList(loader.validateRules));
     }
 
     private static boolean cascades(List<ContainerElementDefinition> elements) {
@@ -172,7 +179,19 @@ public final class BeanDefinition implements Definition {
     }
 
     /**
-     * Whether anything is declared to validate: a class-level constraint, or a constrained property.
+     * Registry rules attached at class level with {@code @Validate}, on the bean class, its
+     * superclasses and its interfaces, in hierarchy order; each knows the
+     * {@link ValidateDefinition#getDeclarationSource() class} it is declared on.
+     *
+     * @return the attached rules; empty if none.
+     */
+    public List<ValidateDefinition> getValidateRules() {
+        return validateRules;
+    }
+
+    /**
+     * Whether anything is declared to validate: a class-level constraint or attached rule, or a
+     * constrained property.
      *
      * @return true if the bean has constraints.
      */
@@ -193,17 +212,19 @@ public final class BeanDefinition implements Definition {
     @Override
     public String toString() {
         return "BeanDefinition{beanClass=" + beanClass.getName() + ", properties=" + properties.size()
-                + ", classConstraints=" + classConstraints.size() + '}';
+                + ", classConstraints=" + classConstraints.size() + ", validateRules=" + validateRules.size() + '}';
     }
 
     /**
-     * One walk, two consumers: the property discovery for the members and the class-level
-     * constraints (and the {@code @GroupSequence} fail-fast) for the types.
+     * One walk, two consumers: the property discovery for the members, and the class-level
+     * constraints, the class-level {@code @Validate} and the {@code @GroupSequence} fail-fast for
+     * the types.
      */
     private static final class Loader implements TypeHierarchyVisitor {
 
         private final PropertyDiscovery discovery;
         private final List<ConstraintDefinition> classConstraints = new ArrayList<>();
+        private final List<ValidateDefinition> validateRules = new ArrayList<>();
 
         private Loader(Class<?> beanClass) {
             super();
@@ -218,6 +239,7 @@ public final class BeanDefinition implements Definition {
             }
 
             classConstraints.addAll(ConstraintDefinition.load(type));
+            validateRules.addAll(ValidateDefinition.load(type));
         }
 
         @Override

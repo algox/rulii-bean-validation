@@ -58,6 +58,10 @@ import java.util.List;
  * the runtime has a single model, constraints at positions reached through extractors. Container
  * element trees read from two declarations are merged by position.</p>
  *
+ * <p>A declaration may also attach registry rules with {@code @Validate}; each occurrence is kept as
+ * a {@link ValidateDefinition} in declaration order, and a rule name may not repeat across the
+ * occurrences of one property.</p>
+ *
  * <p>Every property gets a definition, constrained or not, since every property is bound in the
  * validation scope; {@link #isConstrained()} tells whether anything is to be validated.</p>
  *
@@ -70,15 +74,18 @@ public final class PropertyDefinition implements Definition {
     private final List<ConstraintDefinition> constraints;
     private final List<ContainerElementDefinition> containerElements;
     private final boolean cascaded;
+    private final List<ValidateDefinition> validateRules;
     private final SourceDefinition source;
 
     private PropertyDefinition(PropertySource propertySource, List<ConstraintDefinition> constraints,
-                               List<ContainerElementDefinition> containerElements, boolean cascaded) {
+                               List<ContainerElementDefinition> containerElements, boolean cascaded,
+                               List<ValidateDefinition> validateRules) {
         super();
         this.propertySource = propertySource;
         this.constraints = constraints;
         this.containerElements = containerElements;
         this.cascaded = cascaded;
+        this.validateRules = validateRules;
         this.source = propertySource.getSourceDefinition();
     }
 
@@ -143,6 +150,8 @@ public final class PropertyDefinition implements Definition {
      *         declaration or at a position within its type.
      * @throws org.rulii.validation.beans.extract.NoValueExtractorException if a constrained or
      *         cascaded position within a declared type has no extractor.
+     * @throws ValidateDeclarationException if a {@code @Validate} declares no name, a blank name,
+     *         or a name already referenced for this property.
      * @throws ConstraintDeclarationException if value unwrapping is requested but cannot be
      *         resolved to exactly one extractor, or both {@code Unwrap} and {@code Skip} are requested.
      */
@@ -152,6 +161,7 @@ public final class PropertyDefinition implements Definition {
 
         List<ConstraintDefinition> constraints = new ArrayList<>();
         List<ContainerElementDefinition> elements = Collections.emptyList();
+        List<ValidateDefinition> validateRules = new ArrayList<>();
         boolean cascaded = false;
 
         for (PropertyDeclaration declaration : propertySource.getDeclarations()) {
@@ -159,15 +169,20 @@ public final class PropertyDefinition implements Definition {
             constraints.addAll(read.constraints);
             elements = ContainerElementDefinition.merge(elements, read.elements);
             cascaded |= read.cascaded;
+            validateRules.addAll(read.validateRules);
         }
 
-        return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements, cascaded);
+        ValidateDefinition.checkDistinct(validateRules, "property [" + propertySource.getName() + "]");
+
+        return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements, cascaded,
+                Collections.unmodifiableList(validateRules));
     }
 
     /**
      * What one declaration contributes to the property.
      */
-    private record Read(List<ConstraintDefinition> constraints, List<ContainerElementDefinition> elements, boolean cascaded) {}
+    private record Read(List<ConstraintDefinition> constraints, List<ContainerElementDefinition> elements, boolean cascaded,
+                        List<ValidateDefinition> validateRules) {}
 
     private static Read read(PropertyDeclaration declaration, ValueExtractorRegistry registry) {
         AnnotatedType annotatedType = declaration.getAnnotatedType();
@@ -201,7 +216,7 @@ public final class PropertyDefinition implements Definition {
             addUnwrapped(declaration, registry, unwrapper, annotatedType, unwrapped, elements);
         }
 
-        return new Read(onProperty, elements, cascaded);
+        return new Read(onProperty, elements, cascaded, ValidateDefinition.load(declaration));
     }
 
     private static List<ConstraintDefinition> merge(List<ConstraintDefinition> declaration, List<ConstraintDefinition> typeUse) {
@@ -387,13 +402,25 @@ public final class PropertyDefinition implements Definition {
     }
 
     /**
-     * Whether anything is to be validated for this property: constraints, cascade or container
-     * elements. Unconstrained properties still exist so they can be bound for sibling rules.
+     * Registry rules attached to the property with {@code @Validate}: one definition per annotation
+     * occurrence, in declaration order (field declarations, then getters, each top-down); each knows
+     * the {@link ValidateDefinition#getDeclarationSource() declaration} it is read from.
+     *
+     * @return the attached rules; empty if none.
+     */
+    public List<ValidateDefinition> getValidateRules() {
+        return validateRules;
+    }
+
+    /**
+     * Whether anything is to be validated for this property: constraints, cascade, container
+     * elements or attached rules. Unconstrained properties still exist so they can be bound for
+     * sibling rules.
      *
      * @return true if the property has validation to perform.
      */
     public boolean isConstrained() {
-        return !constraints.isEmpty() || cascaded || !containerElements.isEmpty();
+        return !constraints.isEmpty() || cascaded || !containerElements.isEmpty() || !validateRules.isEmpty();
     }
 
     @Override
@@ -405,6 +432,7 @@ public final class PropertyDefinition implements Definition {
                 ", constraints=" + constraints +
                 ", cascaded=" + cascaded +
                 ", containerElements=" + containerElements +
+                ", validateRules=" + validateRules +
                 '}';
     }
 }

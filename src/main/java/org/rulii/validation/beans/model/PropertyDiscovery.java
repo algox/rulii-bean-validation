@@ -20,6 +20,7 @@ package org.rulii.validation.beans.model;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.ConvertGroup;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.annotation.Validate;
 import org.rulii.validation.beans.util.reflect.AnnotatedTypeVisitor;
 import org.rulii.validation.beans.util.reflect.AnnotatedTypes;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;
@@ -57,9 +58,10 @@ import java.util.Map;
  * properties in the same order. Within a property the declarations follow the hierarchy top-down,
  * fields then getters; see {@link PropertySource}.</p>
  *
- * <p>A constraint, {@code @Valid} or {@code @ConvertGroup} declared on, or within the return type
- * of, an instance method that is not a getter fails fast with {@link ConstraintOnNonGetterException}:
- * method validation is out of scope and the annotation would otherwise be ignored silently.</p>
+ * <p>A constraint, {@code @Valid}, {@code @ConvertGroup} or {@code @Validate} declared on, or within
+ * the return type of, an instance method that is not a getter fails fast with
+ * {@link ConstraintOnNonGetterException}: method validation is out of scope and the annotation would
+ * otherwise be ignored silently.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -96,8 +98,9 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
      *
      * @param beanClass the class or interface.
      * @return the property sources, in discovery order; empty if the class has no properties.
-     * @throws ConstraintOnNonGetterException if a constraint, {@code @Valid} or {@code @ConvertGroup}
-     *         is declared on or within the return type of a method that is not a getter.
+     * @throws ConstraintOnNonGetterException if a constraint, {@code @Valid}, {@code @ConvertGroup}
+     *         or {@code @Validate} is declared on or within the return type of a method that is not
+     *         a getter.
      * @throws IllegalArgumentException if the class is a primitive or an array type.
      */
     public static List<PropertySource> discover(Class<?> beanClass) {
@@ -125,7 +128,8 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
      *
      * @param method the method.
      * @throws ConstraintOnNonGetterException if the method is not a getter and carries a constraint,
-     *         {@code @Valid} or {@code @ConvertGroup}, directly or within its return type.
+     *         {@code @Valid}, {@code @ConvertGroup} or {@code @Validate}, directly or within its
+     *         return type.
      */
     @Override
     public void visitMethod(Method method) {
@@ -168,8 +172,9 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
 
     /**
      * Whether the given method carries an annotation that only a property may carry: a constraint,
-     * a repeated-constraint container, {@code @Valid}, {@code @ConvertGroup} or
-     * {@code @ConvertGroup.List}, directly or anywhere within its annotated return type.
+     * a repeated-constraint container, {@code @Valid}, {@code @ConvertGroup},
+     * {@code @ConvertGroup.List} or {@code @Validate}, directly or anywhere within its annotated
+     * return type.
      *
      * @param method the method.
      * @return the first such annotation; null if there is none.
@@ -182,7 +187,7 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
     private static Annotation propertyAnnotation(AnnotatedElement element) {
         for (Annotation annotation : element.getDeclaredAnnotations()) {
             Class<? extends Annotation> type = annotation.annotationType();
-            if (type == Valid.class || type == ConvertGroup.class || type == ConvertGroup.List.class
+            if (type == Valid.class || type == ConvertGroup.class || type == ConvertGroup.List.class || type == Validate.class
                     || ConstraintDefinition.isConstraint(annotation)
                     || ConstraintDefinition.isConstraintContainer(annotation)) {
                 return annotation;

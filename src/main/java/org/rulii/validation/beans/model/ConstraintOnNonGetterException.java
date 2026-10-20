@@ -24,10 +24,10 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 
 /**
- * Thrown at metadata-read time when a constraint, {@code @Valid} or {@code @ConvertGroup} is
- * declared on, or within the return type of, a method that is not a JavaBeans getter. Method
- * validation is out of scope, so the annotation could never be honoured; failing fast is preferred
- * to silently ignoring it.
+ * Thrown at metadata-read time when a constraint, {@code @Valid}, {@code @ConvertGroup} or
+ * {@code @Validate} is declared on, or within the return type of, a method that is not a JavaBeans
+ * getter. Method validation is out of scope, so the annotation could never be honoured; failing
+ * fast is preferred to silently ignoring it.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -38,8 +38,8 @@ public class ConstraintOnNonGetterException extends ConstraintDeclarationExcepti
     private final Annotation annotation;
 
     public ConstraintOnNonGetterException(Method method, Annotation annotation) {
-        super("[" + annotation + "] on method [" + Members.describe(method) + "] is not supported: constraints, @Valid"
-                + " and @ConvertGroup are read from fields, record components and JavaBeans getters only (getX() with a"
+        super("[" + annotation + "] on method [" + Members.describe(method) + "] is not supported: constraints, @Valid,"
+                + " @ConvertGroup and @Validate are read from fields, record components and JavaBeans getters only (getX() with a"
                 + " return value and no parameters, or isX() returning boolean); method validation is out of scope."
                 + " Move the annotation to a property or remove it.");
         this.method = method;
@@ -57,7 +57,7 @@ public class ConstraintOnNonGetterException extends ConstraintDeclarationExcepti
 
     /**
      * The offending annotation: a constraint, a repeated-constraint container, {@code @Valid},
-     * {@code @ConvertGroup} or {@code @ConvertGroup.List}.
+     * {@code @ConvertGroup}, {@code @ConvertGroup.List} or {@code @Validate}.
      *
      * @return the annotation.
      */
