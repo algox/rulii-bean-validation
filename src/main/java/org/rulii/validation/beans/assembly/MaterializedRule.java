@@ -23,10 +23,16 @@ import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintTarget;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 
+import java.util.List;
+
 /**
  * One rulii rule materialized from a constraint, with what the runtime needs to know about it: the
  * constraint it came from, the binding it reads, the property it reports at, the composition host it
  * belongs to, and the raw message template for render-time resolution.
+ *
+ * <p>A {@code @ReportAsSingleViolation} composition is one materialized rule whose
+ * {@link #getHostedRules() hosted rules} are the rules of its composing constraints: the rule runs
+ * them and reports once for all of them. The hosted rules are not run on their own.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -38,6 +44,7 @@ public final class MaterializedRule {
     private final ConstraintDefinition host;
     private final ConstraintTarget target;
     private final String leaf;
+    private final List<MaterializedRule> hostedRules;
 
     /**
      * Creates the materialized rule.
@@ -52,15 +59,53 @@ public final class MaterializedRule {
      */
     public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
                             ConstraintTarget target, String leaf) {
+        this(rule, definition, host, target, leaf, List.of());
+    }
+
+    /**
+     * Creates a materialized rule that runs hosted rules and reports once for them.
+     *
+     * @param rule the built rule.
+     * @param definition the constraint the rule was materialized from.
+     * @param host the nearest enclosing {@code @ReportAsSingleViolation} composition host; null when
+     *             the rule reports on its own.
+     * @param target the target the rule was built for.
+     * @param leaf the property the violations report at; null for class-level and container element
+     *             rules, whose path is set by the traversal.
+     * @param hostedRules the rules this one runs and reports for; empty for an ordinary rule.
+     */
+    public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
+                            ConstraintTarget target, String leaf, List<MaterializedRule> hostedRules) {
         super();
         Assert.notNull(rule, "rule cannot be null.");
         Assert.notNull(definition, "definition cannot be null.");
         Assert.notNull(target, "target cannot be null.");
+        Assert.notNull(hostedRules, "hostedRules cannot be null.");
         this.rule = rule;
         this.definition = definition;
         this.host = host;
         this.target = target;
         this.leaf = leaf;
+        this.hostedRules = List.copyOf(hostedRules);
+    }
+
+    /**
+     * The rules this one runs and reports for, when it is a {@code @ReportAsSingleViolation}
+     * composition.
+     *
+     * @return the hosted rules; empty for an ordinary rule.
+     */
+    public List<MaterializedRule> getHostedRules() {
+        return hostedRules;
+    }
+
+    /**
+     * Whether this rule is a {@code @ReportAsSingleViolation} composition.
+     *
+     * @return true if it hosts rules.
+     */
+    public boolean isComposition() {
+        return !hostedRules.isEmpty();
     }
 
     public Rule getRule() {

@@ -59,10 +59,11 @@ public final class ConstraintTarget {
     private final Severity severity;
     private final String message;
     private final SourceDefinition source;
+    private final Function<?> valueFunction;
     private final List<String> ruleNames = new ArrayList<>(1);
 
     /**
-     * Creates the target.
+     * Creates a target whose rules read the value from its binding.
      *
      * @param beanClass the bean class being materialized.
      * @param propertyName the constrained property; null for a class-level constraint.
@@ -77,6 +78,28 @@ public final class ConstraintTarget {
      */
     public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
                             String ruleName, String errorCode, Severity severity, String message, SourceDefinition source) {
+        this(beanClass, propertyName, bindingName, valueName, type, ruleName, errorCode, severity, message, source, null);
+    }
+
+    /**
+     * Creates a target whose rules read the value through the given function instead of the binding:
+     * a constraint written on a field beside its getter reads the field off the object in scope.
+     *
+     * @param beanClass the bean class being materialized.
+     * @param propertyName the constrained property; null for a class-level constraint.
+     * @param bindingName the binding of the constrained property.
+     * @param valueName the name the rules report the value under (the property name, whatever the binding).
+     * @param type the static type of the value.
+     * @param ruleName the base rule name.
+     * @param errorCode the error code of the violations.
+     * @param severity the severity of the violations.
+     * @param message the translated message template; null to use the rule's resolved default.
+     * @param source where the constraint is declared.
+     * @param valueFunction the function reading the value; null to read the binding.
+     */
+    public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
+                            String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
+                            Function<?> valueFunction) {
         super();
         Assert.notNull(beanClass, "beanClass cannot be null.");
         Assert.hasText(bindingName, "bindingName cannot be empty/null.");
@@ -97,15 +120,17 @@ public final class ConstraintTarget {
         this.severity = severity;
         this.message = message;
         this.source = source;
+        this.valueFunction = valueFunction != null ? valueFunction : Validators.binding(bindingName);
     }
 
     /**
-     * Function reading the constrained value from its binding, to pass to a core rule builder.
+     * Function reading the constrained value, to pass to a core rule builder: the property binding,
+     * or the declaration the constraint is written on when that is not the one the binding holds.
      *
      * @return the value function.
      */
     public Function<?> value() {
-        return Validators.binding(bindingName);
+        return valueFunction;
     }
 
     /**

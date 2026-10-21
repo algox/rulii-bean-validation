@@ -41,6 +41,7 @@ import org.rulii.validation.beans.payload.Warning;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.MaterializedRule;
+import org.rulii.validation.beans.assembly.ReportAsSingleViolationRule;
 import org.rulii.validation.beans.assembly.RuleMaterializer;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.RequestedGroups;
@@ -98,8 +99,9 @@ public class RuleMaterializerTest {
         BeanRules rules = materialize(Order.class, mappers());
         BindingPlan plan = rules.getBindingPlan();
 
-        // name: field @NotNull reads the field shadow, getter @Size reads the primary binding.
-        assertEquals("name$field", rules.getRule("name_notNull").getBindingName());
+        // name: field @NotNull reads the field off $this, getter @Size reads the primary binding; both report as "name".
+        assertEquals("name", rules.getRule("name_notNull").getBindingName());
+        assertEquals("name", rules.getRule("name_notNull").getTarget().getValueName());
         assertEquals("name", rules.getRule("name_size").getBindingName());
         assertEquals("code", rules.getRule("code_size").getBindingName());
         assertEquals("quantity", rules.getRule("quantity_min").getBindingName());
@@ -107,7 +109,8 @@ public class RuleMaterializerTest {
         assertEquals(BindingPlan.ELEMENT, rules.getRule("tags_List0_notBlank").getBindingName());
         assertEquals(BindingPlan.KEY, rules.getRule("counts_Map0_notBlank").getBindingName());
         assertEquals(BindingPlan.VALUE, rules.getRule("counts_Map1_positive").getBindingName());
-        assertTrue(plan.isShadow("name$field"));
+        assertFalse(plan.isPrimary(rules.getDefinition().getProperty("name").getPropertySource().getDeclarations(
+                org.rulii.validation.beans.model.PropertyDeclaration.Kind.FIELD).get(0)));
 
         // Leaves: property rules report at the property; class and element rules leave it to the traversal.
         assertEquals("name", rules.getRule("name_notNull").getLeaf());
@@ -159,7 +162,15 @@ public class RuleMaterializerTest {
         // Null is skipped by every rule except the presence rules.
         assertEquals(RuleExecutionStatus.SKIPPED, status(rules.getRule("code_size"), "code", null));
         assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("code_notNull"), "code", null));
-        assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("name_notNull"), "name$field", null));
+
+        // The field constraint reads the field off $this, whatever the "name" binding holds.
+        Order order = new Order();
+        order.name = "set";
+        assertEquals(RuleExecutionStatus.PASS, status(rules.getRule("name_notNull"), BindingPlan.THIS, order));
+        assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("name_notNull"), BindingPlan.THIS, new Order()));
+        RuleViolations fieldViolations = run(rules.getRule("name_notNull"), BindingPlan.THIS, new Order());
+        assertEquals("name_notNull", fieldViolations.getViolation(0).getRuleName());
+        assertTrue(fieldViolations.getViolation(0).getParameters().containsKey("name"));
 
         RuleViolations warning = run(rules.getRule("quantity_min"), "quantity", 0);
         assertEquals(Severity.WARNING, warning.getViolation(0).getSeverity());
@@ -239,25 +250,61 @@ public class RuleMaterializerTest {
     public void compositionsFlattenAndRecordTheirHost() {
         BeanRules rules = materialize(Composed.class, mappers());
 
-        assertEquals(List.of("code_validCode_notNull", "code_validCode_size", "strict_strictCode_notNull", "strict_strictCode_size"),
-                names(rules.getPropertyRules()));
+        // A plain composition flattens; a @ReportAsSingleViolation one is a single rule hosting its composing rules.
+        assertEquals(List.of("code_validCode_notNull", "code_validCode_size", "strict_strictCode"), names(rules.getPropertyRules()));
 
         MaterializedRule flat = rules.getRule("code_validCode_notNull");
         assertFalse(flat.isHosted());
+        assertFalse(flat.isComposition());
         assertNull(flat.getHost());
         assertEquals(NotNull.class, flat.getDefinition().getAnnotationType());
         assertEquals("jakarta.validation.constraints.NotNull.message", flat.getTarget().getErrorCode());
+
+        MaterializedRule composition = rules.getRule("strict_strictCode");
+        assertTrue(composition.isComposition());
+        assertFalse(composition.isHosted());
+        assertEquals(StrictCode.class, composition.getDefinition().getAnnotationType());
+        assertEquals(StrictCode.class.getName() + ".message", composition.getTarget().getErrorCode());
+        assertEquals("strict", composition.getTarget().getMessage());
+        assertEquals("strict", composition.getLeaf());
+        assertEquals(List.of("strict_strictCode_notNull", "strict_strictCode_size"), names(composition.getHostedRules()));
+        assertInstanceOf(ReportAsSingleViolationRule.class, composition.getRule().getTarget());
+        assertEquals(2, ((ReportAsSingleViolationRule) composition.getRule().getTarget()).getComposingRules().size());
 
         MaterializedRule hosted = rules.getRule("strict_strictCode_size");
         assertTrue(hosted.isHosted());
         assertEquals(StrictCode.class, hosted.getHost().getAnnotationType());
         assertEquals(Size.class, hosted.getDefinition().getAnnotationType());
         assertTrue(hosted.toString().contains("hosted by StrictCode"));
+        assertEquals(5, rules.getRules().size(), "hosted rules are registered by name too");
 
         // Composing constraints inherit the host groups: both activate with the host's group.
         assertTrue(hosted.isActive(RequestedGroups.of(OnCreate.class)));
         assertFalse(hosted.isActive(RequestedGroups.DEFAULT));
+        assertTrue(composition.isActive(RequestedGroups.of(OnCreate.class)));
         assertEquals(RuleExecutionStatus.FAIL, status(hosted, "strict", "ab"));
+
+        // The RuleSet runs the composition, never the hosted rules on their own.
+        assertEquals(List.of("strict_strictCode"), defaults(rules.ruleSet(RequestedGroups.of(OnCreate.class))));
+
+        // One violation for the host, with the host's code and message, into a path-aware collector.
+        Bindings bindings = Bindings.builder().standard();
+        org.rulii.validation.beans.BeanRuleViolations collected = new org.rulii.validation.beans.BeanRuleViolations();
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, collected);
+        bindings.bind("strict", Object.class, "ab");
+        composition.getRule().run(bindings);
+        assertEquals(1, collected.size());
+        assertEquals("strict_strictCode", collected.getViolation(0).getRuleName());
+        assertEquals("strict", collected.getViolation(0).getErrorMessage());
+        assertEquals("ab", collected.getViolation(0).getParameters().get("strict"));
+        assertEquals(RuleExecutionStatus.PASS, status(composition, "strict", "abc"));
+
+        // A plain collector cannot divert the composing violations: they stay, the host's follows.
+        RuleViolations plain = run(composition, "strict", "ab");
+        assertEquals(List.of("strict_strictCode_size", "strict_strictCode"), plain.getViolations().stream().map(RuleViolation::getRuleName).toList());
+        // Null reaches the composing @NotNull.
+        assertEquals(RuleExecutionStatus.FAIL, status(composition, "strict", null));
+        assertThrows(IllegalArgumentException.class, () -> ReportAsSingleViolationRule.builder(Validators.binding("x"), List.of()).failOnNull(false));
     }
 
     @Test

@@ -17,41 +17,53 @@
  */
 package org.rulii.validation.beans.assembly;
 
+import org.rulii.bind.Binding;
+import org.rulii.bind.Bindings;
 import org.rulii.bind.ReservedBindings;
+import org.rulii.bind.load.BindingLoader;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.PropertyConstraintSource;
 import org.rulii.validation.beans.model.PropertyDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.PropertySource;
 
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
- * The binding names of a bean class's properties in its validation scope: which name each property
- * is bound under, and which name each of its declarations is read through. Pure naming; the
- * bindings themselves are created at validation time from this plan.
+ * How a bean class's properties appear in its validation scope, and how its declarations are read.
  *
- * <p>A property is bound under its own name, read through its primary declaration. A property whose
- * name is reserved by the engine ({@code rule}, {@code ruleContext}, ...) or by this library
- * ({@code $this}, {@code $value}, {@code ruleViolations}, ...) is bound under {@code <name>$}
- * instead, so no class is rejected over a field name. A secondary declaration carrying constraints
- * gets a shadow binding so each constraint reads the declaration it was written on:
- * {@code <name>$field} for the field beside a getter, {@code <name>$<DeclaringClass>} for a
- * superclass field hidden by a subclass one. An unconstrained secondary field needs no binding, and
- * an overriding getter reads the primary binding, since the call is virtual either way. A residual
- * collision appends {@code $2}, {@code $3}, ... deterministically.</p>
+ * <p>Every property is bound under its own name, holding the value of its primary declaration
+ * (record component, else the getter, else the field), read lazily on first access and remembered
+ * for the scope's lifetime, read-only: a property nobody references is never read, and one that
+ * several rules reference is read once. {@link #load(Bindings, Object)} creates those bindings for a
+ * bean. A property whose name is reserved by the engine ({@code rule}, {@code ruleContext}, ...) or
+ * by this library ({@code $this}, {@code $value}, {@code ruleViolations}, ...) is bound under
+ * {@code <name>$} instead, so no class is rejected over a field name; a residual collision appends
+ * {@code $2}, {@code $3}, ... deterministically.</p>
+ *
+ * <p>A constraint written on a declaration that is not the primary one (a field beside its getter,
+ * a superclass field hidden by a subclass one) does not get a binding of its own: its rule reads the
+ * declaration directly through a {@link PropertyAccessor} on the object in scope, so a field
+ * constraint validates the field and a getter constraint the getter, as the specification has it.
+ * Accessors exist for every declaration validation reads: the primaries, and the secondaries that
+ * carry a constraint, a cascade or constrained container elements. An overriding getter reads the
+ * primary binding, since the call is virtual either way.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
  */
-public final class BindingPlan {
+public final class BindingPlan implements BindingLoader<Object> {
 
     /** The object being validated. */
     public static final String THIS = "$this";
@@ -65,6 +77,8 @@ public final class BindingPlan {
     public static final String KEY = "$key";
     /** The current value of a map walk, or the value of a property under a property-level {@code @Validate}. */
     public static final String VALUE = "$value";
+    /** The traversal of the current validation call. */
+    public static final String TRAVERSAL = "$traversal";
     /** The violations collector. */
     public static final String RULE_VIOLATIONS = "ruleViolations";
 
@@ -75,94 +89,92 @@ public final class BindingPlan {
 
     static {
         Set<String> reserved = new HashSet<>(ReservedBindings.reservedBindingNames());
-        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, RULE_VIOLATIONS));
+        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, TRAVERSAL, RULE_VIOLATIONS));
         RESERVED_NAMES = Collections.unmodifiableSet(reserved);
     }
 
     private final BeanDefinition bean;
-    private final Map<String, PropertyDeclaration> bindings;
-    private final Map<PropertyDeclaration, String> names;
+    private final Map<String, PropertyDefinition> bindings;
     private final Map<String, String> properties;
+    private final Map<PropertyDeclaration, PropertyAccessor> accessors;
+    private final Set<PropertyDeclaration> primaries;
 
-    private BindingPlan(BeanDefinition bean, Map<String, PropertyDeclaration> bindings,
-                        Map<PropertyDeclaration, String> names, Map<String, String> properties) {
+    private BindingPlan(BeanDefinition bean, Map<String, PropertyDefinition> bindings, Map<String, String> properties,
+                        Map<PropertyDeclaration, PropertyAccessor> accessors, Set<PropertyDeclaration> primaries) {
         super();
         this.bean = bean;
         this.bindings = bindings;
-        this.names = names;
         this.properties = properties;
+        this.accessors = accessors;
+        this.primaries = primaries;
     }
 
     /**
-     * Plans the bindings of the given bean class.
+     * Plans the bindings of the given bean class and creates the accessors it needs.
      *
      * @param bean the bean definition.
      * @return the plan.
+     * @throws InaccessiblePropertyException if a declaration validation reads cannot be made accessible.
      */
     public static BindingPlan of(BeanDefinition bean) {
         Assert.notNull(bean, "bean cannot be null.");
 
-        Map<String, PropertyDeclaration> bindings = new LinkedHashMap<>();
-        Map<PropertyDeclaration, String> names = new LinkedHashMap<>();
+        Map<String, PropertyDefinition> bindings = new LinkedHashMap<>();
         Map<String, String> properties = new LinkedHashMap<>();
+        Map<PropertyDeclaration, PropertyAccessor> accessors = new LinkedHashMap<>();
+        Set<PropertyDeclaration> primaries = new HashSet<>();
 
         for (PropertyDefinition property : bean.getProperties()) {
             PropertySource source = property.getPropertySource();
             PropertyDeclaration primary = source.getPrimary();
             String name = property.getName();
-            String binding = unique(RESERVED_NAMES.contains(name) ? name + "$" : name, bindings.keySet(), "$");
+            String binding = unique(RESERVED_NAMES.contains(name) ? name + "$" : name, bindings.keySet());
 
-            bindings.put(binding, primary);
-            names.put(primary, binding);
+            bindings.put(binding, property);
             properties.put(name, binding);
+            primaries.add(primary);
+            accessors.put(primary, PropertyAccessor.of(primary));
 
-            PropertyDeclaration mostDerivedField = mostDerivedField(source);
-            Set<PropertyDeclaration> constrained = constrainedDeclarations(property);
-
-            for (PropertyDeclaration declaration : source.getDeclarations()) {
-                if (declaration.equals(primary)) continue;
-
-                if (declaration.getKind() == PropertyDeclaration.Kind.GETTER || !constrained.contains(declaration)) {
-                    // An overridden getter yields the primary value; an unconstrained field is never read.
-                    names.put(declaration, binding);
-                    continue;
+            for (PropertyDeclaration declaration : readDeclarations(property)) {
+                if (!declaration.equals(primary) && declaration.getKind() != PropertyDeclaration.Kind.GETTER) {
+                    accessors.computeIfAbsent(declaration, PropertyAccessor::of);
                 }
-
-                String shadow = declaration.equals(mostDerivedField) && primary.getKind() == PropertyDeclaration.Kind.GETTER
-                        ? name + "$field"
-                        : name + "$" + declaration.getDeclaringClass().getSimpleName();
-                shadow = unique(shadow, bindings.keySet(), "");
-                bindings.put(shadow, declaration);
-                names.put(declaration, shadow);
             }
         }
 
-        return new BindingPlan(bean, Collections.unmodifiableMap(bindings), Collections.unmodifiableMap(names),
-                Collections.unmodifiableMap(properties));
-    }
-
-    private static Set<PropertyDeclaration> constrainedDeclarations(PropertyDefinition property) {
-        Set<PropertyDeclaration> result = new HashSet<>();
-        for (ConstraintDefinition constraint : property.getConstraints()) {
-            result.add(((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration());
-        }
-        return result;
-    }
-
-    private static PropertyDeclaration mostDerivedField(PropertySource source) {
-        List<PropertyDeclaration> fields = source.getDeclarations(PropertyDeclaration.Kind.FIELD);
-        return fields.isEmpty() ? null : fields.get(fields.size() - 1);
+        return new BindingPlan(bean, Collections.unmodifiableMap(bindings), Collections.unmodifiableMap(properties),
+                Collections.unmodifiableMap(accessors), Collections.unmodifiableSet(primaries));
     }
 
     /**
-     * A name not yet in use: the candidate itself, else the candidate with the separator and a
-     * counter from 2 upwards appended.
+     * The declarations of a property that validation reads: those carrying a constraint, a cascade
+     * or container elements.
      */
-    private static String unique(String candidate, Set<String> taken, String separator) {
+    private static Set<PropertyDeclaration> readDeclarations(PropertyDefinition property) {
+        Set<PropertyDeclaration> result = new HashSet<>();
+
+        for (ConstraintDefinition constraint : property.getConstraints()) {
+            result.add(((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration());
+        }
+
+        result.addAll(property.getCascadedDeclarations());
+
+        for (ContainerElementDefinition node : property.getContainerElements()) {
+            result.add(node.getSourceDeclaration());
+        }
+
+        return result;
+    }
+
+    /**
+     * A name not yet in use: the candidate itself, else the candidate with {@code $2}, {@code $3}, ...
+     * appended.
+     */
+    private static String unique(String candidate, Set<String> taken) {
         if (!taken.contains(candidate)) return candidate;
         int counter = 2;
-        while (taken.contains(candidate + separator + counter)) counter++;
-        return candidate + separator + counter;
+        while (taken.contains(candidate + "$" + counter)) counter++;
+        return candidate + "$" + counter;
     }
 
     /**
@@ -175,12 +187,11 @@ public final class BindingPlan {
     }
 
     /**
-     * Every binding to create, in order: binding name to the declaration whose value it holds.
-     * Primary bindings come first, each followed by its property's shadows.
+     * The bindings to create, in property order: binding name to the property it holds.
      *
      * @return the bindings; unmodifiable.
      */
-    public Map<String, PropertyDeclaration> getBindings() {
+    public Map<String, PropertyDefinition> getBindings() {
         return bindings;
     }
 
@@ -199,29 +210,106 @@ public final class BindingPlan {
     }
 
     /**
-     * The binding a declaration's constraints read: the property binding for the primary declaration
-     * and overriding getters, a shadow binding for other fields.
+     * Whether a declaration is the primary of its property, whose value the property binding holds.
      *
      * @param declaration the declaration.
-     * @return the binding name.
-     * @throws IllegalArgumentException if the declaration does not belong to the bean.
+     * @return true for a primary declaration.
      */
-    public String getBindingName(PropertyDeclaration declaration) {
+    public boolean isPrimary(PropertyDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
-        String result = names.get(declaration);
-        Assert.notNull(result, "declaration [" + declaration.describe() + "] is not a declaration of [" + bean.getBeanClass().getName() + "]");
+        return primaries.contains(declaration);
+    }
+
+    /**
+     * The accessor reading a declaration off the bean.
+     *
+     * @param declaration the declaration.
+     * @return the accessor.
+     * @throws IllegalArgumentException if the declaration is not one validation reads.
+     */
+    public PropertyAccessor getAccessor(PropertyDeclaration declaration) {
+        Assert.notNull(declaration, "declaration cannot be null.");
+        PropertyAccessor result = accessors.get(declaration);
+        Assert.notNull(result, "declaration [" + declaration.describe() + "] is not read by the validation of ["
+                + bean.getBeanClass().getName() + "]");
         return result;
     }
 
     /**
-     * Whether the binding is a shadow (a secondary declaration's) rather than a property binding.
+     * Every accessor, in property order: primaries first per property, then the secondaries read.
      *
-     * @param bindingName the binding name.
-     * @return true if it is a shadow binding.
+     * @return the accessors by declaration; unmodifiable.
      */
-    public boolean isShadow(String bindingName) {
-        Assert.notNull(bindingName, "bindingName cannot be null.");
-        return bindings.containsKey(bindingName) && !properties.containsValue(bindingName);
+    public Map<PropertyDeclaration, PropertyAccessor> getAccessors() {
+        return accessors;
+    }
+
+    /**
+     * Binds the properties of the given bean into the current scope: one lazy, remembered,
+     * read-only binding per property, holding its primary declaration's value.
+     *
+     * @param bindings the bindings to load into.
+     * @param bean the bean; an instance of the planned class.
+     */
+    @Override
+    public void load(Bindings bindings, Object bean) {
+        Assert.notNull(bindings, "bindings cannot be null.");
+        Assert.notNull(bean, "bean cannot be null.");
+        Assert.isTrue(this.bean.getBeanClass().isInstance(bean), "bean [" + bean.getClass().getName()
+                + "] is not an instance of [" + this.bean.getBeanClass().getName() + "]");
+
+        for (Map.Entry<String, PropertyDefinition> entry : this.bindings.entrySet()) {
+            PropertyDefinition property = entry.getValue();
+            PropertyAccessor accessor = accessors.get(property.getPropertySource().getPrimary());
+            Binding<?> binding = Binding.builder().with(entry.getKey(), bindingType(property))
+                    .value(new Memoized(() -> accessor.read(bean)))
+                    .editable(false)
+                    .build();
+            bindings.bind(binding);
+        }
+    }
+
+    /**
+     * The type a property is bound with: its resolved generic type when fully known, else its class.
+     */
+    private static Type bindingType(PropertyDefinition property) {
+        Type type = property.getGenericType();
+        return isConcrete(type) ? type : property.getType();
+    }
+
+    private static boolean isConcrete(Type type) {
+        if (type instanceof Class<?>) return true;
+        if (type instanceof ParameterizedType parameterized) {
+            for (Type argument : parameterized.getActualTypeArguments()) {
+                if (!isConcrete(argument)) return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Reads once, on first access, and remembers the value (null included).
+     */
+    private static final class Memoized implements Supplier<Object> {
+
+        private final Supplier<Object> source;
+        private boolean read;
+        private Object value;
+
+        private Memoized(Supplier<Object> source) {
+            super();
+            this.source = source;
+        }
+
+        @Override
+        public Object get() {
+            if (!read) {
+                value = source.get();
+                read = true;
+            }
+            return value;
+        }
     }
 
     @Override

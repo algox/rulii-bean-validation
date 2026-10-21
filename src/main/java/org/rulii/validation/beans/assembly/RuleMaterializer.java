@@ -19,9 +19,13 @@ package org.rulii.validation.beans.assembly;
 
 import jakarta.validation.Constraint;
 import jakarta.validation.ValidationException;
+import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
+import org.rulii.model.function.Function;
+import org.rulii.model.function.Functions;
 import org.rulii.rule.Rule;
+import org.rulii.validation.BindingFunction;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperException;
@@ -35,6 +39,7 @@ import org.rulii.validation.beans.model.PropertyConstraintSource;
 import org.rulii.validation.beans.model.PropertyDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.util.reflect.Types;
+import org.rulii.validation.rules.Validators;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
@@ -46,9 +51,11 @@ import java.util.Map;
  * {@link ConstraintTarget} is prepared and the constraint's {@link ConstraintMapper mapper} builds
  * the rules. Policy lives here, in one place:
  * <ul>
- *     <li><b>value</b>: property constraints read the binding of the declaration they were written
- *     on ({@link BindingPlan}); container element constraints read {@code $element}, or {@code $key} /
- *     {@code $value} for map positions; class constraints read {@code $this};</li>
+ *     <li><b>value</b>: a property constraint reads the property binding when it is written on the
+ *     primary declaration, and reads its own declaration off {@code $this} otherwise, so a field
+ *     constraint validates the field and a getter constraint the getter ({@link BindingPlan});
+ *     container element constraints read {@code $element}, or {@code $key} / {@code $value} for map
+ *     positions; class constraints read {@code $this};</li>
  *     <li><b>names</b>: {@code <property>_<constraint>} for property rules,
  *     {@code <property>_<Container><index>_<constraint>} for element rules,
  *     {@code <ClassName>_<constraint>} for class rules, composing constraints appending
@@ -59,8 +66,10 @@ import java.util.Map;
  *     <li><b>message</b>: a literal message is translated into a rulii template once; a message that
  *     is a bundle key is left to the error code, resolved at render time;</li>
  *     <li><b>composition</b>: composing constraints are materialized recursively, each as its own
- *     rules; a pure composition (no mapper, no validators) contributes no rule of its own; rules
- *     under a {@code @ReportAsSingleViolation} host record the host for the runtime to wrap.</li>
+ *     rules; a pure composition (no mapper, no validators) contributes no rule of its own. A
+ *     {@code @ReportAsSingleViolation} composition becomes one {@link ReportAsSingleViolationRule}
+ *     hosting the rules of its composing constraints (and its own, if it has a mapper), reporting
+ *     once with the host's code and message.</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -94,6 +103,7 @@ public final class RuleMaterializer {
      * @return the rules.
      * @throws ConstraintMapperException if a mapper is missing, misbehaves or produces a rule name
      *         already in use.
+     * @throws InaccessiblePropertyException if a declaration validation reads cannot be made accessible.
      */
     public BeanRules materialize(BeanDefinition bean) {
         Assert.notNull(bean, "bean cannot be null.");
@@ -106,11 +116,14 @@ public final class RuleMaterializer {
 
         for (PropertyDefinition property : bean.getProperties()) {
             String name = property.getName();
+            String binding = plan.getBindingName(property);
 
             for (ConstraintDefinition constraint : property.getConstraints()) {
                 PropertyDeclaration declaration = ((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration();
-                Site site = new Site(beanClass, name, plan.getBindingName(declaration), name, declaration.getType(), name,
-                        declaration.describe());
+                Function<?> value = plan.isPrimary(declaration)
+                        ? Validators.binding(binding)
+                        : reading(binding, plan.getAccessor(declaration));
+                Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), name, declaration.describe());
                 materialize(constraint, null, site, name + "_" + decapitalize(constraint.getAnnotationType()), propertyRules);
             }
 
@@ -122,8 +135,8 @@ public final class RuleMaterializer {
         String className = beanClass.getSimpleName().isEmpty() ? "Bean" : beanClass.getSimpleName();
 
         for (ConstraintDefinition constraint : bean.getClassConstraints()) {
-            Site site = new Site(beanClass, null, BindingPlan.THIS, BindingPlan.THIS, beanClass, null,
-                    constraint.getConstraintSource().describe());
+            Site site = new Site(beanClass, null, BindingPlan.THIS, Validators.binding(BindingPlan.THIS), BindingPlan.THIS,
+                    beanClass, null, constraint.getConstraintSource().describe());
             materialize(constraint, null, site, className + "_" + decapitalize(constraint.getAnnotationType()), classRules);
         }
 
@@ -131,10 +144,19 @@ public final class RuleMaterializer {
     }
 
     /**
+     * A value function reading a declaration off the object in scope, named after the property
+     * binding so the rules report the value under the property name.
+     */
+    private static Function<?> reading(String bindingName, PropertyAccessor accessor) {
+        return new BindingFunction<>(bindingName, Functions.function((RuleContext ruleContext) ->
+                accessor.read(ruleContext.getBindings().getValue(BindingPlan.THIS))));
+    }
+
+    /**
      * Where a constraint occurrence sits: what the materializer knows regardless of which mapper runs.
      */
-    private record Site(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
-                        String leaf, String location) {}
+    private record Site(Class<?> beanClass, String propertyName, String bindingName, Function<?> value, String valueName,
+                        Class<?> type, String leaf, String location) {}
 
     private void elements(Class<?> beanClass, PropertyDefinition property, ContainerElementDefinition node, String prefix,
                           List<BeanRules.ElementRules> out) {
@@ -143,8 +165,9 @@ public final class RuleMaterializer {
         if (!node.getConstraints().isEmpty()) {
             List<MaterializedRule> rules = new ArrayList<>();
             Class<?> type = node.getType() != null ? Types.erasure(node.getType()) : Object.class;
-            Site site = new Site(beanClass, property.getName(), elementBinding(node), property.getName(), type, null,
-                    node.getSourceDeclaration().describe() + " " + node.getName());
+            String binding = elementBinding(node);
+            Site site = new Site(beanClass, property.getName(), binding, Validators.binding(binding), property.getName(), type,
+                    null, node.getSourceDeclaration().describe() + " " + node.getName());
 
             for (ConstraintDefinition constraint : node.getConstraints()) {
                 materialize(constraint, null, site, name + "_" + decapitalize(constraint.getAnnotationType()), rules);
@@ -184,15 +207,21 @@ public final class RuleMaterializer {
                              List<MaterializedRule> out) {
         Class<? extends Annotation> type = constraint.getAnnotationType();
         ConstraintMapper mapper = mappers.find(type);
+        boolean pureComposition = constraint.isComposed() && type.getAnnotation(Constraint.class).validatedBy().length == 0;
 
-        if (mapper == null) {
-            if (!(constraint.isComposed() && type.getAnnotation(Constraint.class).validatedBy().length == 0)) {
-                throw new ConstraintMapperException(type, site.location(), "no mapper is registered for the constraint.");
-            }
-        } else {
-            ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(),
-                    site.valueName(), site.type(), ruleName, errorCode(type), constraint.getSeverity(),
-                    message(constraint, mapper, site.valueName()), constraint.getSource());
+        if (mapper == null && !pureComposition) {
+            throw new ConstraintMapperException(type, site.location(), "no mapper is registered for the constraint.");
+        }
+
+        Map<String, String> parameterNames = mapper != null ? mapper.getParameterNames() : Map.of();
+        ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(),
+                site.valueName(), site.type(), ruleName, errorCode(type), constraint.getSeverity(),
+                message(constraint, parameterNames, site.valueName()), constraint.getSource(), site.value());
+        // Inside a @ReportAsSingleViolation constraint, every rule (its own and its composing ones) is hosted by it.
+        ConstraintDefinition ownHost = constraint.isReportAsSingleViolation() ? constraint : host;
+        List<MaterializedRule> own = new ArrayList<>();
+
+        if (mapper != null) {
             List<Rule> rules;
 
             try {
@@ -209,15 +238,27 @@ public final class RuleMaterializer {
 
             for (Rule rule : rules) {
                 if (rule == null) throw new ConstraintMapperException(type, site.location(), "returned a null rule.");
-                out.add(new MaterializedRule(rule, constraint, host, target, site.leaf()));
+                own.add(new MaterializedRule(rule, constraint, ownHost, target, site.leaf()));
             }
         }
 
-        ConstraintDefinition composingHost = constraint.isReportAsSingleViolation() ? constraint : host;
-
         for (ConstraintDefinition composing : constraint.getComposingConstraints()) {
-            materialize(composing, composingHost, site, ruleName + "_" + decapitalize(composing.getAnnotationType()), out);
+            materialize(composing, ownHost, site, ruleName + "_" + decapitalize(composing.getAnnotationType()), own);
         }
+
+        if (!constraint.isReportAsSingleViolation() || own.isEmpty()) {
+            out.addAll(own);
+            return;
+        }
+
+        List<Rule> hosted = new ArrayList<>(own.size());
+
+        for (MaterializedRule rule : own) {
+            hosted.add(rule.getRule());
+        }
+
+        Rule wrapper = target.configure(ReportAsSingleViolationRule.builder(target.value(), hosted), true).build();
+        out.add(new MaterializedRule(wrapper, constraint, host, target, site.leaf(), own));
     }
 
     /**
@@ -231,10 +272,10 @@ public final class RuleMaterializer {
         return annotationType.getName() + MESSAGE_KEY_SUFFIX;
     }
 
-    private static String message(ConstraintDefinition constraint, ConstraintMapper<?> mapper, String valueName) {
+    private static String message(ConstraintDefinition constraint, Map<String, String> parameterNames, String valueName) {
         String template = constraint.getMessage();
         if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(constraint.getAnnotationType()))) return null;
-        return MessageTemplates.translate(template, mapper.getParameterNames(), valueName);
+        return MessageTemplates.translate(template, parameterNames, valueName);
     }
 
     private static String decapitalize(Class<? extends Annotation> annotationType) {

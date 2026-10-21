@@ -331,10 +331,5 @@ public class BeanRuleViolationsTest {
         private List<@NotBlank String> tags;
         private Map<String, @Positive Integer> counts;
         private List<Order> orders;
-
-        public String getCode() { return code; }
-        public List<String> getTags() { return tags; }
-        public Map<String, Integer> getCounts() { return counts; }
-        public List<Order> getOrders() { return orders; }
     }
 }

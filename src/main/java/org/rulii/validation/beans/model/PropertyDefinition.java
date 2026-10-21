@@ -73,18 +73,18 @@ public final class PropertyDefinition implements Definition {
     private final PropertySource propertySource;
     private final List<ConstraintDefinition> constraints;
     private final List<ContainerElementDefinition> containerElements;
-    private final boolean cascaded;
+    private final List<PropertyDeclaration> cascadedDeclarations;
     private final List<ValidateDefinition> validateRules;
     private final SourceDefinition source;
 
     private PropertyDefinition(PropertySource propertySource, List<ConstraintDefinition> constraints,
-                               List<ContainerElementDefinition> containerElements, boolean cascaded,
+                               List<ContainerElementDefinition> containerElements, List<PropertyDeclaration> cascadedDeclarations,
                                List<ValidateDefinition> validateRules) {
         super();
         this.propertySource = propertySource;
         this.constraints = constraints;
         this.containerElements = containerElements;
-        this.cascaded = cascaded;
+        this.cascadedDeclarations = cascadedDeclarations;
         this.validateRules = validateRules;
         this.source = propertySource.getSourceDefinition();
     }
@@ -162,20 +162,20 @@ public final class PropertyDefinition implements Definition {
         List<ConstraintDefinition> constraints = new ArrayList<>();
         List<ContainerElementDefinition> elements = Collections.emptyList();
         List<ValidateDefinition> validateRules = new ArrayList<>();
-        boolean cascaded = false;
+        List<PropertyDeclaration> cascadedDeclarations = new ArrayList<>(1);
 
         for (PropertyDeclaration declaration : propertySource.getDeclarations()) {
             Read read = read(declaration, registry);
             constraints.addAll(read.constraints);
             elements = ContainerElementDefinition.merge(elements, read.elements);
-            cascaded |= read.cascaded;
+            if (read.cascaded) cascadedDeclarations.add(declaration);
             validateRules.addAll(read.validateRules);
         }
 
         ValidateDefinition.checkDistinct(validateRules, "property [" + propertySource.getName() + "]");
 
-        return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements, cascaded,
-                Collections.unmodifiableList(validateRules));
+        return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements,
+                Collections.unmodifiableList(cascadedDeclarations), Collections.unmodifiableList(validateRules));
     }
 
     /**
@@ -398,7 +398,18 @@ public final class PropertyDefinition implements Definition {
      * @return true if cascaded.
      */
     public boolean isCascaded() {
-        return cascaded;
+        return !cascadedDeclarations.isEmpty();
+    }
+
+    /**
+     * The declarations carrying {@code @Valid}, in declaration order. Cascading reads the value of
+     * the declaration the annotation is written on: {@code @Valid} on the field validates the field's
+     * object, {@code @Valid} on the getter the getter's.
+     *
+     * @return the cascaded declarations; empty if the property is not cascaded.
+     */
+    public List<PropertyDeclaration> getCascadedDeclarations() {
+        return cascadedDeclarations;
     }
 
     /**
@@ -420,7 +431,7 @@ public final class PropertyDefinition implements Definition {
      * @return true if the property has validation to perform.
      */
     public boolean isConstrained() {
-        return !constraints.isEmpty() || cascaded || !containerElements.isEmpty() || !validateRules.isEmpty();
+        return !constraints.isEmpty() || isCascaded() || !containerElements.isEmpty() || !validateRules.isEmpty();
     }
 
     @Override
@@ -430,7 +441,7 @@ public final class PropertyDefinition implements Definition {
                 ", source=" + propertySource +
                 ", type=" + propertySource.getGenericType().getTypeName() +
                 ", constraints=" + constraints +
-                ", cascaded=" + cascaded +
+                ", cascaded=" + isCascaded() +
                 ", containerElements=" + containerElements +
                 ", validateRules=" + validateRules +
                 '}';

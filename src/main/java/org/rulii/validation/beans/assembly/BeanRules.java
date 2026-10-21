@@ -128,6 +128,10 @@ public final class BeanRules {
                     rule.getDefinition().getConstraintSource().describe(), "rule name [" + rule.getName()
                     + "] is already used by " + previous + "; rule names must be unique within a bean class.");
         }
+
+        for (MaterializedRule hosted : rule.getHostedRules()) {
+            register(names, hosted);
+        }
     }
 
     public BeanDefinition getDefinition() {
