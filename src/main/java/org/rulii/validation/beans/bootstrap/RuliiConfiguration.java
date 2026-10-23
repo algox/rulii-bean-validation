@@ -33,9 +33,12 @@ import jakarta.validation.spi.ConfigurationState;
 import jakarta.validation.spi.ValidationProvider;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
+import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
+import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
+import org.rulii.validation.beans.message.RuliiMessageInterpolator;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -76,6 +79,7 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     private RuleRegistry registry;
     private final List<ConstraintMapper<?>> mappers = new ArrayList<>();
     private RuleContextOptions options;
+    private MessageInterpolator defaultMessageInterpolator;
 
     /**
      * Creates a configuration.
@@ -204,9 +208,20 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
         return this;
     }
 
+    /**
+     * The interpolator rendering as the validator does, over this configuration's mappers and options.
+     */
     @Override
     public MessageInterpolator getDefaultMessageInterpolator() {
-        return Defaults.MESSAGE_INTERPOLATOR;
+        if (defaultMessageInterpolator == null) {
+            ConstraintMapperRegistryBuilder registry = ConstraintMapperRegistryBuilder.standard();
+            for (ConstraintMapper<?> mapper : mappers) {
+                registry.mapper(mapper);
+            }
+            defaultMessageInterpolator = new RuliiMessageInterpolator(registry.build(),
+                    options != null ? options : StandardRuleContextOptions.build());
+        }
+        return defaultMessageInterpolator;
     }
 
     @Override

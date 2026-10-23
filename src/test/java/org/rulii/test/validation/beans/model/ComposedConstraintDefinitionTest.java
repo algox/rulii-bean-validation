@@ -160,7 +160,7 @@ public class ComposedConstraintDefinitionTest {
 
     @Test
     public void defaultConstraintIndexDoesNotTargetRepeatedConstraints() throws Exception {
-        // Hibernate Validator semantics: index -1 means "the single direct declaration";
+        // Reference implementation semantics: index -1 means "the single direct declaration";
         // constraints inside a repeatable container are indexed 0..n-1 and are left untouched.
         ConstraintDefinition definition = single("twoPatternsNoIndex");
         List<ConstraintDefinition> composing = definition.getComposingConstraints();

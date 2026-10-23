@@ -26,8 +26,8 @@ import org.rulii.lib.spring.util.Assert;
 
 /**
  * The Bean Validation provider of rulii bean validation: what the spec's bootstrap finds through
- * {@code META-INF/services/jakarta.validation.spi.ValidationProvider}. With Hibernate Validator off the
- * classpath and this library on it, {@code Validation.buildDefaultValidatorFactory().getValidator()}
+ * {@code META-INF/services/jakarta.validation.spi.ValidationProvider}. With this library as the only
+ * provider on the classpath, {@code Validation.buildDefaultValidatorFactory().getValidator()}
  * hands out a {@code BeanValidator} with no code change, and so does every framework that bootstraps
  * through {@code Validation}. Provider-specific configuration:
  * <pre>

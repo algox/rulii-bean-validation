@@ -26,6 +26,7 @@ import org.rulii.model.function.Function;
 import org.rulii.model.function.Functions;
 import org.rulii.rule.Rule;
 import org.rulii.validation.BindingFunction;
+import org.rulii.validation.beans.descriptor.ConstraintDefinitionDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperException;
@@ -44,6 +45,7 @@ import org.rulii.validation.rules.Validators;
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -286,7 +288,8 @@ public final class RuleMaterializer {
             hosted.add(rule.getRule());
         }
 
-        Rule wrapper = target.configure(ReportAsSingleViolationRule.builder(target.value(), hosted), true).build();
+        Rule wrapper = target.configure(ReportAsSingleViolationRule.builder(target.value(), hosted), true)
+                .parameters(attributes(constraint)).build();
         out.add(new MaterializedRule(wrapper, constraint, host, target, site.leaf(), own));
     }
 
@@ -296,6 +299,18 @@ public final class RuleMaterializer {
      * @param annotationType the constraint annotation type.
      * @return {@code <annotation class name>.message}.
      */
+    /**
+     * The attributes of a constraint other than {@code message}, {@code groups} and {@code payload}: what a
+     * composition's violation reports so the host's message can reference them.
+     */
+    private static Map<String, Object> attributes(ConstraintDefinition constraint) {
+        Map<String, Object> result = new LinkedHashMap<>(ConstraintDefinitionDescriptor.of(constraint).getAttributes());
+        result.remove("message");
+        result.remove("groups");
+        result.remove("payload");
+        return result;
+    }
+
     public static String errorCode(Class<? extends Annotation> annotationType) {
         Assert.notNull(annotationType, "annotationType cannot be null.");
         return annotationType.getName() + MESSAGE_KEY_SUFFIX;
@@ -303,7 +318,12 @@ public final class RuleMaterializer {
 
     private static String message(ConstraintDefinition constraint, Map<String, String> parameterNames, String valueName) {
         String template = constraint.getMessage();
-        if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(constraint.getAnnotationType()))) return null;
+        // The constraint's own default key resolves through the error code; any other key becomes a placeholder
+        // the render-time formatter expands.
+        if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(constraint.getAnnotationType()))
+                && errorCode(constraint.getAnnotationType()).equals(MessageTemplates.templateKey(template))) {
+            return null;
+        }
         return MessageTemplates.translate(template, parameterNames, valueName);
     }
 

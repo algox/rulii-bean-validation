@@ -82,7 +82,7 @@ public class ConstraintMapperRegistryTest {
     public void standardRegistryCoversAllStandardConstraints() {
         ConstraintMapperRegistry registry = ConstraintMapperRegistry.builder().build();
         assertEquals(22, STANDARD.size());
-        assertEquals(22, registry.getMappers().size());
+        assertEquals(44, registry.getMappers().size());
 
         for (Class<? extends Annotation> type : STANDARD) {
             ConstraintMapper<?> mapper = registry.find(type);
@@ -102,9 +102,9 @@ public class ConstraintMapperRegistryTest {
 
     @Test
     public void builderVariants() {
-        assertEquals(22, ConstraintMapperRegistryBuilder.standard().build().getMappers().size());
+        assertEquals(44, ConstraintMapperRegistryBuilder.standard().build().getMappers().size());
         assertTrue(ConstraintMapperRegistryBuilder.empty().build().getMappers().isEmpty());
-        assertEquals(22, ConstraintMapperRegistry.builder(true).build().getMappers().size());
+        assertEquals(44, ConstraintMapperRegistry.builder(true).build().getMappers().size());
     }
 
     @Test
@@ -113,7 +113,7 @@ public class ConstraintMapperRegistryTest {
         ConstraintMapperRegistry registry = ConstraintMapperRegistry.builder().mapper(custom).build();
         ConstraintMapper<Custom> found = registry.find(Custom.class);
         assertSame(custom, found);
-        assertEquals(23, registry.getMappers().size());
+        assertEquals(45, registry.getMappers().size());
     }
 
     @Test
@@ -142,7 +142,7 @@ public class ConstraintMapperRegistryTest {
         registry.register(replacement);
 
         assertSame(replacement, registry.find(Size.class));
-        assertEquals(22, registry.getMappers().size());
+        assertEquals(44, registry.getMappers().size());
     }
 
     @Test
@@ -198,7 +198,7 @@ public class ConstraintMapperRegistryTest {
 
     @Test
     public void toStringShowsCount() {
-        assertTrue(new DefaultConstraintMapperRegistry(true).toString().contains("22"));
+        assertTrue(new DefaultConstraintMapperRegistry(true).toString().contains("44"));
     }
 
     @Constraint(validatedBy = {})

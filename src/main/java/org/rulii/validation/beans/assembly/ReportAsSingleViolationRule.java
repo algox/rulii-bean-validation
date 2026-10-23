@@ -23,12 +23,16 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.function.Function;
 import org.rulii.rule.Rule;
+import org.rulii.validation.RuleViolationBuilder;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.Severity;
 import org.rulii.validation.ValueValidationRule;
 import org.rulii.validation.beans.BeanRuleViolations;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The rule of a {@code @ReportAsSingleViolation} composition: runs the rules of the composing
@@ -58,6 +62,7 @@ public class ReportAsSingleViolationRule extends ValueValidationRule {
     public static final String DEFAULT_MESSAGE  = "Value is not valid.";
 
     private final List<Rule> composingRules;
+    private final Map<String, Object> parameters;
 
     /**
      * Creates a builder.
@@ -71,11 +76,13 @@ public class ReportAsSingleViolationRule extends ValueValidationRule {
     }
 
     ReportAsSingleViolationRule(Function<?> valueFunction, String errorCode, Severity severity, String errorMessage,
-                                String valueName, List<Rule> composingRules) {
+                                String valueName, List<Rule> composingRules, Map<String, Object> parameters) {
         super(valueFunction, errorCode, severity, errorMessage, DEFAULT_MESSAGE, valueName);
         Assert.notNull(composingRules, "composingRules cannot be null.");
         Assert.isTrue(!composingRules.isEmpty(), "composingRules cannot be empty.");
+        Assert.notNull(parameters, "parameters cannot be null.");
         this.composingRules = List.copyOf(composingRules);
+        this.parameters = Collections.unmodifiableMap(new LinkedHashMap<>(parameters));
     }
 
     /**
@@ -85,6 +92,23 @@ public class ReportAsSingleViolationRule extends ValueValidationRule {
      */
     public List<Rule> getComposingRules() {
         return composingRules;
+    }
+
+    /**
+     * The parameters the violation reports beside the value: the host constraint's attributes, so its
+     * message can reference them ({@code length must be between {min} and {max}}).
+     *
+     * @return the parameters; unmodifiable.
+     */
+    public Map<String, Object> getParameters() {
+        return parameters;
+    }
+
+    @Override
+    protected void customizeViolation(RuleContext ruleContext, RuleViolationBuilder builder) {
+        for (Map.Entry<String, Object> parameter : parameters.entrySet()) {
+            builder.param(parameter.getKey(), parameter.getValue());
+        }
     }
 
     @Override

@@ -66,7 +66,7 @@ import java.util.Objects;
  * when it is read: the annotation exposed by a composing definition is <em>synthesized</em> with the
  * effective attribute values (overrides applied, groups and payload inherited), so downstream code
  * reads attributes directly off {@link #getAnnotation()} and never sees the declared values. The
- * {@code constraintIndex} of an override follows Hibernate Validator: a directly declared composing
+ * {@code constraintIndex} of an override follows the reference implementation: a directly declared composing
  * constraint has index {@code -1} (the default, "the single declaration"), the constraints of a
  * repeatable container are indexed {@code 0..n-1}; an override only applies to the exact index.
  * {@link ReportAsSingleViolation @ReportAsSingleViolation} is recorded as a flag.</p>

@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 /**
  * Thrown when a constraint is declared on a value whose static type it can never apply to, e.g.
  * {@code @Size} on an {@code int} (see {@link ConstraintMapper#isApplicable(Class)}). Raised when the
- * bean class is read, not when a value is validated. Same exception family Hibernate Validator uses
+ * bean class is read, not when a value is validated. Same exception family the reference implementation uses
  * when no validator fits the validated type.
  *
  * @author Max Arulananthan

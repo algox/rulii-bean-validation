@@ -24,7 +24,7 @@ import java.lang.annotation.Annotation;
 /**
  * Thrown when a bean declares a constraint that has no registered {@link ConstraintMapper} and is
  * not a pure composition of mapped constraints. Raised when the bean class is read, not when a value
- * is validated. Same exception family Hibernate Validator uses when no validator can be found.
+ * is validated. Same exception family the reference implementation uses when no validator can be found.
  *
  * <p>rulii bean validation does not execute {@code jakarta.validation.ConstraintValidator}
  * implementations; the fix is to register a mapper for the constraint:

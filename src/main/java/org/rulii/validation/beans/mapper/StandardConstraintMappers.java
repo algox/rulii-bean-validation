@@ -160,16 +160,16 @@ public final class StandardConstraintMappers {
         return result;
     }
 
-    private static List<Rule> single(ValueValidationRuleBuilder<?, ?> builder) {
+    static List<Rule> single(ValueValidationRuleBuilder<?, ?> builder) {
         return List.of(builder.build());
     }
 
-    private static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
+    static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
                                                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer) {
         return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer);
     }
 
-    private static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
+    static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
                                                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer,
                                                                  Map<String, String> parameterNames) {
         return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer, parameterNames);

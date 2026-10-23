@@ -20,7 +20,6 @@ package org.rulii.validation.beans.bootstrap;
 import jakarta.validation.ClockProvider;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorFactory;
-import jakarta.validation.MessageInterpolator;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.Path;
 import jakarta.validation.TraversableResolver;
@@ -36,22 +35,20 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * The default spec services a {@link RuliiConfiguration} reports when none is configured. They are
  * plain: the traversable resolver reaches and cascades into everything, the constraint validator
  * factory instantiates through the no-argument constructor (constraint validators are not run by this
  * library, but frameworks ask for the factory), the parameter name provider reads the compiled
- * parameter names, the clock is the system clock, and the message interpolator returns the template
- * (message rendering is rulii's, through the context's message resolver).
+ * parameter names, the clock is the system clock. The default message interpolator is the
+ * {@link org.rulii.validation.beans.message.RuliiMessageInterpolator}, built per configuration.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
 final class Defaults {
 
-    static final MessageInterpolator MESSAGE_INTERPOLATOR = new TemplateMessageInterpolator();
     static final TraversableResolver TRAVERSABLE_RESOLVER = new ReachEverythingTraversableResolver();
     static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new NoArgConstraintValidatorFactory();
     static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new ReflectionParameterNameProvider();
@@ -59,23 +56,6 @@ final class Defaults {
 
     private Defaults() {
         super();
-    }
-
-    static final class TemplateMessageInterpolator implements MessageInterpolator {
-
-        private TemplateMessageInterpolator() {
-            super();
-        }
-
-        @Override
-        public String interpolate(String messageTemplate, Context context) {
-            return messageTemplate;
-        }
-
-        @Override
-        public String interpolate(String messageTemplate, Context context, Locale locale) {
-            return messageTemplate;
-        }
     }
 
     static final class ReachEverythingTraversableResolver implements TraversableResolver {

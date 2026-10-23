@@ -32,7 +32,7 @@ import java.util.Objects;
 /**
  * The property path of a violation: an immutable {@link jakarta.validation.Path} rendered in the
  * Bean Validation notation ({@code orders[2].customer.name}, {@code tags[2].<list element>},
- * {@code contacts[home].<map key>}), node for node what Hibernate Validator reports.
+ * {@code contacts[home].<map key>}), node for node what the reference implementation reports.
  * <p>
  * A path is a parent-linked chain of nodes; the path object itself names the leaf. Appending a node
  * ({@link #property(String)}, {@link #element(String)}, {@link #bean()}) allocates one node and shares

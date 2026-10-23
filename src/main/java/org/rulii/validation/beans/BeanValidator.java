@@ -27,6 +27,7 @@ import org.rulii.bind.ScopedBindings;
 import org.rulii.context.RuleContext;
 import org.rulii.context.RuleContextBuilder;
 import org.rulii.context.RuleContextOptions;
+import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.ruleflow.RuleFlow;
@@ -72,7 +73,7 @@ import java.util.concurrent.ConcurrentMap;
 public final class BeanValidator implements Validator {
 
     private final RuleRegistry registry;
-    private final RuleContextOptions options;
+    private final BeanValidationOptions options;
     private final BeanDefinitionLoader loader;
     private final RuleMaterializer materializer;
     private final RuleFlowAssembler assembler;
@@ -84,7 +85,7 @@ public final class BeanValidator implements Validator {
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
         this.registry = registry;
-        this.options = options;
+        this.options = BeanValidationOptions.wrap(options != null ? options : StandardRuleContextOptions.build(), mappers);
         this.loader = new BeanDefinitionLoader(extractors, mappers);
         this.materializer = new RuleMaterializer(mappers);
         this.assembler = new RuleFlowAssembler(this::getRuleFlow, extractors);
@@ -259,7 +260,9 @@ public final class BeanValidator implements Validator {
      * the context when there is one (path-stamped either way); otherwise a {@link BeanRuleViolations} is
      * bound for the run and returned. {@code @Validate} names resolve through this validator's registry
      * when it has one (a context always carries a registry, so the context's cannot signal "none");
-     * a validator built without a registry resolves through the context's.
+     * a validator built without a registry resolves through the context's. Messages render through the
+     * context's own resolver and formatter: build the context from {@link BeanValidationOptions} to get
+     * Bean Validation messages there too.
      *
      * @param context the context to run in.
      * @param object the object to validate.
@@ -331,11 +334,12 @@ public final class BeanValidator implements Validator {
     }
 
     /**
-     * The context options every validation context starts from.
+     * The context options every validation context is built from: the options given to the builder
+     * (the standard ones when none were), with Bean Validation messages.
      *
-     * @return the options; null when the standard context is used.
+     * @return the options.
      */
-    public RuleContextOptions getOptions() {
+    public BeanValidationOptions getOptions() {
         return options;
     }
 
@@ -370,7 +374,7 @@ public final class BeanValidator implements Validator {
     }
 
     private RuleContext context(Bindings bindings) {
-        RuleContextBuilder builder = options != null ? RuleContext.builder().with(options) : RuleContext.builder().standard();
+        RuleContextBuilder builder = RuleContext.builder().with(options);
         builder.bindings(bindings);
         if (registry != null) builder.registry(registry);
         return builder.build();

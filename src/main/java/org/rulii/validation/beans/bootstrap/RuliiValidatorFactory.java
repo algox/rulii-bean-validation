@@ -33,6 +33,8 @@ import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.BeanValidator;
 import org.rulii.validation.beans.BeanValidatorBuilder;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
+import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
+import org.rulii.validation.beans.message.RuliiMessageInterpolator;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -77,7 +79,8 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         super();
         Assert.notNull(state, "state cannot be null.");
         RuliiConfiguration ours = state instanceof RuliiConfiguration configuration ? configuration : null;
-        this.messageInterpolator = state.getMessageInterpolator() != null ? state.getMessageInterpolator() : Defaults.MESSAGE_INTERPOLATOR;
+        this.messageInterpolator = state.getMessageInterpolator() != null ? state.getMessageInterpolator()
+                : new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build());
         this.traversableResolver = state.getTraversableResolver() != null ? state.getTraversableResolver() : Defaults.TRAVERSABLE_RESOLVER;
         this.constraintValidatorFactory = state.getConstraintValidatorFactory() != null ? state.getConstraintValidatorFactory() : Defaults.CONSTRAINT_VALIDATOR_FACTORY;
         this.parameterNameProvider = state.getParameterNameProvider() != null ? state.getParameterNameProvider() : Defaults.PARAMETER_NAME_PROVIDER;

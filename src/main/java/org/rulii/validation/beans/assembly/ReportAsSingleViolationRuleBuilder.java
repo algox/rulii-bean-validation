@@ -23,10 +23,12 @@ import org.rulii.rule.Rule;
 import org.rulii.validation.Severity;
 import org.rulii.validation.ValueValidationRuleBuilder;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Builder of {@link ReportAsSingleViolationRule}.
+ * Builder for {@link ReportAsSingleViolationRule}.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -34,13 +36,8 @@ import java.util.List;
 public class ReportAsSingleViolationRuleBuilder extends ValueValidationRuleBuilder<ReportAsSingleViolationRuleBuilder, ReportAsSingleViolationRule> {
 
     private final List<Rule> composingRules;
+    private final Map<String, Object> parameters = new LinkedHashMap<>();
 
-    /**
-     * Creates the builder.
-     *
-     * @param valueFunction the function reading the validated value.
-     * @param composingRules the rules of the composing constraints.
-     */
     public ReportAsSingleViolationRuleBuilder(Function<?> valueFunction, List<Rule> composingRules) {
         super(valueFunction);
         Assert.notNull(composingRules, "composingRules cannot be null.");
@@ -50,8 +47,17 @@ public class ReportAsSingleViolationRuleBuilder extends ValueValidationRuleBuild
     }
 
     /**
-     * The rule must see null: the composing rules decide what null means.
+     * Parameters the violation reports beside the value, typically the host constraint's attributes.
+     *
+     * @param parameters the parameters by name.
+     * @return this builder.
      */
+    public ReportAsSingleViolationRuleBuilder parameters(Map<String, Object> parameters) {
+        Assert.notNull(parameters, "parameters cannot be null.");
+        this.parameters.putAll(parameters);
+        return this;
+    }
+
     @Override
     public ReportAsSingleViolationRuleBuilder failOnNull(boolean failOnNull) {
         Assert.isTrue(failOnNull, "failOnNull(false) is not allowed on [reportAsSingleViolationRule]; the composing rules handle null.");
@@ -61,6 +67,6 @@ public class ReportAsSingleViolationRuleBuilder extends ValueValidationRuleBuild
     @Override
     protected ReportAsSingleViolationRule createValueValidationRule() {
         return new ReportAsSingleViolationRule(getValueFunction(), getErrorCode(), getSeverity(), getErrorMessage(),
-                getValueName(), composingRules);
+                getValueName(), composingRules, parameters);
     }
 }

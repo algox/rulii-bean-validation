@@ -73,7 +73,7 @@ public class ConstraintSupportCheckTest {
     @Test
     public void singleArgumentConstructorUsesTheStandardMappers() {
         BeanDefinitionLoader loader = loader();
-        assertEquals(22, loader.getConstraintMapperRegistry().getMappers().size());
+        assertEquals(44, loader.getConstraintMapperRegistry().getMappers().size());
         assertNotNull(loader.getValueExtractorRegistry());
         assertThrows(IllegalArgumentException.class, () -> new BeanDefinitionLoader(null, ConstraintMapperRegistry.builder().build()));
         assertThrows(IllegalArgumentException.class, () -> new BeanDefinitionLoader(ValueExtractorRegistry.builder().build(), null));

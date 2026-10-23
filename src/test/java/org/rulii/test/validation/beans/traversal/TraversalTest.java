@@ -62,7 +62,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * The traversal end to end: descent, container walk, legacy {@code @Valid} on containers,
  * {@code @Validate} at run time, cycles and shared instances, runtime-type dispatch, and the
- * plain-collector hand-over through a cascade. Paths are asserted exactly as Hibernate Validator
+ * plain-collector hand-over through a cascade. Paths are asserted exactly as the reference implementation
  * renders them.
  */
 public class TraversalTest {
@@ -191,7 +191,7 @@ public class TraversalTest {
     }
 
     @Test
-    public void containerElementPathsMatchHibernateValidator() {
+    public void containerElementPathsMatchTheReferenceImplementation() {
         Inventory inventory = new Inventory();
         inventory.tags = List.of("", "ok", " ");
         inventory.tagSet = new LinkedHashSet<>(List.of("ok", ""));

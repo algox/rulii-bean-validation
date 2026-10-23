@@ -46,7 +46,7 @@ import java.util.Map;
  * {@code $key} beside a keyed value), the position's rules run at the element node
  * ({@code tags[2].<list element>}), a cascaded element descends at the subscripted path without the
  * element node, and nested positions walk on from the element node. An extractor serving the
- * container value itself ({@code Optional}) adds no node. This is how Hibernate Validator renders
+ * container value itself ({@code Optional}) adds no node. This is how the reference implementation renders
  * these paths.</p>
  *
  * <p>{@code @Valid} on a container-typed property ({@code @Valid List<Order>}) is the spec's legacy

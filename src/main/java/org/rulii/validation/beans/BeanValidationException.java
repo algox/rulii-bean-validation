@@ -22,7 +22,7 @@ import jakarta.validation.ValidationException;
 /**
  * Root of the failures this library reports that the spec has no type for: an invalid requested
  * group, a {@code @Validate} name that resolves to nothing, a property that cannot be read. It is a
- * jakarta {@link ValidationException}, so a handler written for Hibernate Validator catches it unchanged.
+ * jakarta {@link ValidationException}, so a handler written for any Bean Validation provider catches it unchanged.
  * <p>
  * Declaration errors the spec names keep their spec type ({@code ConstraintDeclarationException} and
  * subclasses); unexpected internal failures are {@code UnrulyException}, as everywhere in rulii.

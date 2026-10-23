@@ -76,6 +76,7 @@ public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry
 
     private void registerDefaults() {
         StandardConstraintMappers.all().forEach(this::register);
+        LibraryConstraintMappers.all().forEach(this::register);
     }
 
     @Override

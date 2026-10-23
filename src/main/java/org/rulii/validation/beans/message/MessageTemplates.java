@@ -39,8 +39,9 @@ import java.util.regex.Pattern;
  *     <li>{@code {attr}} with an identifier becomes {@code ${param}}, the parameter name taken from the
  *     given mapping when the rule reports the attribute under a different name ({@code {regexp}} to
  *     {@code ${pattern}}), else the attribute name itself;</li>
- *     <li>{@code {some.key}}, a message parameter that is not an identifier, is a bundle reference the
- *     render-time resolver may expand; it is quoted so it emerges verbatim until then;</li>
+ *     <li>{@code {some.key}}, a message parameter that is not an identifier, is a bundle reference: it
+ *     becomes the placeholder {@code ${some.key}}, which the render-time formatter expands against the
+ *     bundles ({@link BeanValidationMessageFormatter});</li>
  *     <li>{@code ${validatedValue}} becomes {@code ${<value name>}}, the parameter rulii rules report the
  *     offending value under; any other bare identifier in {@code ${...}} is treated as a parameter;</li>
  *     <li>every other {@code ${...}} is an EL expression: unsupported, left verbatim for the render-time
@@ -61,6 +62,7 @@ public final class MessageTemplates {
     public static final String VALIDATED_VALUE = "validatedValue";
 
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
+    private static final Pattern KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+)+");
 
     private MessageTemplates() {
         super();
@@ -166,8 +168,11 @@ public final class MessageTemplates {
                     placeholder(result, valueName);
                 } else if (IDENTIFIER.matcher(content).matches()) {
                     placeholder(result, parameterNames.getOrDefault(content, content));
+                } else if (isKey(content)) {
+                    // Bundle key: a placeholder the render-time formatter expands against the bundles.
+                    placeholder(result, content);
                 } else {
-                    // Bundle key or arbitrary text: keep verbatim, quoted for MessageFormat.
+                    // Arbitrary text: keep verbatim, quoted for MessageFormat.
                     literal(result, '{');
                     for (int j = i + 1; j < end; j++) {
                         literal(result, template.charAt(j));
@@ -191,6 +196,17 @@ public final class MessageTemplates {
      * @param annotationType the annotation type.
      * @return the names of its attributes.
      */
+    /**
+     * Whether a text is a message key: a dotted name such as {@code my.key} or
+     * {@code jakarta.validation.constraints.Size.message}, as opposed to an attribute name or arbitrary text.
+     *
+     * @param text the text.
+     * @return true if it is a dotted key.
+     */
+    public static boolean isKey(String text) {
+        return text != null && KEY.matcher(text).matches();
+    }
+
     public static Set<String> attributeNames(Class<? extends Annotation> annotationType) {
         Assert.notNull(annotationType, "annotationType cannot be null.");
         Set<String> result = new LinkedHashSet<>();

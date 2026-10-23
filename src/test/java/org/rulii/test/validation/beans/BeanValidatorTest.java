@@ -93,7 +93,7 @@ public class BeanValidatorTest {
     }
 
     @Test
-    public void hibernateValidatorCallSitesCompileUnchanged() {
+    public void validatorCallSitesCompileUnchanged() {
         Validator validator = validator();
         Order order = new Order();
         order.code = "x";
@@ -233,7 +233,7 @@ public class BeanValidatorTest {
                 .build();
 
         assertSame(REGISTRY, validator.getRuleRegistry());
-        assertSame(options, validator.getOptions());
+        assertSame(options, validator.getOptions().getDelegate());
         assertNotNull(validator.getConstraintMapperRegistry().find(Even.class));
         assertNotNull(validator.getValueExtractorRegistry().find(Box.class, 0));
 

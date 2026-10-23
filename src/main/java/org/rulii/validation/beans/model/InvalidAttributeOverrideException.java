@@ -25,7 +25,7 @@ import java.lang.annotation.Annotation;
 /**
  * Thrown when an {@link OverridesAttribute @OverridesAttribute} on a composed constraint cannot be
  * applied: the composing constraint does not declare the targeted attribute, or the attribute types
- * differ. Same failures as Hibernate Validator reports for an illegal override.
+ * differ. Same failures as the reference implementation reports for an illegal override.
  *
  * @author Max Arulananthan
  * @since 1.0
