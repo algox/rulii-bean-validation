@@ -1,0 +1,432 @@
+/*
+ * This software is licensed under the Apache 2 license, quoted below.
+ *
+ * Copyright (c) 1999-2026, Algorithmx Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.rulii.test.validation.beans;
+
+import jakarta.validation.Constraint;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ElementKind;
+import jakarta.validation.Payload;
+import jakarta.validation.Valid;
+import jakarta.validation.ValidationException;
+import jakarta.validation.Validator;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.groups.Default;
+import jakarta.validation.metadata.ConstraintDescriptor;
+import jakarta.validation.metadata.ValidateUnwrappedValue;
+import jakarta.validation.valueextraction.ExtractedValue;
+import jakarta.validation.valueextraction.ValueExtractor;
+import org.junit.jupiter.api.Test;
+import org.rulii.bind.Bindings;
+import org.rulii.bind.ScopedBindings;
+import org.rulii.context.RuleContext;
+import org.rulii.context.StandardRuleContextOptions;
+import org.rulii.registry.RuleRegistry;
+import org.rulii.validation.RuleViolation;
+import org.rulii.validation.RuleViolations;
+import org.rulii.validation.beans.BeanRuleViolation;
+import org.rulii.validation.beans.BeanRuleViolations;
+import org.rulii.validation.beans.BeanValidationException;
+import org.rulii.validation.beans.BeanValidationResult;
+import org.rulii.validation.beans.BeanValidator;
+import org.rulii.validation.beans.Validate;
+import org.rulii.validation.beans.ValidateRuleNotFoundException;
+import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.group.InvalidGroupException;
+import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
+import org.rulii.validation.beans.mapper.SimpleConstraintMapper;
+import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.rules.Validators;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * The entry point as a {@code jakarta.validation.Validator} and as a rulii validator.
+ */
+public class BeanValidatorTest {
+
+    private static final RuleRegistry REGISTRY = RuleRegistry.builder()
+            .register(Validators.notNull(Validators.binding("customer")).name("customerRequired").build())
+            .build();
+
+    public BeanValidatorTest() {
+        super();
+    }
+
+    private static BeanValidator validator() {
+        return BeanValidator.builder().registry(REGISTRY).build();
+    }
+
+    private static List<String> report(Iterable<? extends ConstraintViolation<?>> violations) {
+        List<String> result = new ArrayList<>();
+        for (ConstraintViolation<?> violation : violations) {
+            result.add(violation.getPropertyPath() + ":" + ((RuleViolation) violation).getRuleName());
+        }
+        return result;
+    }
+
+    @Test
+    public void hibernateValidatorCallSitesCompileUnchanged() {
+        Validator validator = validator();
+        Order order = new Order();
+        order.code = "x";
+        order.customer = new Customer();
+
+        Set<ConstraintViolation<Order>> violations = validator.validate(order);
+
+        assertEquals(List.of("code:code_size", "customer.name:name_notBlank"), report(violations));
+        for (ConstraintViolation<Order> violation : violations) {
+            Order root = violation.getRootBean();
+            assertSame(order, root);
+            assertEquals(Order.class, violation.getRootBeanClass());
+            assertNotNull(violation.getMessage());
+            assertNull(violation.getExecutableParameters());
+            assertNull(violation.getExecutableReturnValue());
+            assertSame(violation, violation.unwrap(BeanRuleViolation.class));
+            assertSame(violation, violation.unwrap(ConstraintViolation.class));
+            assertThrows(ValidationException.class, () -> violation.unwrap(String.class));
+        }
+        ConstraintViolation<Order> code = violations.iterator().next();
+        assertEquals("x", code.getInvalidValue());
+        assertSame(order, code.getLeafBean());
+        assertEquals("{jakarta.validation.constraints.Size.message}", code.getMessageTemplate());
+        assertEquals(ElementKind.PROPERTY, code.getPropertyPath().iterator().next().getKind());
+
+        ConstraintDescriptor<?> descriptor = code.getConstraintDescriptor();
+        assertInstanceOf(Size.class, descriptor.getAnnotation());
+        assertEquals(2, ((Size) descriptor.getAnnotation()).min());
+        assertEquals("{jakarta.validation.constraints.Size.message}", descriptor.getMessageTemplate());
+        assertEquals(Set.of(Default.class), descriptor.getGroups(), "no groups declared reads as Default");
+        assertTrue(descriptor.getPayload().isEmpty());
+        assertNull(descriptor.getValidationAppliesTo());
+        assertEquals(2, descriptor.getAttributes().get("min"));
+        assertEquals(List.of("groups", "max", "message", "min", "payload"), new ArrayList<>(descriptor.getAttributes().keySet()));
+        assertTrue(descriptor.getComposingConstraints().isEmpty());
+        assertFalse(descriptor.isReportAsSingleViolation());
+        assertEquals(ValidateUnwrappedValue.DEFAULT, descriptor.getValueUnwrapping());
+        assertTrue(descriptor.getConstraintValidatorClasses().isEmpty(), "built-in constraints declare validatedBy = {}; the provider supplies them");
+        assertInstanceOf(ConstraintDefinition.class, descriptor.unwrap(ConstraintDefinition.class));
+        assertThrows(ValidationException.class, () -> descriptor.unwrap(String.class));
+    }
+
+    @Test
+    public void resultCarriesTheRuliiReport() {
+        BeanValidator validator = validator();
+        Order order = new Order();
+        order.code = "x";
+        order.customer = new Customer();
+        order.customer.name = "ok";
+
+        BeanValidationResult<Order> result = validator.validate(order);
+
+        assertSame(order, result.getRootBean());
+        BeanRuleViolations report = result.getRuleViolations();
+        assertEquals(1, report.size());
+        assertEquals(1, result.size());
+        assertEquals(result.getViolations(), report.getBeanViolations());
+        assertTrue(result.contains(report.getBeanViolations().get(0)));
+        assertEquals("code", result.getViolations().get(0).getPropertyPath().toString());
+        assertThrows(UnsupportedOperationException.class, () -> result.add(null), "the spec's set is immutable");
+        assertTrue(result.toString().contains("Order"));
+
+        order.code = "ok";
+        assertTrue(validator.validate(order).isEmpty(), "nothing wrong: the spec's empty set");
+    }
+
+    @Test
+    public void validateRulesAndGroupsAtTheEntryPoint() {
+        BeanValidator validator = validator();
+        Order order = new Order();
+        order.code = "ok";
+
+        assertEquals(List.of(":customerRequired"), report(validator.validate(order)), "class-level @Validate through the configured registry");
+        // @Validate is group-agnostic (R9.6): it runs whatever the requested groups.
+        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, OnCreate.class)));
+        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, Extended.class)), "groups expand along superinterfaces");
+        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, Default.class, OnCreate.class)));
+        order.customer = new Customer();
+        order.customer.name = "ok";
+        assertEquals(List.of("reference:reference_notNull"), report(validator.validate(order, OnCreate.class)), "Default rules stay out");
+
+        InvalidGroupException invalid = assertThrows(InvalidGroupException.class, () -> validator.validate(order, String.class));
+        assertInstanceOf(BeanValidationException.class, invalid);
+        assertInstanceOf(ValidationException.class, invalid);
+        assertThrows(IllegalArgumentException.class, () -> validator.validate(null));
+
+        BeanValidator without = BeanValidator.builder().build();
+        assertThrows(ValidateRuleNotFoundException.class, () -> without.validate(order));
+    }
+
+    @Test
+    public void validateInAnExistingContext() {
+        BeanValidator validator = validator();
+        Order order = new Order();
+        order.code = "x";
+
+        // A plain collector bound by the caller: it receives the stamped violations and is returned.
+        RuleViolations plain = new RuleViolations();
+        ScopedBindings bindings = Bindings.builder().scoped();
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, plain);
+        RuleContext context = RuleContext.builder().with(bindings).build();
+        assertSame(plain, validator.validateIn(context, order));
+        assertEquals(List.of("code:code_size", ":customerRequired"), report(plain.getViolations().stream().map(v -> (BeanRuleViolation) v).toList()));
+        assertNull(bindings.getBinding(BindingPlan.THIS), "the run's scope is gone");
+
+        // No collector: a path-aware one is bound for the run and returned. The validator's registry served @Validate.
+        RuleContext bare = RuleContext.builder().with(Bindings.builder().scoped()).build();
+        RuleViolations own = validator.validateIn(bare, order, OnCreate.class);
+        assertInstanceOf(BeanRuleViolations.class, own);
+        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(((BeanRuleViolations) own).getBeanViolations()));
+
+        // A validator built without a registry resolves @Validate through the context's registry.
+        RuleRegistry other = RuleRegistry.builder()
+                .register(Validators.notNull(Validators.binding("code")).name("customerRequired").build())
+                .build();
+        RuleContext withRegistry = RuleContext.builder().with(Bindings.builder().scoped()).registry(other).build();
+        BeanValidator without = BeanValidator.builder().build();
+        assertEquals(List.of("code:code_size"), report(((BeanRuleViolations) without.validateIn(withRegistry, order)).getBeanViolations()),
+                "the context's customerRequired checks code, which is set");
+        assertThrows(ValidateRuleNotFoundException.class, () -> without.validateIn(bare, order), "the context's default registry is empty");
+        // With a registry of its own, the validator's wins over the context's.
+        assertEquals(List.of("code:code_size", ":customerRequired"), report(((BeanRuleViolations) validator.validateIn(withRegistry, order)).getBeanViolations()));
+
+        assertThrows(IllegalArgumentException.class, () -> validator.validateIn(null, order));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateIn(bare, null));
+    }
+
+    @Test
+    public void builderConfiguration() {
+        StandardRuleContextOptions options = StandardRuleContextOptions.build();
+        BeanValidator validator = BeanValidator.builder()
+                .registry(REGISTRY)
+                .options(options)
+                .mapper(new SimpleConstraintMapper<>(Even.class, List.of(Integer.class),
+                        (a, t) -> List.of(t.configure(Validators.positive(t.value())).build())))
+                .extractor(new BoxValueExtractor())
+                .build();
+
+        assertSame(REGISTRY, validator.getRuleRegistry());
+        assertSame(options, validator.getOptions());
+        assertNotNull(validator.getConstraintMapperRegistry().find(Even.class));
+        assertNotNull(validator.getValueExtractorRegistry().find(Box.class, 0));
+
+        Boxed boxed = new Boxed();
+        boxed.count = -2;
+        boxed.box = new Box<>("");
+        assertEquals(List.of("count:count_even", "box:box_Box0_notBlank"), report(validator.validate(boxed)));
+
+        // Whole registries instead of additions, and the two styles do not mix.
+        BeanValidator replaced = BeanValidator.builder()
+                .mappers(ConstraintMapperRegistry.builder().build())
+                .extractors(org.rulii.validation.beans.extract.ValueExtractorRegistry.builder().build())
+                .build();
+        assertNull(replaced.getConstraintMapperRegistry().find(Even.class));
+        assertThrows(IllegalArgumentException.class, () -> BeanValidator.builder()
+                .mappers(ConstraintMapperRegistry.builder().build()).mapper(new SimpleConstraintMapper<>(Even.class, List.of(Integer.class), (a, t) -> List.of())));
+        assertThrows(IllegalArgumentException.class, () -> BeanValidator.builder()
+                .extractors(org.rulii.validation.beans.extract.ValueExtractorRegistry.builder().build()).extractor(new BoxValueExtractor()));
+        assertThrows(IllegalArgumentException.class, () -> BeanValidator.builder().registry(null));
+        assertThrows(IllegalArgumentException.class, () -> BeanValidator.builder().options(null));
+
+        // A registry inside the options serves @Validate when none is given explicitly.
+        StandardRuleContextOptions withRegistry = new StandardRuleContextOptions() {
+            @Override
+            public RuleRegistry getRuleRegistry() {
+                return REGISTRY;
+            }
+        };
+        assertSame(REGISTRY, BeanValidator.builder().options(withRegistry).build().getRuleRegistry());
+    }
+
+    @Test
+    public void cachesPerClassAndIsReusable() {
+        BeanValidator validator = validator();
+
+        assertSame(validator.getRuleFlow(Order.class), validator.getRuleFlow(Order.class));
+        assertSame(validator.getBeanRules(Order.class), validator.getBeanRules(Order.class));
+        assertEquals(Order.class, validator.getBeanDefinition(Order.class).getBeanClass());
+        assertSame(validator.getBeanRules(Order.class).getDefinition(), validator.getBeanDefinition(Order.class));
+        assertTrue(validator.toString().contains("classes="));
+        assertThrows(IllegalArgumentException.class, () -> validator.getRuleFlow(null));
+
+        // Many threads, one validator, every result its own.
+        List<String> expected = List.of("code:code_size", "customer.name:name_notBlank");
+        IntStream.range(0, 200).parallel().forEach(i -> {
+            Order order = new Order();
+            order.code = "x";
+            order.customer = new Customer();
+            assertEquals(expected, report(validator.validate(order)));
+        });
+    }
+
+    @Test
+    public void validatorInterfaceEdges() {
+        Validator validator = validator();
+
+        assertSame(validator, validator.unwrap(BeanValidator.class));
+        assertSame(validator, validator.unwrap(Validator.class));
+        assertThrows(ValidationException.class, () -> validator.unwrap(String.class));
+        ValidationException executables = assertThrows(ValidationException.class, validator::forExecutables);
+        assertTrue(executables.getMessage().contains("not supported"));
+    }
+
+    @Test
+    public void validatePropertyChecksOnePropertyOnly() {
+        BeanValidator validator = validator();
+        Order order = new Order();
+        order.code = "x";
+        order.customer = new Customer();
+        order.quantity = -1;
+
+        Set<ConstraintViolation<Order>> violations = validator.validateProperty(order, "code");
+        assertEquals(List.of("code:code_size"), report(violations), "no other property, no class rule, no @Validate, no cascade");
+        ConstraintViolation<Order> code = violations.iterator().next();
+        assertSame(order, code.getRootBean());
+        assertSame(order, code.getLeafBean());
+        assertEquals("x", code.getInvalidValue());
+
+        assertEquals(List.of("quantity:quantity_positive"), report(validator.validateProperty(order, "quantity")));
+        assertTrue(validator.validateProperty(order, "customer").isEmpty(), "cascading is not part of property validation");
+        assertTrue(validator.validateProperty(order, "reference").isEmpty());
+        assertEquals(List.of("reference:reference_notNull"), report(validator.validateProperty(order, "reference", OnCreate.class)));
+
+        // Constraints on the field beside the getter are read off the object; the same constraint twice gets _2.
+        Account account = new Account();
+        account.tags = List.of("", "ok");
+        assertEquals(List.of("id:id_notNull", "id:id_notNull_2"), report(validator.validateProperty(account, "id")));
+        assertEquals(List.of("tags[0].<list element>:tags_List0_notBlank"), report(validator.validateProperty(account, "tags")));
+        assertEquals(List.of("id:id_notNull", "id:id_notNull_2", "tags[0].<list element>:tags_List0_notBlank"), report(validator.validate(account)));
+
+        assertThrows(IllegalArgumentException.class, () -> validator.validateProperty(order, "nope"));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateProperty(order, ""));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateProperty(null, "code"));
+    }
+
+    @Test
+    public void validateValueChecksAValueWithoutAnObject() {
+        BeanValidator validator = validator();
+
+        Set<ConstraintViolation<Account>> violations = validator.validateValue(Account.class, "id", null);
+        assertEquals(List.of("id:id_notNull", "id:id_notNull_2"), report(violations), "field and getter constraints alike, against the value");
+        ConstraintViolation<Account> id = violations.iterator().next();
+        assertNull(id.getRootBean());
+        assertNull(id.getLeafBean());
+        assertEquals(Account.class, id.getRootBeanClass());
+        assertNull(id.getInvalidValue());
+        assertNull(((BeanValidationResult<Account>) violations).getRootBean());
+
+        assertEquals(List.of("id:id_size"), report(validator.validateValue(Account.class, "id", "a")));
+        assertTrue(validator.validateValue(Account.class, "id", "abc").isEmpty());
+        assertEquals(List.of("tags[1].<list element>:tags_List0_notBlank"), report(validator.validateValue(Account.class, "tags", List.of("x", " "))));
+        assertTrue(validator.validateValue(Account.class, "tags", null).isEmpty());
+        assertTrue(validator.validateValue(Order.class, "customer", new Customer()).isEmpty(), "cascading is not part of value validation");
+        assertTrue(validator.validateValue(Order.class, "reference", null).isEmpty());
+        assertEquals(List.of("reference:reference_notNull"), report(validator.validateValue(Order.class, "reference", null, OnCreate.class)));
+
+        assertThrows(IllegalArgumentException.class, () -> validator.validateValue(Account.class, "nope", "x"));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateValue(null, "id", "x"));
+    }
+
+    // ---- fixtures ----
+
+    public interface OnCreate {}
+
+    public interface Extended extends OnCreate {}
+
+    @Target(ElementType.FIELD)
+    @Retention(RetentionPolicy.RUNTIME)
+    @Constraint(validatedBy = {})
+    public @interface Even {
+        String message() default "must be even";
+        Class<?>[] groups() default {};
+        Class<? extends Payload>[] payload() default {};
+    }
+
+    @Validate("customerRequired")
+    public static class Order {
+        @NotNull
+        @Size(min = 2, max = 5)
+        String code;
+
+        @NotNull(groups = OnCreate.class)
+        String reference;
+
+        @Valid
+        Customer customer;
+
+        @Positive
+        int quantity = 1;
+    }
+
+    public static class Customer {
+        @NotBlank
+        String name;
+    }
+
+    public static class Account {
+        @NotNull
+        private String id;
+
+        private List<@NotBlank String> tags;
+
+        @NotNull
+        @Size(min = 2)
+        public String getId() {
+            return id;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+    }
+
+    public static class Box<V> {
+        final V value;
+
+        public Box(V value) {
+            super();
+            this.value = value;
+        }
+    }
+
+    public static class BoxValueExtractor implements ValueExtractor<Box<@ExtractedValue ?>> {
+        @Override
+        public void extractValues(Box<?> originalValue, ValueReceiver receiver) {
+            receiver.value(null, originalValue.value);
+        }
+    }
+
+    public static class Boxed {
+        @Even
+        Integer count;
+
+        Box<@NotBlank String> box;
+    }
+}

@@ -287,14 +287,21 @@ public class ContainerElementDefinitionTest {
     }
 
     @Test
-    public void intermediateUnconstrainedPositionIsNotChecked() throws Exception {
-        // Pair<String, List<@NotBlank String>>: no extractor for Pair, but nothing is applied at
-        // Pair's position; only the List element is constrained and List has an extractor.
-        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("pairOfList"), REGISTRY);
+    public void intermediateUnconstrainedPositionNeedsAnExtractorToo() throws Exception {
+        // Pair<String, List<@NotBlank String>>: nothing is applied at Pair's position, but the walk has to
+        // extract the List from the Pair to reach the constrained element, so Pair needs an extractor as well.
+        NoValueExtractorException e = assertThrows(NoValueExtractorException.class,
+                () -> ContainerElementDefinition.load(source("pairOfList"), REGISTRY));
+        assertTrue(e.getMessage().contains("Pair"));
+
+        ValueExtractorRegistry registry = ValueExtractorRegistry.builder().extractor(new PairSecondExtractor()).build();
+        List<ContainerElementDefinition> result = ContainerElementDefinition.load(source("pairOfList"), registry);
         assertEquals(1, result.size());
         assertEquals(Pair.class, result.get(0).getContainerType());
         assertTrue(result.get(0).getConstraints().isEmpty());
         assertEquals(List.class, result.get(0).getChildren().get(0).getContainerType());
+        assertEquals(PairSecondExtractor.class, result.get(0).getExtractor().getExtractor().getClass());
+        assertEquals(List.class, result.get(0).getChildren().get(0).getExtractor().getContainerType());
     }
 
     @Test

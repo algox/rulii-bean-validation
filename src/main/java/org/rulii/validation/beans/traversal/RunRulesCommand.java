@@ -17,26 +17,19 @@
  */
 package org.rulii.validation.beans.traversal;
 
-import org.rulii.bind.Binding;
-import org.rulii.bind.NamedScope;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.ruleflow.RuleFlowExecutionContext;
 import org.rulii.ruleflow.command.RuleFlowCommand;
 import org.rulii.ruleset.RuleSet;
-import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 
 /**
- * Flow step running the class's own rules: the property and class-level rules active for the
- * call's groups, inside a collector frame so their violations report at the current path.
- *
- * <p>The rules always report into a {@link BeanRuleViolations}. When the caller bound a plain
- * {@link RuleViolations} (an embedded run), a temporary path-aware collector is bound, primary, in a
- * scope around the run and its violations are added to the caller's collector afterwards: the
- * caller still gets everything, stamped with paths, and compositions collapse as they should.</p>
+ * Runs the property and class rules of the object bound as {@code $this}, filtered for the call's
+ * groups, inside a collector frame at the current path so the violations are stamped with their
+ * property paths and provenance.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -55,28 +48,7 @@ final class RunRulesCommand implements RuleFlowCommand {
     public void execute(RuleFlowExecutionContext ctx) {
         RuleContext ruleContext = ctx.getRuleContext();
         BeanRuleViolations collector = Traversal.collector(ruleContext);
-
-        if (collector != null) {
-            run(ruleContext, collector);
-            return;
-        }
-
-        RuleViolations plain = Traversal.anyCollector(ruleContext);
-        BeanRuleViolations temporary = new BeanRuleViolations(ruleContext.getBindings().getValue(BindingPlan.ROOT));
-        NamedScope scope = ruleContext.getBindings().addScope();
-
-        try {
-            scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
-                    .value(temporary).primary(true).build());
-            run(ruleContext, temporary);
-        } finally {
-            ruleContext.getBindings().removeScope(scope);
-        }
-
-        if (plain != null) plain.addAll(temporary.getViolations());
-    }
-
-    private void run(RuleContext ruleContext, BeanRuleViolations collector) {
+        Assert.notNull(collector, "no path-aware collector is bound as [" + BindingPlan.RULE_VIOLATIONS + "]; run through the bean flow.");
         Object bean = ruleContext.getBindings().getValue(BindingPlan.THIS);
         RuleSet<?> ruleSet = Traversal.of(ruleContext).ruleSet(rules);
 

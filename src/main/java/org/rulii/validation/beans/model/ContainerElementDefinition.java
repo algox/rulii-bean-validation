@@ -54,8 +54,8 @@ import java.util.Set;
  * no constrained descendants are pruned, so an unconstrained {@code List<String>} yields
  * nothing.</p>
  *
- * <p>Every constrained or cascaded position is checked against the
- * {@link ValueExtractorRegistry} at load time, so a position no extractor can serve fails
+ * <p>Every kept position is resolved against the {@link ValueExtractorRegistry} at load time
+ * and keeps its {@link #getExtractor() extractor}, so a position no extractor can serve fails
  * fast instead of being skipped at validation time. {@code @ConvertGroup} at a position
  * fails fast as well (group conversion is not supported).</p>
  *
@@ -78,15 +78,18 @@ public final class ContainerElementDefinition implements Definition {
     private final List<ConstraintDefinition> constraints;
     private final boolean cascaded;
     private final List<ContainerElementDefinition> children;
+    private final ValueExtractorDescriptor extractor;
     private final SourceDefinition source;
 
     private ContainerElementDefinition(PropertyDeclaration sourceDeclaration, Class<?> containerType, int typeArgumentIndex,
-                                       AnnotatedType annotatedType, Type type, List<ConstraintDefinition> constraints,
-                                       boolean cascaded, List<ContainerElementDefinition> children) {
+                                       ValueExtractorDescriptor extractor, AnnotatedType annotatedType, Type type,
+                                       List<ConstraintDefinition> constraints, boolean cascaded,
+                                       List<ContainerElementDefinition> children) {
         super();
         this.sourceDeclaration = sourceDeclaration;
         this.containerType = containerType;
         this.typeArgumentIndex = typeArgumentIndex;
+        this.extractor = extractor;
         this.annotatedType = annotatedType;
         this.type = type;
         this.constraints = constraints;
@@ -100,9 +103,9 @@ public final class ContainerElementDefinition implements Definition {
      * type-argument position of its declared type that is constrained, cascaded or has a constrained
      * descendant. The declaration-level annotations of the source itself are not inspected here.
      *
-     * <p>Every constrained or cascaded position must be served by an extractor in the given
-     * registry; otherwise the read fails fast. Positions kept only because a descendant is
-     * constrained are not checked, as nothing is applied to them.</p>
+     * <p>Every kept position must be served by an extractor in the given registry; otherwise the
+     * read fails fast. That includes a position kept only because a descendant is constrained:
+     * the walk has to extract its values to reach the descendant.</p>
      *
      * <p>For an array-typed property Java places a declaration annotation such as
      * {@code @NotEmpty String[] tags} on the component type as well. Those duplicates are property
@@ -141,7 +144,7 @@ public final class ContainerElementDefinition implements Definition {
         if (type == null) type = descriptor.getExtractedType();
 
         return new ContainerElementDefinition(sourceDeclaration, descriptor.getContainerType(), descriptor.getTypeArgumentIndex(),
-                annotatedType, type, constraints, false, Collections.emptyList());
+                descriptor, annotatedType, type, constraints, false, Collections.emptyList());
     }
 
     /**
@@ -155,7 +158,7 @@ public final class ContainerElementDefinition implements Definition {
 
         merged.addAll(additional);
 
-        return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, annotatedType, type,
+        return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor, annotatedType, type,
                 Collections.unmodifiableList(merged), cascaded, children);
     }
 
@@ -187,7 +190,7 @@ public final class ContainerElementDefinition implements Definition {
             if (!merged.contains(constraint)) merged.add(constraint);
         }
 
-        return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex,
+        return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor,
                 annotatedType != null ? annotatedType : other.annotatedType, type, Collections.unmodifiableList(merged),
                 cascaded || other.cascaded, merge(children, other.children));
     }
@@ -358,12 +361,15 @@ public final class ContainerElementDefinition implements Definition {
 
             if (constraints.isEmpty() && !cascaded && children.isEmpty()) return null;
 
-            if ((!constraints.isEmpty() || cascaded) && registry.find(containerType, typeArgumentIndex) == null) {
+            // Every kept position is walked at validation time, so every kept position needs its extractor.
+            ValueExtractorDescriptor extractor = registry.find(containerType, typeArgumentIndex);
+
+            if (extractor == null) {
                 throw new NoValueExtractorException(sourceDeclaration.getMember(), containerType, typeArgumentIndex);
             }
 
             // The annotated tree carries the annotations as declared; the type is resolved against the owning class.
-            return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, type,
+            return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor, type,
                     sourceDeclaration.resolve(type.getType()), constraints, cascaded, Collections.unmodifiableList(children));
         }
 
@@ -424,6 +430,16 @@ public final class ContainerElementDefinition implements Definition {
      */
     public int getTypeArgumentIndex() {
         return typeArgumentIndex;
+    }
+
+    /**
+     * The extractor serving this position, resolved at load time: what the traversal walks the
+     * container with.
+     *
+     * @return the extractor descriptor.
+     */
+    public ValueExtractorDescriptor getExtractor() {
+        return extractor;
     }
 
     /**

@@ -17,7 +17,7 @@
  */
 package org.rulii.validation.beans.group;
 
-import jakarta.validation.ValidationException;
+import org.rulii.validation.beans.BeanValidationException;
 
 /**
  * Thrown when a requested validation group, or one of the groups it extends, is annotated with
@@ -28,7 +28,7 @@ import jakarta.validation.ValidationException;
  * @author Max Arulananthan
  * @since 1.0
  */
-public class GroupSequenceRequestedException extends ValidationException {
+public class GroupSequenceRequestedException extends BeanValidationException {
 
     private final Class<?> group;
 

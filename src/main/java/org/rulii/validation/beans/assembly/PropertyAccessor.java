@@ -31,10 +31,14 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 
 /**
- * Reads one property declaration off a bean: the field itself for a field declaration, the getter
- * for a getter or record component. Accessibility is settled once, when the accessor is created
- * ({@code setAccessible} only where needed, a {@link MethodHandle} behind it), so a bean in a closed
- * module fails when its class is materialized, never mid-validation.
+ * Reads one property declaration (a field or a getter) off a bean through a {@link MethodHandle}.
+ * The member is made accessible once, when the handle is resolved.
+ *
+ * <p>{@link #of(PropertyDeclaration)} resolves the handle immediately, so a declaration the
+ * validation reads fails fast if it cannot be read. {@link #lazy(PropertyDeclaration)} resolves it
+ * on the first read: for a property nothing in the library reads, which only a user rule might
+ * ask for by name, an inaccessible member (a JDK class reached through {@code @Valid}, say) must not
+ * fail the class.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -44,7 +48,7 @@ public final class PropertyAccessor {
     private static final MethodType READ = MethodType.methodType(Object.class, Object.class);
 
     private final PropertyDeclaration declaration;
-    private final MethodHandle handle;
+    private volatile MethodHandle handle;
 
     private PropertyAccessor(PropertyDeclaration declaration, MethodHandle handle) {
         super();
@@ -53,14 +57,29 @@ public final class PropertyAccessor {
     }
 
     /**
-     * Creates the accessor of a declaration.
+     * An accessor resolved now.
      *
-     * @param declaration the declaration.
+     * @param declaration the declaration to read.
      * @return the accessor.
      * @throws InaccessiblePropertyException if the member cannot be made accessible.
      */
     public static PropertyAccessor of(PropertyDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
+        return new PropertyAccessor(declaration, resolve(declaration));
+    }
+
+    /**
+     * An accessor resolved on its first read.
+     *
+     * @param declaration the declaration to read.
+     * @return the accessor.
+     */
+    public static PropertyAccessor lazy(PropertyDeclaration declaration) {
+        Assert.notNull(declaration, "declaration cannot be null.");
+        return new PropertyAccessor(declaration, null);
+    }
+
+    private static MethodHandle resolve(PropertyDeclaration declaration) {
         Member member = declaration.getMember();
         MethodHandle handle;
 
@@ -78,7 +97,7 @@ public final class PropertyAccessor {
             throw new InaccessiblePropertyException(declaration, e);
         }
 
-        return new PropertyAccessor(declaration, handle.asType(READ));
+        return handle.asType(READ);
     }
 
     /**
@@ -91,17 +110,33 @@ public final class PropertyAccessor {
     }
 
     /**
-     * Reads the declaration off the given bean.
+     * Whether the handle has been resolved.
      *
-     * @param bean the bean; must be an instance of the declaring class.
+     * @return true once the member is accessible and the handle built.
+     */
+    public boolean isResolved() {
+        return handle != null;
+    }
+
+    /**
+     * Reads the property.
+     *
+     * @param bean the bean.
      * @return the value.
-     * @throws UnrulyException if a getter throws a checked exception; an unchecked one propagates as is.
+     * @throws InaccessiblePropertyException if the member cannot be made accessible (lazy accessors).
+     * @throws UnrulyException if the read itself fails.
      */
     public Object read(Object bean) {
         Assert.notNull(bean, "bean cannot be null.");
+        MethodHandle resolved = handle;
+
+        if (resolved == null) {
+            resolved = resolve(declaration);
+            handle = resolved;
+        }
 
         try {
-            return handle.invokeExact(bean);
+            return resolved.invokeExact(bean);
         } catch (RuntimeException | Error e) {
             throw e;
         } catch (Throwable e) {
@@ -111,6 +146,6 @@ public final class PropertyAccessor {
 
     @Override
     public String toString() {
-        return "PropertyAccessor{" + declaration.describe() + '}';
+        return "PropertyAccessor{" + declaration.describe() + (handle == null ? ", unresolved" : "") + '}';
     }
 }

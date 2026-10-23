@@ -38,8 +38,9 @@ import java.util.List;
  * <p>
  * The traversal tells the collector where it is through frames: {@link #enter(PropertyPath, BeanRules, Object)}
  * pushes the current path, the rules of the class in scope and the object in scope, and returns a handle
- * whose {@link Frame#close()} pops it, so the traversal writes try-with-resources. Stamping an incoming
- * violation then needs no name parsing:
+ * whose {@link Frame#close()} pops it, so the traversal writes try-with-resources;
+ * {@link #enter(PropertyPath, Object)} pushes a path alone. Stamping an incoming violation then needs
+ * no name parsing:
  * <ul>
  *   <li>a rule known to the frame's {@link BeanRules} with a leaf property reports at
  *       {@code framePath.property(leaf)}; a class-level rule at {@code framePath.bean()}; a container
@@ -58,6 +59,7 @@ import java.util.List;
 public class BeanRuleViolations extends RuleViolations {
 
     private final Object rootBean;
+    private final Class<?> rootBeanClass;
     private final Deque<Frame> frames = new ArrayDeque<>();
     private final Deque<List<BeanRuleViolation>> captures = new ArrayDeque<>();
 
@@ -74,8 +76,20 @@ public class BeanRuleViolations extends RuleViolations {
      * @param rootBean the root bean; may be null when unknown.
      */
     public BeanRuleViolations(Object rootBean) {
+        this(rootBean, rootBean != null ? rootBean.getClass() : null);
+    }
+
+    /**
+     * A report for a validation call starting from the given bean, or from a value offered for a
+     * property of the given class when there is no bean.
+     *
+     * @param rootBean the root bean; may be null.
+     * @param rootBeanClass the root bean class; may be null when unknown.
+     */
+    public BeanRuleViolations(Object rootBean, Class<?> rootBeanClass) {
         super();
         this.rootBean = rootBean;
+        this.rootBeanClass = rootBeanClass;
     }
 
     /**
@@ -85,6 +99,15 @@ public class BeanRuleViolations extends RuleViolations {
      */
     public Object getRootBean() {
         return rootBean;
+    }
+
+    /**
+     * The class validation started from.
+     *
+     * @return the root bean class; null when unknown.
+     */
+    public Class<?> getRootBeanClass() {
+        return rootBeanClass;
     }
 
     /**
@@ -128,6 +151,22 @@ public class BeanRuleViolations extends RuleViolations {
     }
 
     /**
+     * Opens a frame that only moves the current path: around a descent into an object, a
+     * container element, or a {@code @Validate} run. No rules are known to it, so every violation
+     * added while it is innermost reports at its path with no provenance.
+     *
+     * @param path the current path.
+     * @param bean the object in scope; may be null.
+     * @return the frame; close it to pop.
+     */
+    public Frame enter(PropertyPath path, Object bean) {
+        Assert.notNull(path, "path cannot be null.");
+        Frame frame = new Frame(path, null, bean);
+        frames.push(frame);
+        return frame;
+    }
+
+    /**
      * Runs the body and returns the violations it added instead of storing them. Nested captures
      * stack: a violation added inside the inner body goes to the inner capture only.
      *
@@ -166,11 +205,11 @@ public class BeanRuleViolations extends RuleViolations {
     private BeanRuleViolation stamp(RuleViolation error) {
         Frame frame = frames.peek();
         if (frame == null) {
-            return new BeanRuleViolation(error, PropertyPath.root(), null, null, null, rootBean);
+            return new BeanRuleViolation(error, PropertyPath.root(), null, null, null, rootBean, rootBeanClass);
         }
-        MaterializedRule rule = frame.getRules().getRule(error.getRuleName());
+        MaterializedRule rule = frame.getRules() != null ? frame.getRules().getRule(error.getRuleName()) : null;
         if (rule == null) {
-            return new BeanRuleViolation(error, frame.getPath(), null, null, frame.getBean(), rootBean);
+            return new BeanRuleViolation(error, frame.getPath(), null, null, frame.getBean(), rootBean, rootBeanClass);
         }
         PropertyPath path = frame.getPath();
         if (rule.getLeaf() != null) {
@@ -179,7 +218,7 @@ public class BeanRuleViolations extends RuleViolations {
             path = path.bean();
         }
         Object invalidValue = error.getParameterValues().get(rule.getTarget().getValueName());
-        return new BeanRuleViolation(error, path, rule.getDefinition(), invalidValue, frame.getBean(), rootBean);
+        return new BeanRuleViolation(error, path, rule.getDefinition(), invalidValue, frame.getBean(), rootBean, rootBeanClass);
     }
 
     /**
@@ -203,6 +242,11 @@ public class BeanRuleViolations extends RuleViolations {
             return path;
         }
 
+        /**
+         * The rules of the class in scope.
+         *
+         * @return the rules; null for a path-only frame.
+         */
         public BeanRules getRules() {
             return rules;
         }
@@ -221,7 +265,7 @@ public class BeanRuleViolations extends RuleViolations {
 
         @Override
         public String toString() {
-            return "Frame{path='" + path + "', beanClass=" + rules.getBeanClass().getName() + '}';
+            return "Frame{path='" + path + "'" + (rules != null ? ", beanClass=" + rules.getBeanClass().getName() : "") + '}';
         }
     }
 }

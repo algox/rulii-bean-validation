@@ -71,14 +71,20 @@ public class RuleFlowAssemblerTest {
                     (a, t) -> List.of(t.configure(Validators.notNull(Validators.binding("name")), true).build())))
             .build());
     private static final Map<Class<?>, BeanRules> RULES = new ConcurrentHashMap<>();
-    private static final RuleFlowAssembler ASSEMBLER = new RuleFlowAssembler(RuleFlowAssemblerTest::rules);
+    private static final RuleFlowAssembler ASSEMBLER = new RuleFlowAssembler(RuleFlowAssemblerTest::flow, EXTRACTORS);
 
     public RuleFlowAssemblerTest() {
         super();
     }
 
+    private static final Map<Class<?>, RuleFlow<?>> FLOWS = new ConcurrentHashMap<>();
+
     private static BeanRules rules(Class<?> type) {
         return RULES.computeIfAbsent(type, t -> MATERIALIZER.materialize(BeanDefinition.load(t, EXTRACTORS)));
+    }
+
+    private static RuleFlow<?> flow(Class<?> type) {
+        return FLOWS.computeIfAbsent(type, t -> ASSEMBLER.assemble(rules(t)));
     }
 
     @Test
@@ -93,7 +99,7 @@ public class RuleFlowAssemblerTest {
         ScopedBindings bindings = Bindings.builder().scoped();
         bindings.bind(BindingPlan.THIS, Object.class, order);
         bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, violations);
-        bindings.bind(BindingPlan.TRAVERSAL, Traversal.class, new Traversal(RequestedGroups.DEFAULT, RuleFlowAssemblerTest::rules));
+        bindings.bind(BindingPlan.TRAVERSAL, Traversal.class, new Traversal(RequestedGroups.DEFAULT, RuleFlowAssemblerTest::flow, EXTRACTORS));
 
         flow.run(bindings);
 
@@ -168,7 +174,7 @@ public class RuleFlowAssemblerTest {
         ScopedBindings bindings = Bindings.builder().scoped();
         bindings.bind(BindingPlan.THIS, Object.class, order);
         bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, violations);
-        bindings.bind(BindingPlan.TRAVERSAL, Traversal.class, new Traversal(RequestedGroups.of(OnCreate.class), RuleFlowAssemblerTest::rules));
+        bindings.bind(BindingPlan.TRAVERSAL, Traversal.class, new Traversal(RequestedGroups.of(OnCreate.class), RuleFlowAssemblerTest::flow, EXTRACTORS));
         flow.run(bindings);
 
         assertEquals(List.of("created_notNull"), violations.getBeanViolations().stream().map(RuleViolation::getRuleName).toList());
@@ -236,18 +242,18 @@ public class RuleFlowAssemblerTest {
 
     @Test
     public void traversalBasics() {
-        Traversal traversal = new Traversal(RequestedGroups.DEFAULT, RuleFlowAssemblerTest::rules);
+        Traversal traversal = new Traversal(RequestedGroups.DEFAULT, RuleFlowAssemblerTest::flow, EXTRACTORS);
         Object a = new Object();
         assertTrue(traversal.markValidated(a));
         assertFalse(traversal.markValidated(a));
         assertTrue(traversal.isValidated(a));
         assertFalse(traversal.isValidated(new Object()));
-        assertSame(rules(Order.class), traversal.getRules(Order.class));
+        assertSame(flow(Order.class), traversal.getFlow(Order.class));
         assertSame(rules(Order.class).ruleSet(RequestedGroups.DEFAULT), traversal.ruleSet(rules(Order.class)));
         assertTrue(traversal.toString().contains("validated=1"));
-        assertThrows(IllegalArgumentException.class, () -> new Traversal(null, RuleFlowAssemblerTest::rules));
-        assertThrows(IllegalArgumentException.class, () -> new Traversal(RequestedGroups.DEFAULT, null));
-        assertThrows(IllegalArgumentException.class, () -> new Traversal(RequestedGroups.DEFAULT, t -> null).getRules(Order.class));
+        assertThrows(IllegalArgumentException.class, () -> new Traversal(null, RuleFlowAssemblerTest::flow, EXTRACTORS));
+        assertThrows(IllegalArgumentException.class, () -> new Traversal(RequestedGroups.DEFAULT, null, EXTRACTORS));
+        assertThrows(IllegalArgumentException.class, () -> new Traversal(RequestedGroups.DEFAULT, t -> null, EXTRACTORS).getFlow(Order.class));
 
         ScopedBindings bindings = Bindings.builder().scoped();
         RuleContext context = RuleContext.builder().build(bindings);

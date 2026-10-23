@@ -85,6 +85,25 @@ public class PropertyAccessorTest {
         assertNotNull(e.getCause());
     }
 
+    @Test
+    public void lazyAccessorsResolveOnFirstRead() throws Exception {
+        PropertyDeclaration inaccessible = PropertyDeclaration.ofField(String.class.getDeclaredField("hash"));
+        PropertyAccessor lazy = PropertyAccessor.lazy(inaccessible);
+        assertFalse(lazy.isResolved(), "nothing is touched until a read");
+        assertTrue(lazy.toString().contains("unresolved"));
+        assertThrows(InaccessiblePropertyException.class, () -> lazy.read("text"));
+
+        Bean bean = new Bean();
+        bean.secret = "s";
+        PropertyAccessor field = PropertyAccessor.lazy(PropertyDeclaration.ofField(Bean.class.getDeclaredField("secret")));
+        assertFalse(field.isResolved());
+        assertEquals("s", field.read(bean));
+        assertTrue(field.isResolved());
+        assertEquals("s", field.read(bean));
+        assertTrue(PropertyAccessor.of(PropertyDeclaration.ofField(Bean.class.getDeclaredField("secret"))).isResolved());
+        assertThrows(IllegalArgumentException.class, () -> PropertyAccessor.lazy(null));
+    }
+
     public static class Base {
         protected String base = "b";
     }

@@ -133,7 +133,9 @@ public final class BindingPlan implements BindingLoader<Object> {
             bindings.put(binding, property);
             properties.put(name, binding);
             primaries.add(primary);
-            accessors.put(primary, PropertyAccessor.of(primary));
+            // A property nothing in this library reads is resolved on first read (by a user rule), so an
+            // inaccessible but unconstrained member (a JDK class reached through @Valid) costs nothing.
+            accessors.put(primary, property.isConstrained() ? PropertyAccessor.of(primary) : PropertyAccessor.lazy(primary));
 
             for (PropertyDeclaration declaration : readDeclarations(property)) {
                 if (!declaration.equals(primary) && declaration.getKind() != PropertyDeclaration.Kind.GETTER) {
@@ -175,6 +177,45 @@ public final class BindingPlan implements BindingLoader<Object> {
         int counter = 2;
         while (taken.contains(candidate + "$" + counter)) counter++;
         return candidate + "$" + counter;
+    }
+
+    /**
+     * The name the rules of a container element position read the element under: {@code $key} for a
+     * {@code Map} key, {@code $value} for a {@code Map} value, {@code $element} otherwise.
+     *
+     * @param node the position.
+     * @return the binding name.
+     */
+    public static String elementBinding(ContainerElementDefinition node) {
+        Assert.notNull(node, "node cannot be null.");
+
+        if (Map.class.isAssignableFrom(node.getContainerType())) {
+            return node.getTypeArgumentIndex() == 0 ? KEY : VALUE;
+        }
+
+        return ELEMENT;
+    }
+
+    /**
+     * The value of a declaration of a property, read the way its constraints read it: through the
+     * property binding for the primary declaration and for getters, through the declaration's accessor
+     * off the bean otherwise.
+     *
+     * @param bindings the bindings the property is bound in.
+     * @param bean the bean.
+     * @param property the property.
+     * @param declaration the declaration to read.
+     * @return the value.
+     */
+    public Object read(Bindings bindings, Object bean, PropertyDefinition property, PropertyDeclaration declaration) {
+        Assert.notNull(bindings, "bindings cannot be null.");
+        Assert.notNull(declaration, "declaration cannot be null.");
+
+        if (isPrimary(declaration) || declaration.getKind() == PropertyDeclaration.Kind.GETTER) {
+            return bindings.getValue(getBindingName(property));
+        }
+
+        return getAccessor(declaration).read(bean);
     }
 
     /**

@@ -78,6 +78,7 @@ public final class BeanRules {
     private final String name;
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> ruleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> propertyRuleSets = new ConcurrentHashMap<>();
 
     BeanRules(BeanDefinition definition, BindingPlan bindingPlan, List<MaterializedRule> propertyRules,
               List<ElementRules> elementRules, List<MaterializedRule> classRules) {
@@ -245,6 +246,29 @@ public final class BeanRules {
             }
 
             return RuleSet.builder().with(name).rules(rules).build();
+        });
+    }
+
+    /**
+     * The rules of the constraints declared on one property, active for the given groups, as a RuleSet
+     * named {@code <getName()>_<property>}: what validating a single property runs. Container element
+     * and class rules are not included. Cached per property and expanded group set.
+     *
+     * @param propertyName the property.
+     * @param groups the requested groups.
+     * @return the RuleSet; empty when nothing is active.
+     */
+    public RuleSet<?> propertyRuleSet(String propertyName, RequestedGroups groups) {
+        Assert.hasText(propertyName, "propertyName cannot be null/empty.");
+        Assert.notNull(groups, "groups cannot be null.");
+        return propertyRuleSets.computeIfAbsent(propertyName, n -> new ConcurrentHashMap<>()).computeIfAbsent(groups.getGroups(), key -> {
+            List<Rule> rules = new ArrayList<>();
+
+            for (MaterializedRule rule : propertyRules) {
+                if (propertyName.equals(rule.getLeaf()) && rule.isActive(groups)) rules.add(rule.getRule());
+            }
+
+            return RuleSet.builder().with(name + "_" + propertyName).rules(rules).build();
         });
     }
 

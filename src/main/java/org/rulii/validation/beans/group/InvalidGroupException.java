@@ -17,7 +17,7 @@
  */
 package org.rulii.validation.beans.group;
 
-import jakarta.validation.ValidationException;
+import org.rulii.validation.beans.BeanValidationException;
 
 /**
  * Thrown when a requested validation group is not an interface. Groups are interfaces by
@@ -27,7 +27,7 @@ import jakarta.validation.ValidationException;
  * @author Max Arulananthan
  * @since 1.0
  */
-public class InvalidGroupException extends ValidationException {
+public class InvalidGroupException extends BeanValidationException {
 
     private final Class<?> group;
 

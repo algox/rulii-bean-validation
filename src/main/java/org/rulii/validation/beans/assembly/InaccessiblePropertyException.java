@@ -17,7 +17,7 @@
  */
 package org.rulii.validation.beans.assembly;
 
-import jakarta.validation.ValidationException;
+import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.model.PropertyDeclaration;
 
@@ -29,7 +29,7 @@ import org.rulii.validation.beans.model.PropertyDeclaration;
  * @author Max Arulananthan
  * @since 1.0
  */
-public class InaccessiblePropertyException extends ValidationException {
+public class InaccessiblePropertyException extends BeanValidationException {
 
     private static final long serialVersionUID = 0L;
 

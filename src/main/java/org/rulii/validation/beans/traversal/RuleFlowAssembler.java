@@ -25,20 +25,22 @@ import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.RequestedGroups;
 
+import java.util.List;
 import java.util.function.Function;
 
 /**
- * Builds the per-class {@link RuleFlow}: given an object of the class, bind its properties, run its
- * rules, and (from the next step on) run its attached rules and descend into its cascades. The flow
- * runs inside its own scope, so each object validated gets a scope of its own and nested objects see
- * their parents' bindings innermost-outward.
+ * Builds the {@link RuleFlow} of a bean class from its {@link BeanRules}: the self-contained unit
+ * that, given an object bound as {@code $this}, binds its properties, runs its rules and its
+ * {@code @Validate} rules, and cascades into the objects it references.
  *
- * <p>Parameters: {@code $this}, the object, required; {@code $root}, defaulting to {@code $this};
- * {@code ruleViolations}, defaulting to a fresh {@link BeanRuleViolations}; {@code $traversal},
- * defaulting to a fresh {@link Traversal} on the Default group. The defaults make a flow complete on
- * its own, for embedding in a user's RuleSet or RuleFlow; the entry point binds all four.</p>
+ * <p>Parameters: {@code $this} (required, the object); {@code $root} (defaults to {@code $this});
+ * {@code ruleViolations} (defaults to a fresh {@link BeanRuleViolations} for the root);
+ * {@code $traversal} (defaults to a fresh {@link Traversal} with the Default group). The flow's own
+ * scope is the object's scope: the properties are bound in it by simple name and gone when the flow
+ * ends. Each object descended into gets a scope of its own, nested in its parent's.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -47,18 +49,22 @@ public final class RuleFlowAssembler {
 
     private static final String FLOW_SUFFIX = "ValidationFlow";
 
-    private final Function<Class<?>, BeanRules> lookup;
+    private final Function<Class<?>, RuleFlow<?>> flows;
+    private final ValueExtractorRegistry extractors;
 
     /**
      * Creates the assembler.
      *
-     * @param lookup the rules of a bean class by runtime type, for the traversal a flow creates when
-     *               run on its own.
+     * @param flows the flow of a bean class by runtime type, for the traversal a flow creates when
+     *              run on its own and for the descent into referenced objects.
+     * @param extractors the value extractors, for the traversal a flow creates when run on its own.
      */
-    public RuleFlowAssembler(Function<Class<?>, BeanRules> lookup) {
+    public RuleFlowAssembler(Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors) {
         super();
-        Assert.notNull(lookup, "lookup cannot be null.");
-        this.lookup = lookup;
+        Assert.notNull(flows, "flows cannot be null.");
+        Assert.notNull(extractors, "extractors cannot be null.");
+        this.flows = flows;
+        this.extractors = extractors;
     }
 
     /**
@@ -79,9 +85,12 @@ public final class RuleFlowAssembler {
                 .param(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, Functions.function((RuleContext ruleContext) ->
                         new BeanRuleViolations(ruleContext.getBindings().getValue(BindingPlan.ROOT))))
                 .param(BindingPlan.TRAVERSAL, Traversal.class, Functions.function((RuleContext ruleContext) ->
-                        new Traversal(RequestedGroups.DEFAULT, lookup)))
-                .command(new BindPropertiesCommand(rules))
-                .command(new RunRulesCommand(rules))
+                        new Traversal(RequestedGroups.DEFAULT, flows, extractors)))
+                .command(new ValidateBeanCommand(rules, List.of(
+                        new BindPropertiesCommand(rules),
+                        new RunRulesCommand(rules),
+                        new ValidateRulesCommand(rules),
+                        new CascadeCommand(rules))))
                 .build();
     }
 

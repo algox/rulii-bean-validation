@@ -43,8 +43,10 @@ import org.rulii.validation.rules.Validators;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Turns a {@link BeanDefinition} into {@link BeanRules}: for every constraint occurrence, a
@@ -113,23 +115,10 @@ public final class RuleMaterializer {
         List<MaterializedRule> propertyRules = new ArrayList<>();
         List<BeanRules.ElementRules> elementRules = new ArrayList<>();
         List<MaterializedRule> classRules = new ArrayList<>();
+        Set<String> names = new HashSet<>();
 
         for (PropertyDefinition property : bean.getProperties()) {
-            String name = property.getName();
-            String binding = plan.getBindingName(property);
-
-            for (ConstraintDefinition constraint : property.getConstraints()) {
-                PropertyDeclaration declaration = ((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration();
-                Function<?> value = plan.isPrimary(declaration)
-                        ? Validators.binding(binding)
-                        : reading(binding, plan.getAccessor(declaration));
-                Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), name, declaration.describe());
-                materialize(constraint, null, site, name + "_" + decapitalize(constraint.getAnnotationType()), propertyRules);
-            }
-
-            for (ContainerElementDefinition node : property.getContainerElements()) {
-                elements(beanClass, property, node, name, elementRules);
-            }
+            property(plan, property, false, names, propertyRules, elementRules);
         }
 
         String className = beanClass.getSimpleName().isEmpty() ? "Bean" : beanClass.getSimpleName();
@@ -137,10 +126,62 @@ public final class RuleMaterializer {
         for (ConstraintDefinition constraint : bean.getClassConstraints()) {
             Site site = new Site(beanClass, null, BindingPlan.THIS, Validators.binding(BindingPlan.THIS), BindingPlan.THIS,
                     beanClass, null, constraint.getConstraintSource().describe());
-            materialize(constraint, null, site, className + "_" + decapitalize(constraint.getAnnotationType()), classRules);
+            materialize(constraint, null, site, unique(className + "_" + decapitalize(constraint.getAnnotationType()), names), classRules);
         }
 
         return new BeanRules(bean, plan, propertyRules, elementRules, classRules);
+    }
+
+    /**
+     * Materializes the rules that validate a value offered for one property, without an object: every
+     * constraint declared on the property, whichever declaration carries it, reads the property binding,
+     * and the property's container element positions are included. Class-level constraints are not.
+     *
+     * @param rules the rules of the bean, whose binding plan is reused.
+     * @param property the property.
+     * @return the value rules, as a {@link BeanRules} holding that property alone.
+     */
+    public BeanRules materializeValue(BeanRules rules, PropertyDefinition property) {
+        Assert.notNull(rules, "rules cannot be null.");
+        Assert.notNull(property, "property cannot be null.");
+
+        List<MaterializedRule> propertyRules = new ArrayList<>();
+        List<BeanRules.ElementRules> elementRules = new ArrayList<>();
+
+        property(rules.getBindingPlan(), property, true, new HashSet<>(), propertyRules, elementRules);
+
+        return new BeanRules(rules.getDefinition(), rules.getBindingPlan(), propertyRules, elementRules, List.of());
+    }
+
+    private void property(BindingPlan plan, PropertyDefinition property, boolean bindingOnly, Set<String> names,
+                          List<MaterializedRule> propertyRules, List<BeanRules.ElementRules> elementRules) {
+        Class<?> beanClass = plan.getBean().getBeanClass();
+        String name = property.getName();
+        String binding = plan.getBindingName(property);
+
+        for (ConstraintDefinition constraint : property.getConstraints()) {
+            PropertyDeclaration declaration = ((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration();
+            Function<?> value = bindingOnly || plan.isPrimary(declaration)
+                    ? Validators.binding(binding)
+                    : reading(binding, plan.getAccessor(declaration));
+            Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), name, declaration.describe());
+            materialize(constraint, null, site, unique(name + "_" + decapitalize(constraint.getAnnotationType()), names), propertyRules);
+        }
+
+        for (ContainerElementDefinition node : property.getContainerElements()) {
+            elements(beanClass, property, node, name, elementRules);
+        }
+    }
+
+    /**
+     * A rule name not yet used in the bean: the same constraint on a field and its getter gets
+     * {@code _2} on the second.
+     */
+    private static String unique(String candidate, Set<String> names) {
+        if (names.add(candidate)) return candidate;
+        int counter = 2;
+        while (!names.add(candidate + "_" + counter)) counter++;
+        return candidate + "_" + counter;
     }
 
     /**
@@ -165,7 +206,7 @@ public final class RuleMaterializer {
         if (!node.getConstraints().isEmpty()) {
             List<MaterializedRule> rules = new ArrayList<>();
             Class<?> type = node.getType() != null ? Types.erasure(node.getType()) : Object.class;
-            String binding = elementBinding(node);
+            String binding = BindingPlan.elementBinding(node);
             Site site = new Site(beanClass, property.getName(), binding, Validators.binding(binding), property.getName(), type,
                     null, node.getSourceDeclaration().describe() + " " + node.getName());
 
@@ -179,18 +220,6 @@ public final class RuleMaterializer {
         for (ContainerElementDefinition child : node.getChildren()) {
             elements(beanClass, property, child, name, out);
         }
-    }
-
-    /**
-     * The binding a container position's rules read: {@code $key} / {@code $value} for the two
-     * positions of a map, {@code $element} elsewhere.
-     */
-    static String elementBinding(ContainerElementDefinition node) {
-        if (Map.class.isAssignableFrom(node.getContainerType())) {
-            return node.getTypeArgumentIndex() == 0 ? BindingPlan.KEY : BindingPlan.VALUE;
-        }
-
-        return BindingPlan.ELEMENT;
     }
 
     /**

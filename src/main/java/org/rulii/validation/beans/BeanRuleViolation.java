@@ -17,8 +17,12 @@
  */
 package org.rulii.validation.beans;
 
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ValidationException;
+import jakarta.validation.metadata.ConstraintDescriptor;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.RuleViolation;
+import org.rulii.validation.beans.descriptor.ConstraintDefinitionDescriptor;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 
 import java.util.LinkedHashMap;
@@ -26,11 +30,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * A rule violation stamped with where it occurred in the bean graph. Everything a
- * {@code jakarta.validation.ConstraintViolation} offers that applies to bean validation is here under the
- * same name: {@link #getPropertyPath()}, {@link #getMessage()}, {@link #getInvalidValue()},
- * {@link #getLeafBean()}, {@link #getRootBean()}; the constraint descriptor becomes
- * {@link #getConstraint()}.
+ * A rule violation stamped with where it occurred in the bean graph. It is a rulii {@link RuleViolation}
+ * and a jakarta {@link ConstraintViolation} at once, so code written against either reads it unchanged:
+ * {@link #getPropertyPath()}, {@link #getMessage()}, {@link #getInvalidValue()}, {@link #getLeafBean()},
+ * {@link #getRootBean()}, {@link #getConstraintDescriptor()}; the constraint definition itself is
+ * {@link #getConstraint()}. Executable validation is not supported, so the executable accessors return null.
  * <p>
  * The rendered path is also placed in the parameter map under {@link #PROPERTY_PATH_PARAMETER}, so code
  * that only sees a plain {@link RuleViolation} still finds it. Equality is the rule name, the error code
@@ -39,7 +43,7 @@ import java.util.Objects;
  * @author Max Arulananthan
  * @since 1.0
  */
-public class BeanRuleViolation extends RuleViolation {
+public class BeanRuleViolation extends RuleViolation implements ConstraintViolation<Object> {
 
     /**
      * Parameter holding the rendered property path.
@@ -51,9 +55,10 @@ public class BeanRuleViolation extends RuleViolation {
     private final Object invalidValue;
     private final Object leafBean;
     private final Object rootBean;
+    private final Class<?> rootBeanClass;
 
     /**
-     * Stamps a violation.
+     * Stamps a violation; the root bean class is the root bean's class.
      *
      * @param source the violation as the rule reported it.
      * @param propertyPath where it occurred.
@@ -65,6 +70,24 @@ public class BeanRuleViolation extends RuleViolation {
      */
     public BeanRuleViolation(RuleViolation source, PropertyPath propertyPath, ConstraintDefinition constraint,
                              Object invalidValue, Object leafBean, Object rootBean) {
+        this(source, propertyPath, constraint, invalidValue, leafBean, rootBean, rootBean != null ? rootBean.getClass() : null);
+    }
+
+    /**
+     * Stamps a violation.
+     *
+     * @param source the violation as the rule reported it.
+     * @param propertyPath where it occurred.
+     * @param constraint the constraint whose rule reported it; null for a rule that was not materialized
+     *                   from a constraint (a {@code @Validate} registry rule).
+     * @param invalidValue the value the rule rejected; null when unknown.
+     * @param leafBean the object the rule ran against; null when unknown.
+     * @param rootBean the object validation started from; null when unknown or when a value was validated
+     *                 without an object.
+     * @param rootBeanClass the class validation started from; null when unknown.
+     */
+    public BeanRuleViolation(RuleViolation source, PropertyPath propertyPath, ConstraintDefinition constraint,
+                             Object invalidValue, Object leafBean, Object rootBean, Class<?> rootBeanClass) {
         super(source(source).getRuleName(), source.getErrorCode(), source.getSeverity(), source.getErrorMessage(),
                 parameters(source, propertyPath));
         this.propertyPath = propertyPath;
@@ -72,6 +95,7 @@ public class BeanRuleViolation extends RuleViolation {
         this.invalidValue = invalidValue;
         this.leafBean = leafBean;
         this.rootBean = rootBean;
+        this.rootBeanClass = rootBeanClass;
     }
 
     private static RuleViolation source(RuleViolation source) {
@@ -91,6 +115,7 @@ public class BeanRuleViolation extends RuleViolation {
      *
      * @return the property path.
      */
+    @Override
     public PropertyPath getPropertyPath() {
         return propertyPath;
     }
@@ -101,8 +126,19 @@ public class BeanRuleViolation extends RuleViolation {
      *
      * @return the message.
      */
+    @Override
     public String getMessage() {
         return getErrorMessage();
+    }
+
+    /**
+     * The message template the constraint declared, before interpolation.
+     *
+     * @return the template; null for a rule that was not materialized from a constraint.
+     */
+    @Override
+    public String getMessageTemplate() {
+        return constraint != null ? constraint.getMessage() : null;
     }
 
     /**
@@ -115,10 +151,21 @@ public class BeanRuleViolation extends RuleViolation {
     }
 
     /**
+     * The constraint whose rule reported the violation, as the spec describes it.
+     *
+     * @return the descriptor; null for a rule that was not materialized from a constraint.
+     */
+    @Override
+    public ConstraintDescriptor<?> getConstraintDescriptor() {
+        return constraint != null ? ConstraintDefinitionDescriptor.of(constraint) : null;
+    }
+
+    /**
      * The value the rule rejected, as an object.
      *
      * @return the invalid value; null when the value is null or unknown.
      */
+    @Override
     public Object getInvalidValue() {
         return invalidValue;
     }
@@ -129,6 +176,7 @@ public class BeanRuleViolation extends RuleViolation {
      *
      * @return the leaf bean; null when unknown.
      */
+    @Override
     public Object getLeafBean() {
         return leafBean;
     }
@@ -136,10 +184,54 @@ public class BeanRuleViolation extends RuleViolation {
     /**
      * The object validation started from.
      *
-     * @return the root bean; null when unknown.
+     * @return the root bean; null when unknown or when a value was validated without an object.
      */
+    @Override
     public Object getRootBean() {
         return rootBean;
+    }
+
+    /**
+     * The class validation started from.
+     *
+     * @return the root bean class; null when unknown.
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public Class<Object> getRootBeanClass() {
+        return (Class<Object>) rootBeanClass;
+    }
+
+    /**
+     * Executable validation is not supported.
+     *
+     * @return null.
+     */
+    @Override
+    public Object[] getExecutableParameters() {
+        return null;
+    }
+
+    /**
+     * Executable validation is not supported.
+     *
+     * @return null.
+     */
+    @Override
+    public Object getExecutableReturnValue() {
+        return null;
+    }
+
+    /**
+     * This violation, viewed as the given type.
+     *
+     * @throws ValidationException if it is not of that type.
+     */
+    @Override
+    public <U> U unwrap(Class<U> type) {
+        Assert.notNull(type, "type cannot be null.");
+        if (type.isInstance(this)) return type.cast(this);
+        throw new ValidationException("cannot unwrap [" + getClass().getName() + "] to [" + type.getName() + "]");
     }
 
     @Override
