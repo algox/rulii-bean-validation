@@ -25,6 +25,12 @@ import java.util.List;
  * Registering a mapper for a type that already has one replaces it, which is how a standard
  * mapping is overridden.
  *
+ * <p>A constraint with no registered mapper that names {@code jakarta.validation.ConstraintValidator}
+ * classes in its {@code @Constraint(validatedBy)} is mapped through them: {@link #find} answers with a
+ * {@link org.rulii.validation.beans.validator.ConstraintValidatorMapper} synthesized for it, whose
+ * validators are created through the registry's {@code ConstraintValidatorFactory}. A registered
+ * mapper always takes precedence over the declared validators.</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
@@ -60,18 +66,27 @@ public interface ConstraintMapperRegistry {
     void register(ConstraintMapper<?> mapper);
 
     /**
-     * Finds the mapper registered for the given constraint annotation type.
+     * Finds the mapper for the given constraint annotation type: the registered one, else the one
+     * synthesized from the validators the constraint declares.
      *
      * @param annotationType the constraint annotation type.
      * @param <A> the annotation type.
-     * @return the mapper, or null if none is registered.
+     * @return the mapper, or null if none is registered and the constraint declares no validators.
      */
     <A extends Annotation> ConstraintMapper<A> find(Class<A> annotationType);
 
     /**
-     * All registered mappers, in registration order.
+     * All registered mappers, in registration order; synthesized validator mappers are not among them.
      *
      * @return the mappers; unmodifiable snapshot.
      */
     List<ConstraintMapper<?>> getMappers();
+
+    /**
+     * Hands the constraint validator instances created through this registry back to their factory.
+     * Nothing to do for a registry without validator-backed constraints.
+     */
+    default void release() {
+        // Nothing to release.
+    }
 }

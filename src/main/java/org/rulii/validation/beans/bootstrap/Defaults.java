@@ -18,13 +18,12 @@
 package org.rulii.validation.beans.bootstrap;
 
 import jakarta.validation.ClockProvider;
-import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.Path;
 import jakarta.validation.TraversableResolver;
-import jakarta.validation.ValidationException;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.lang.annotation.ElementType;
 import java.lang.reflect.Constructor;
@@ -39,10 +38,10 @@ import java.util.List;
 /**
  * The default spec services a {@link RuliiConfiguration} reports when none is configured. They are
  * plain: the traversable resolver reaches and cascades into everything, the constraint validator
- * factory instantiates through the no-argument constructor (constraint validators are not run by this
- * library, but frameworks ask for the factory), the parameter name provider reads the compiled
- * parameter names, the clock is the system clock. The default message interpolator is the
- * {@link org.rulii.validation.beans.message.RuliiMessageInterpolator}, built per configuration.
+ * factory is the {@link DefaultConstraintValidatorFactory} (no-argument constructor), the parameter
+ * name provider reads the compiled parameter names, the clock is the system clock. The default
+ * message interpolator is the {@link org.rulii.validation.beans.message.RuliiMessageInterpolator},
+ * built per configuration.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -50,7 +49,7 @@ import java.util.List;
 final class Defaults {
 
     static final TraversableResolver TRAVERSABLE_RESOLVER = new ReachEverythingTraversableResolver();
-    static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new NoArgConstraintValidatorFactory();
+    static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new DefaultConstraintValidatorFactory();
     static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new ReflectionParameterNameProvider();
     static final ClockProvider CLOCK_PROVIDER = Clock::systemDefaultZone;
 
@@ -74,30 +73,6 @@ final class Defaults {
         public boolean isCascadable(Object traversableObject, Path.Node traversableProperty, Class<?> rootBeanType,
                                     Path pathToTraversableObject, ElementType elementType) {
             return true;
-        }
-    }
-
-    static final class NoArgConstraintValidatorFactory implements ConstraintValidatorFactory {
-
-        private NoArgConstraintValidatorFactory() {
-            super();
-        }
-
-        @Override
-        public <T extends ConstraintValidator<?, ?>> T getInstance(Class<T> key) {
-            Assert.notNull(key, "key cannot be null.");
-            try {
-                Constructor<T> constructor = key.getDeclaredConstructor();
-                constructor.setAccessible(true);
-                return constructor.newInstance();
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                throw new ValidationException("cannot instantiate constraint validator [" + key.getName() + "]", e);
-            }
-        }
-
-        @Override
-        public void releaseInstance(ConstraintValidator<?, ?> instance) {
-            // Nothing to release.
         }
     }
 

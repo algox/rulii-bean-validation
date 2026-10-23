@@ -18,18 +18,24 @@
 package org.rulii.validation.beans.mapper;
 
 import jakarta.validation.Constraint;
+import jakarta.validation.ConstraintValidatorFactory;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.validator.ConstraintValidatorMapper;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Default {@link ConstraintMapperRegistry}: one mapper per constraint annotation type, last
- * registration wins. Thread-safe.
+ * registration wins. A constraint with no registered mapper that declares validators gets a
+ * {@link ConstraintValidatorMapper} synthesized on first lookup and kept; registering a mapper for
+ * it afterwards replaces that too. Thread-safe.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -37,9 +43,30 @@ import java.util.Map;
 public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry {
 
     private final Map<Class<? extends Annotation>, ConstraintMapper<?>> mappers = new LinkedHashMap<>();
+    private final Map<Class<? extends Annotation>, ConstraintValidatorMapper<?>> validatorMappers = new HashMap<>();
+    private final ConstraintValidatorFactory constraintValidatorFactory;
 
+    /**
+     * Creates a registry whose validator-backed constraints instantiate their validators through the
+     * {@link DefaultConstraintValidatorFactory}.
+     *
+     * @param registerDefaults true to pre-populate the standard mappers.
+     */
     public DefaultConstraintMapperRegistry(boolean registerDefaults) {
+        this(registerDefaults, new DefaultConstraintValidatorFactory());
+    }
+
+    /**
+     * Creates a registry.
+     *
+     * @param registerDefaults true to pre-populate the standard mappers.
+     * @param constraintValidatorFactory the factory validator-backed constraints instantiate their
+     *                                   validators through.
+     */
+    public DefaultConstraintMapperRegistry(boolean registerDefaults, ConstraintValidatorFactory constraintValidatorFactory) {
         super();
+        Assert.notNull(constraintValidatorFactory, "constraintValidatorFactory cannot be null.");
+        this.constraintValidatorFactory = constraintValidatorFactory;
         if (registerDefaults) registerDefaults();
     }
 
@@ -54,6 +81,7 @@ public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry
 
         synchronized (mappers) {
             mappers.put(annotationType, mapper);
+            validatorMappers.remove(annotationType);
         }
     }
 
@@ -63,7 +91,10 @@ public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry
         Assert.notNull(annotationType, "annotationType cannot be null.");
 
         synchronized (mappers) {
-            return (ConstraintMapper<A>) mappers.get(annotationType);
+            ConstraintMapper<A> result = (ConstraintMapper<A>) mappers.get(annotationType);
+            if (result != null || !ConstraintValidatorMapper.declaresValidators(annotationType)) return result;
+            return (ConstraintMapper<A>) validatorMappers.computeIfAbsent(annotationType,
+                    type -> new ConstraintValidatorMapper<>(annotationType, constraintValidatorFactory));
         }
     }
 
@@ -74,6 +105,33 @@ public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry
         }
     }
 
+    /**
+     * The factory validator-backed constraints instantiate their validators through.
+     *
+     * @return the factory.
+     */
+    public ConstraintValidatorFactory getConstraintValidatorFactory() {
+        return constraintValidatorFactory;
+    }
+
+    /**
+     * The validator mappers synthesized so far.
+     *
+     * @return the mappers; unmodifiable snapshot.
+     */
+    public List<ConstraintValidatorMapper<?>> getValidatorMappers() {
+        synchronized (mappers) {
+            return Collections.unmodifiableList(new ArrayList<>(validatorMappers.values()));
+        }
+    }
+
+    @Override
+    public void release() {
+        for (ConstraintValidatorMapper<?> mapper : getValidatorMappers()) {
+            mapper.release();
+        }
+    }
+
     private void registerDefaults() {
         StandardConstraintMappers.all().forEach(this::register);
         LibraryConstraintMappers.all().forEach(this::register);
@@ -81,6 +139,7 @@ public class DefaultConstraintMapperRegistry implements ConstraintMapperRegistry
 
     @Override
     public String toString() {
-        return "DefaultConstraintMapperRegistry{" + getMappers().size() + " mappers}";
+        return "DefaultConstraintMapperRegistry{" + getMappers().size() + " mappers, " + getValidatorMappers().size()
+                + " validator mappers}";
     }
 }

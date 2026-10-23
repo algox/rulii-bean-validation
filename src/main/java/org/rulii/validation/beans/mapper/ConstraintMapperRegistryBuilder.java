@@ -17,7 +17,12 @@
  */
 package org.rulii.validation.beans.mapper;
 
+import jakarta.validation.ConstraintValidatorFactory;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Builder for a {@link ConstraintMapperRegistry}.
@@ -27,12 +32,13 @@ import org.rulii.lib.spring.util.Assert;
  */
 public final class ConstraintMapperRegistryBuilder {
 
-    private final ConstraintMapperRegistry registry;
+    private final boolean registerDefaults;
+    private final List<ConstraintMapper<?>> mappers = new ArrayList<>();
+    private ConstraintValidatorFactory constraintValidatorFactory;
 
-    private ConstraintMapperRegistryBuilder(ConstraintMapperRegistry registry) {
+    private ConstraintMapperRegistryBuilder(boolean registerDefaults) {
         super();
-        Assert.notNull(registry, "registry cannot be null.");
-        this.registry = registry;
+        this.registerDefaults = registerDefaults;
     }
 
     /**
@@ -41,7 +47,7 @@ public final class ConstraintMapperRegistryBuilder {
      * @return the builder.
      */
     public static ConstraintMapperRegistryBuilder empty() {
-        return new ConstraintMapperRegistryBuilder(new DefaultConstraintMapperRegistry(false));
+        return new ConstraintMapperRegistryBuilder(false);
     }
 
     /**
@@ -51,7 +57,7 @@ public final class ConstraintMapperRegistryBuilder {
      * @return the builder.
      */
     public static ConstraintMapperRegistryBuilder standard() {
-        return new ConstraintMapperRegistryBuilder(new DefaultConstraintMapperRegistry(true));
+        return new ConstraintMapperRegistryBuilder(true);
     }
 
     /**
@@ -62,11 +68,32 @@ public final class ConstraintMapperRegistryBuilder {
      */
     public ConstraintMapperRegistryBuilder mapper(ConstraintMapper<?> mapper) {
         Assert.notNull(mapper, "mapper cannot be null.");
-        registry.register(mapper);
+        mappers.add(mapper);
+        return this;
+    }
+
+    /**
+     * The factory validator-backed constraints (those naming {@code ConstraintValidator} classes in
+     * their {@code @Constraint(validatedBy)} and having no registered mapper) instantiate their
+     * validators through. The {@link DefaultConstraintValidatorFactory} when not set.
+     *
+     * @param constraintValidatorFactory the factory.
+     * @return this builder.
+     */
+    public ConstraintMapperRegistryBuilder constraintValidatorFactory(ConstraintValidatorFactory constraintValidatorFactory) {
+        Assert.notNull(constraintValidatorFactory, "constraintValidatorFactory cannot be null.");
+        this.constraintValidatorFactory = constraintValidatorFactory;
         return this;
     }
 
     public ConstraintMapperRegistry build() {
-        return registry;
+        ConstraintMapperRegistry result = new DefaultConstraintMapperRegistry(registerDefaults,
+                constraintValidatorFactory != null ? constraintValidatorFactory : new DefaultConstraintValidatorFactory());
+
+        for (ConstraintMapper<?> mapper : mappers) {
+            result.register(mapper);
+        }
+
+        return result;
     }
 }

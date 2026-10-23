@@ -124,8 +124,8 @@ public final class ConstraintDefinitionDescriptor<A extends Annotation> implemen
     }
 
     /**
-     * The validators the annotation names in {@code @Constraint(validatedBy)}. They are reported, not
-     * run: this library materializes rulii rules through constraint mappers.
+     * The validators the annotation names in {@code @Constraint(validatedBy)}: the ones run for the
+     * constraint when no mapper is registered for it.
      */
     @Override
     @SuppressWarnings("unchecked")

@@ -208,9 +208,11 @@ public class BeanRuleViolationsTest {
         assertSame(parent, violations.getBeanViolations().get(1).getRootBean());
         assertSame(parent, violations.getBeanViolations().get(3).getLeafBean());
 
-        // Same rule, different element: distinct violations.
+        // Same rule, different element: distinct violations. Same rule and path, different message: distinct too.
         assertNotEquals(violations.getBeanViolations().get(1), violations.getBeanViolations().get(2));
-        assertEquals(violations.getBeanViolations().get(0), violations.getBeanViolations().get(3));
+        assertNotEquals(violations.getBeanViolations().get(0), violations.getBeanViolations().get(3));
+        assertEquals(violations.getBeanViolations().get(0), new BeanRuleViolation(violations.getBeanViolations().get(0),
+                PropertyPath.root().property("code"), null, null, null, null));
         assertNotEquals(violations.getBeanViolations().get(0).hashCode(), violations.getBeanViolations().get(1).hashCode());
     }
 

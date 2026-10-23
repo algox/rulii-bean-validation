@@ -234,16 +234,21 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
         throw new ValidationException("cannot unwrap [" + getClass().getName() + "] to [" + type.getName() + "]");
     }
 
+    /**
+     * Two violations are the same when the same rule reported them with the same code, message and
+     * path: one rule may report several violations at one place with different messages (a constraint
+     * validator building them), and each counts.
+     */
     @Override
     public boolean equals(Object o) {
         if (!super.equals(o)) return false;
         BeanRuleViolation that = (BeanRuleViolation) o;
-        return propertyPath.equals(that.propertyPath);
+        return propertyPath.equals(that.propertyPath) && Objects.equals(getErrorMessage(), that.getErrorMessage());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), propertyPath);
+        return Objects.hash(super.hashCode(), propertyPath, getErrorMessage());
     }
 
     @Override

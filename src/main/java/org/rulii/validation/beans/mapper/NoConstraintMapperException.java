@@ -22,13 +22,14 @@ import jakarta.validation.UnexpectedTypeException;
 import java.lang.annotation.Annotation;
 
 /**
- * Thrown when a bean declares a constraint that has no registered {@link ConstraintMapper} and is
- * not a pure composition of mapped constraints. Raised when the bean class is read, not when a value
- * is validated. Same exception family the reference implementation uses when no validator can be found.
+ * Thrown when a bean declares a constraint that has no registered {@link ConstraintMapper}, names no
+ * {@code jakarta.validation.ConstraintValidator} in its {@code @Constraint(validatedBy)}, and is not a
+ * pure composition of mapped constraints. Raised when the bean class is read, not when a value is
+ * validated. Same exception family the reference implementation uses when no validator can be found.
  *
- * <p>rulii bean validation does not execute {@code jakarta.validation.ConstraintValidator}
- * implementations; the fix is to register a mapper for the constraint:
- * {@code ConstraintMapperRegistry.builder().mapper(new MyConstraintMapper()).build()}.</p>
+ * <p>The fix is either: register a mapper for the constraint,
+ * {@code ConstraintMapperRegistry.builder().mapper(new MyConstraintMapper()).build()}, or name a
+ * validator class in the annotation's {@code @Constraint(validatedBy)}.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -47,9 +48,9 @@ public class NoConstraintMapperException extends UnexpectedTypeException {
      */
     public NoConstraintMapperException(Class<? extends Annotation> annotationType, String location) {
         super("no constraint mapper is registered for constraint [" + annotationType.getName() + "] declared on ["
-                + location + "]. rulii bean validation does not execute ConstraintValidator implementations;"
-                + " register a " + ConstraintMapper.class.getName() + " for the constraint:"
-                + " ConstraintMapperRegistry.builder().mapper(new YourConstraintMapper()).build()");
+                + location + "], and the constraint declares no validators. Either register a "
+                + ConstraintMapper.class.getName() + " for it: ConstraintMapperRegistry.builder().mapper(new YourConstraintMapper()).build(),"
+                + " or name a jakarta.validation.ConstraintValidator in its @Constraint(validatedBy).");
         this.annotationType = annotationType;
         this.location = location;
     }

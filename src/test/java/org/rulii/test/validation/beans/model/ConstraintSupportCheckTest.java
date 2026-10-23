@@ -123,11 +123,9 @@ public class ConstraintSupportCheckTest {
     }
 
     @Test
-    public void compositionWithValidatorsNeedsAMapper() {
-        // The composing constraints would run, but the declared validators would be dropped silently.
-        BeanDefinitionLoader loader = loader();
-        NoConstraintMapperException e = assertThrows(NoConstraintMapperException.class, () -> loader.load(ComposedWithValidator.class));
-        assertEquals(ValidNameWithValidator.class, e.getAnnotationType());
+    public void compositionWithValidatorsLoadsThroughTheValidators() {
+        // The composing constraints run, and so do the declared validators, through the synthesized mapper.
+        assertNotNull(loader().load(ComposedWithValidator.class));
 
         ConstraintMapperRegistry mappers = ConstraintMapperRegistry.builder()
                 .mapper(new SimpleConstraintMapper<>(ValidNameWithValidator.class, List.of(CharSequence.class), (a, t) -> List.of()))

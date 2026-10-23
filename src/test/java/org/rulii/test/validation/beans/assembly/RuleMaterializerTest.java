@@ -51,6 +51,7 @@ import org.rulii.validation.beans.mapper.SimpleConstraintMapper;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.PropertyDefinition;
+import org.rulii.validation.beans.validator.ConstraintValidatorRule;
 import org.rulii.validation.rules.Validators;
 
 import java.lang.annotation.ElementType;
@@ -308,12 +309,12 @@ public class RuleMaterializerTest {
     }
 
     @Test
-    public void unmappedCompositionWithValidatorsIsAMapperFailure() {
-        ConstraintMapperException e = assertThrows(ConstraintMapperException.class,
-                () -> new RuleMaterializer(mappers()).materialize(BeanDefinition.load(WithValidator.class, EXTRACTORS)));
-        assertEquals(ValidatedCode.class, e.getAnnotationType());
-        assertTrue(e.getLocation().contains(WithValidator.class.getName() + ".code"));
-        assertTrue(e.getMessage().contains("no mapper"));
+    public void unmappedCompositionWithValidatorsMaterializesThroughTheValidators() {
+        // The host's own rule runs its declared validator; the composing constraint keeps its own rule.
+        BeanRules rules = new RuleMaterializer(mappers()).materialize(BeanDefinition.load(WithValidator.class, EXTRACTORS));
+
+        assertEquals(List.of("code_validatedCode", "code_validatedCode_notNull"), rules.getPropertyRules().stream().map(MaterializedRule::getName).toList());
+        assertInstanceOf(ConstraintValidatorRule.class, rules.getRule("code_validatedCode").getRule().getTarget());
     }
 
     @Test

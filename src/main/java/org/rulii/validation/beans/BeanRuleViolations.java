@@ -208,12 +208,18 @@ public class BeanRuleViolations extends RuleViolations {
             return new BeanRuleViolation(error, PropertyPath.root(), null, null, null, rootBean, rootBeanClass);
         }
         MaterializedRule rule = frame.getRules() != null ? frame.getRules().getRule(error.getRuleName()) : null;
+        CustomPathRuleViolation custom = error instanceof CustomPathRuleViolation c ? c : null;
         if (rule == null) {
-            return new BeanRuleViolation(error, frame.getPath(), null, null, frame.getBean(), rootBean, rootBeanClass);
+            PropertyPath path = custom != null ? custom.extend(frame.getPath()) : frame.getPath();
+            return new BeanRuleViolation(error, path, null, null, frame.getBean(), rootBean, rootBeanClass);
         }
         PropertyPath path = frame.getPath();
         if (rule.getLeaf() != null) {
             path = path.property(rule.getLeaf());
+        }
+        // A violation that names its own place extends the rule's path; otherwise a class-level rule reports at the bean.
+        if (custom != null) {
+            path = custom.extend(path);
         } else if (rule.getTarget().isClassLevel()) {
             path = path.bean();
         }

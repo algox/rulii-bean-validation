@@ -17,7 +17,6 @@
  */
 package org.rulii.validation.beans.assembly;
 
-import jakarta.validation.Constraint;
 import jakarta.validation.ValidationException;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
@@ -238,16 +237,15 @@ public final class RuleMaterializer {
                              List<MaterializedRule> out) {
         Class<? extends Annotation> type = constraint.getAnnotationType();
         ConstraintMapper mapper = mappers.find(type);
-        boolean pureComposition = constraint.isComposed() && type.getAnnotation(Constraint.class).validatedBy().length == 0;
 
-        if (mapper == null && !pureComposition) {
-            throw new ConstraintMapperException(type, site.location(), "no mapper is registered for the constraint.");
+        if (mapper == null && !constraint.isComposed()) {
+            throw new ConstraintMapperException(type, site.location(), "no mapper is registered for the constraint and it declares no validators.");
         }
 
         Map<String, String> parameterNames = mapper != null ? mapper.getParameterNames() : Map.of();
         ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(),
                 site.valueName(), site.type(), ruleName, errorCode(type), constraint.getSeverity(),
-                message(constraint, parameterNames, site.valueName()), constraint.getSource(), site.value());
+                message(type, constraint.getMessage(), parameterNames, site.valueName()), constraint.getSource(), site.value());
         // Inside a @ReportAsSingleViolation constraint, every rule (its own and its composing ones) is hosted by it.
         ConstraintDefinition ownHost = constraint.isReportAsSingleViolation() ? constraint : host;
         List<MaterializedRule> own = new ArrayList<>();
@@ -316,12 +314,24 @@ public final class RuleMaterializer {
         return annotationType.getName() + MESSAGE_KEY_SUFFIX;
     }
 
-    private static String message(ConstraintDefinition constraint, Map<String, String> parameterNames, String valueName) {
-        String template = constraint.getMessage();
-        // The constraint's own default key resolves through the error code; any other key becomes a placeholder
-        // the render-time formatter expands.
-        if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(constraint.getAnnotationType()))
-                && errorCode(constraint.getAnnotationType()).equals(MessageTemplates.templateKey(template))) {
+    /**
+     * The rulii message template for a constraint's jakarta template, declared or built at run time by
+     * a constraint validator: the constraint's own default key resolves through the error code, so it
+     * yields no template; any other key becomes a placeholder the render-time formatter expands; a
+     * literal is translated.
+     *
+     * @param annotationType the constraint annotation type.
+     * @param template the jakarta template.
+     * @param parameterNames attribute name to rule parameter name, where they differ.
+     * @param valueName the parameter the rules report the value under.
+     * @return the rulii template; null when the message is to be resolved from the error code.
+     */
+    public static String message(Class<? extends Annotation> annotationType, String template, Map<String, String> parameterNames,
+                                 String valueName) {
+        Assert.notNull(annotationType, "annotationType cannot be null.");
+        Assert.notNull(template, "template cannot be null.");
+        if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(annotationType))
+                && errorCode(annotationType).equals(MessageTemplates.templateKey(template))) {
             return null;
         }
         return MessageTemplates.translate(template, parameterNames, valueName);

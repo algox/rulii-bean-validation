@@ -32,9 +32,9 @@ import java.util.List;
 
 /**
  * The spec's {@link ValidatorContext}: per-validator overrides of a factory's configuration. Value
- * extractors and the clock provider reach the validator built by {@link #getValidator()}; the message
- * interpolator, traversable resolver, constraint validator factory and parameter name provider are
- * accepted for the contract and kept, since the validator does not consult them.
+ * extractors, the clock provider and the constraint validator factory reach the validator built by
+ * {@link #getValidator()}; the message interpolator, traversable resolver and parameter name provider
+ * are accepted for the contract and kept, since the validator does not consult them.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -118,12 +118,13 @@ public final class RuliiValidatorContext implements ValidatorContext {
      */
     @Override
     public BeanValidator getValidator() {
-        if (extractors.isEmpty() && clockProvider == null) return factory.getValidator();
-        return factory.build(extractors, getClockProvider());
+        if (extractors.isEmpty() && clockProvider == null && constraintValidatorFactory == null) return factory.getValidator();
+        return factory.build(extractors, getClockProvider(), getConstraintValidatorFactory());
     }
 
     @Override
     public String toString() {
-        return "RuliiValidatorContext{extractors=" + extractors.size() + ", clockProvider=" + (clockProvider != null) + '}';
+        return "RuliiValidatorContext{extractors=" + extractors.size() + ", clockProvider=" + (clockProvider != null)
+                + ", constraintValidatorFactory=" + (constraintValidatorFactory != null) + '}';
     }
 }

@@ -17,7 +17,6 @@
  */
 package org.rulii.validation.beans.model;
 
-import jakarta.validation.Constraint;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
@@ -35,11 +34,10 @@ import java.util.List;
  * so misplaced or unsupported constraints fail when the class is loaded rather than when a value is
  * validated.
  *
- * <p>Rules: a constraint with a registered mapper must be {@link ConstraintMapper#isApplicable(Class)
- * applicable} to its type. A constraint with no mapper is accepted only when it is a composition
- * ({@link ConstraintDefinition#isComposed()}) whose {@code @Constraint(validatedBy)} is empty: a
- * composed constraint that also names validators would lose those checks silently, so it needs a
- * mapper too. Composing constraints are checked recursively against the same type.</p>
+ * <p>Rules: a constraint with a mapper (registered, or synthesized from the validators it declares)
+ * must be {@link ConstraintMapper#isApplicable(Class) applicable} to its type. A constraint with no
+ * mapper is accepted only when it is a composition ({@link ConstraintDefinition#isComposed()}).
+ * Composing constraints are checked recursively against the same type.</p>
  *
  * <p>The type checked is the one the value will have: the resolved type of the declaration a property
  * constraint is read from (field and getter are checked separately), the (erased) element type for a
@@ -63,7 +61,8 @@ final class ConstraintSupportCheck {
      *
      * @param definition the bean definition.
      * @param registry the mappers available.
-     * @throws NoConstraintMapperException if a constraint has no mapper and is not a pure composition.
+     * @throws NoConstraintMapperException if a constraint has no mapper, declares no validators and is
+     *         not a composition.
      * @throws ConstraintNotApplicableException if a constraint cannot apply to the type it is declared on.
      */
     static void check(BeanDefinition definition, ConstraintMapperRegistry registry) {
@@ -108,17 +107,12 @@ final class ConstraintSupportCheck {
             if (!mapper.isApplicable(type)) {
                 throw new ConstraintNotApplicableException(annotationType, location, type, mapper.getSupportedTypes());
             }
-        } else if (!constraint.isComposed() || declaresValidators(annotationType)) {
+        } else if (!constraint.isComposed()) {
             throw new NoConstraintMapperException(annotationType, location);
         }
 
         for (ConstraintDefinition composing : constraint.getComposingConstraints()) {
             check(composing, type, location);
         }
-    }
-
-    private static boolean declaresValidators(Class<? extends Annotation> annotationType) {
-        Constraint constraint = annotationType.getAnnotation(Constraint.class);
-        return constraint != null && constraint.validatedBy().length > 0;
     }
 }

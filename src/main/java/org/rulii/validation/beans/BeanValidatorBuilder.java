@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans;
 
+import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
@@ -33,6 +34,8 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
  *   <li>{@link #registry(RuleRegistry)}: where {@code @Validate} names resolve;</li>
  *   <li>{@link #mapper(ConstraintMapper)} / {@link #mappers(ConstraintMapperRegistry)}: how constraints
  *       become rules, on top of (or instead of) the standard mappers;</li>
+ *   <li>{@link #constraintValidatorFactory(ConstraintValidatorFactory)}: how the validators of
+ *       constraints that have no mapper but name {@code ConstraintValidator} classes are created;</li>
  *   <li>{@link #extractor(ValueExtractor)} / {@link #extractors(ValueExtractorRegistry)}: how containers
  *       are walked, on top of (or instead of) the standard extractors;</li>
  *   <li>{@link #options(RuleContextOptions)}: the core context every validation starts from (locale,
@@ -79,6 +82,23 @@ public final class BeanValidatorBuilder {
         Assert.notNull(mapper, "mapper cannot be null.");
         Assert.isTrue(mapperRegistry == null, "mapper() cannot be combined with mappers(); add the mapper to that registry instead.");
         mappers.mapper(mapper);
+        return this;
+    }
+
+    /**
+     * The factory the validators of validator-backed constraints are created through: the
+     * {@link org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory} (no-argument
+     * constructor) when not set.
+     *
+     * @param factory the factory.
+     * @return this builder.
+     * @throws IllegalArgumentException if a whole registry was given through {@link #mappers}; that
+     *         registry carries its own factory.
+     */
+    public BeanValidatorBuilder constraintValidatorFactory(ConstraintValidatorFactory factory) {
+        Assert.notNull(factory, "factory cannot be null.");
+        Assert.isTrue(mapperRegistry == null, "constraintValidatorFactory() cannot be combined with mappers(); give the factory to that registry instead.");
+        mappers.constraintValidatorFactory(factory);
         return this;
     }
 

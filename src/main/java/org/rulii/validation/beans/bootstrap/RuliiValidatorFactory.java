@@ -47,10 +47,11 @@ import java.util.Map;
  * {@link ConfigurationState}, it holds one {@link BeanValidator} configured from it and hands it out from
  * {@link #getValidator()}; {@link #usingContext()} builds validators with per-context overrides.
  * <p>
- * The message interpolator, traversable resolver, constraint validator factory and parameter name
- * provider are kept as configured and exposed, so a framework that set them finds them again; the
- * clock provider is wired into the rules' context. Closing the factory releases nothing, the validator
- * stays usable.
+ * The constraint validator factory and the clock provider are wired into the validator: the first
+ * creates the validators of validator-backed constraints, the second is the rules' clock. The message
+ * interpolator, traversable resolver and parameter name provider are kept as configured and exposed, so
+ * a framework that set them finds them again. Closing the factory hands the constraint validator
+ * instances of every validator it built back to their factory; the validators stay usable.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -67,6 +68,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
     private final List<ConstraintMapper<?>> mappers;
     private final RuleContextOptions options;
     private final List<ValueExtractor<?>> extractors;
+    private final List<BeanValidator> validators = new ArrayList<>();
     private final BeanValidator validator;
 
     /**
@@ -90,17 +92,20 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
-        this.validator = build(List.of(), clockProvider);
+        this.validator = build(List.of(), clockProvider, constraintValidatorFactory);
     }
 
     /**
-     * Builds a validator from this factory's configuration plus per-context additions.
+     * Builds a validator from this factory's configuration plus per-context overrides, and remembers it
+     * for {@link #close()}.
      */
-    BeanValidator build(Collection<ValueExtractor<?>> additionalExtractors, ClockProvider clock) {
+    BeanValidator build(Collection<ValueExtractor<?>> additionalExtractors, ClockProvider clock,
+                        ConstraintValidatorFactory constraintValidatorFactory) {
         BeanValidatorBuilder builder = BeanValidator.builder();
         RuleContextOptions base = options != null ? options : StandardRuleContextOptions.build();
 
         builder.options(new ClockOptions(base, clock));
+        builder.constraintValidatorFactory(constraintValidatorFactory);
         if (registry != null) builder.registry(registry);
 
         for (ConstraintMapper<?> mapper : mappers) {
@@ -115,7 +120,13 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
             builder.extractor(extractor);
         }
 
-        return builder.build();
+        BeanValidator result = builder.build();
+
+        synchronized (validators) {
+            validators.add(result);
+        }
+
+        return result;
     }
 
     /**
@@ -188,11 +199,22 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
     }
 
     /**
-     * Nothing to release: the validator holds no external resources and stays usable.
+     * Hands the constraint validator instances created by every validator built by this factory back
+     * to their constraint validator factory, as the specification asks. The validators stay usable
+     * with the instances their rules hold; what releasing means to those instances is the constraint
+     * validator factory's business.
      */
     @Override
     public void close() {
-        // Nothing to release.
+        List<BeanValidator> built;
+
+        synchronized (validators) {
+            built = new ArrayList<>(validators);
+        }
+
+        for (BeanValidator beanValidator : built) {
+            beanValidator.getConstraintMapperRegistry().release();
+        }
     }
 
     @Override
