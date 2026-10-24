@@ -17,6 +17,8 @@
  */
 package org.rulii.validation.beans.traversal;
 
+import jakarta.validation.Path;
+import jakarta.validation.TraversableResolver;
 import jakarta.validation.groups.Default;
 import org.rulii.bind.Binding;
 import org.rulii.bind.NamedScope;
@@ -31,15 +33,21 @@ import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.assembly.MaterializedRule;
 import org.rulii.validation.beans.assembly.MaterializedRules;
+import org.rulii.validation.beans.assembly.RulePlacement;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
 import org.rulii.validation.beans.model.GroupConversions;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
+import java.lang.annotation.ElementType;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -79,7 +87,9 @@ public final class Traversal {
     private final Function<Class<?>, RuleFlow<?>> flows;
     private final ValueExtractorRegistry extractors;
     private final RuleRegistry registry;
+    private final TraversableResolver resolver;
     private final Map<Object, Set<RequestedGroups>> validated = new IdentityHashMap<>();
+    private final Map<Object, Map<String, Boolean>> resolutions = new IdentityHashMap<>();
 
     /**
      * Creates the traversal of a call whose {@code @Validate} names resolve through the context's registry.
@@ -102,6 +112,20 @@ public final class Traversal {
      */
     public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
                      RuleRegistry registry) {
+        this(groups, flows, extractors, registry, null);
+    }
+
+    /**
+     * Creates the traversal of a call that asks a traversable resolver before touching a property.
+     *
+     * @param groups the groups being processed.
+     * @param flows the flow of a bean class, by runtime type.
+     * @param extractors the value extractors of the call.
+     * @param registry the registry {@code @Validate} names resolve through; null to use the context's.
+     * @param resolver the traversable resolver; null, or the traverse-all one, consults nothing.
+     */
+    public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
+                     RuleRegistry registry, TraversableResolver resolver) {
         super();
         Assert.notNull(groups, "groups cannot be null.");
         Assert.notNull(flows, "flows cannot be null.");
@@ -110,6 +134,113 @@ public final class Traversal {
         this.flows = flows;
         this.extractors = extractors;
         this.registry = registry;
+        this.resolver = TraversableResolvers.consults(resolver) ? resolver : null;
+    }
+
+    /**
+     * The traversable resolver consulted before a property is validated or cascaded into.
+     *
+     * @return the resolver; null when everything is reachable and cascadable.
+     */
+    public TraversableResolver getTraversableResolver() {
+        return resolver;
+    }
+
+    /**
+     * Whether a traversable resolver is consulted.
+     *
+     * @return true if one is.
+     */
+    public boolean consultsResolver() {
+        return resolver != null;
+    }
+
+    /**
+     * Whether a property of the object in scope may be validated: the resolver's {@code isReachable},
+     * asked once per object, property and element type within this traversal; always true without a
+     * resolver. The property node, the root bean class and the path to the object come from the
+     * collector of the context.
+     *
+     * @param ruleContext the context of the run.
+     * @param bean the object hosting the property.
+     * @param propertyName the property.
+     * @param kind where the constraint or cascade is declared: a field, or a getter or record component.
+     * @return true if reachable.
+     * @throws TraversableResolverException if the resolver fails.
+     */
+    public boolean isReachable(RuleContext ruleContext, Object bean, String propertyName, ValueDeclaration.Kind kind) {
+        return ask(true, ruleContext, bean, propertyName, kind);
+    }
+
+    /**
+     * Whether a property rule of the object in scope may run: {@link #isReachable} for the rule's
+     * property, at the element type of the declaration the constraint sits on. Rules that are not
+     * property rules are not subject to the resolver.
+     *
+     * @param ruleContext the context of the run.
+     * @param bean the object in scope.
+     * @param rule the rule.
+     * @return true if the rule may run.
+     */
+    public boolean isReachable(RuleContext ruleContext, Object bean, MaterializedRule rule) {
+        Assert.notNull(rule, "rule cannot be null.");
+        if (resolver == null || rule.getPlacement().getKind() != RulePlacement.Kind.PROPERTY) return true;
+        return isReachable(ruleContext, bean, rule.getLeaf(), declarationKind(rule));
+    }
+
+    /**
+     * Whether a reachable property of the object in scope may be cascaded into: the resolver's
+     * {@code isCascadable}, asked once per object, property and element type within this traversal;
+     * always true without a resolver. Ask {@link #isReachable} first, as the specification orders.
+     *
+     * @param ruleContext the context of the run.
+     * @param bean the object hosting the property.
+     * @param propertyName the property.
+     * @param kind where the {@code @Valid} is declared.
+     * @return true if cascadable.
+     * @throws TraversableResolverException if the resolver fails.
+     */
+    public boolean isCascadable(RuleContext ruleContext, Object bean, String propertyName, ValueDeclaration.Kind kind) {
+        return ask(false, ruleContext, bean, propertyName, kind);
+    }
+
+    private boolean ask(boolean reachable, RuleContext ruleContext, Object bean, String propertyName, ValueDeclaration.Kind kind) {
+        if (resolver == null) return true;
+        Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        Assert.hasText(propertyName, "propertyName cannot be null/empty.");
+        Assert.notNull(kind, "kind cannot be null.");
+
+        ElementType elementType = kind == ValueDeclaration.Kind.FIELD ? ElementType.FIELD : ElementType.METHOD;
+        String key = (reachable ? "reachable:" : "cascadable:") + propertyName + ':' + elementType;
+        Map<String, Boolean> answers = resolutions.computeIfAbsent(bean, k -> new HashMap<>());
+        Boolean known = answers.get(key);
+
+        if (known != null) return known;
+
+        BeanRuleViolations collector = collector(ruleContext);
+        Class<?> rootBeanClass = collector != null ? collector.getRootBeanClass() : (bean != null ? bean.getClass() : null);
+        PropertyPath pathToObject = collector != null ? collector.getCurrentPath() : PropertyPath.root();
+        Path.Node node = PropertyPath.root().property(propertyName).getLeafNode();
+        boolean result;
+
+        try {
+            result = reachable ? resolver.isReachable(bean, node, rootBeanClass, pathToObject, elementType)
+                    : resolver.isCascadable(bean, node, rootBeanClass, pathToObject, elementType);
+        } catch (RuntimeException e) {
+            throw new TraversableResolverException(reachable ? "isReachable" : "isCascadable", bean, propertyName, resolver, e);
+        }
+
+        answers.put(key, result);
+        return result;
+    }
+
+    /**
+     * Where a rule's constraint is declared; the property's primary declaration when the source is not
+     * a declaration (which does not happen for a property rule).
+     */
+    private static ValueDeclaration.Kind declarationKind(MaterializedRule rule) {
+        if (rule.getDefinition().getConstraintSource() instanceof DeclarationConstraintSource source) return source.getDeclaration().getKind();
+        return ValueDeclaration.Kind.FIELD;
     }
 
     /**

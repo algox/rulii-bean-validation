@@ -43,6 +43,7 @@
         <jakarta.validation.api.version>3.1.1</jakarta.validation.api.version>
         <jakarta.el.api.version>5.0.1</jakarta.el.api.version>
         <expressly.version>5.0.0</expressly.version>
+        <jakarta.persistence.api.version>3.1.0</jakarta.persistence.api.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
@@ -99,6 +100,15 @@
             <groupId>org.glassfish.expressly</groupId>
             <artifactId>expressly</artifactId>
             <version>${expressly.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jakarta Persistence, for the tests of the JPA-aware traversable resolver only: the library reaches
+             the API by reflection when the application has it. -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <version>${jakarta.persistence.api.version}</version>
             <scope>test</scope>
         </dependency>
 

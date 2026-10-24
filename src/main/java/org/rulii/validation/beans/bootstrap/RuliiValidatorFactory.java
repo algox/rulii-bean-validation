@@ -51,8 +51,8 @@ import java.util.Map;
  * interpolator are wired into the validator: the first creates the validators of validator-backed
  * constraints, the second names the parameters of constrained executables, the third is the rules'
  * clock, the fourth renders the messages of constraint violations when it is not our own (see
- * {@link BeanValidatorBuilder#messageInterpolator}). The traversable resolver is kept as configured and
- * exposed, so a framework that set it finds it again. Closing the factory hands the constraint validator
+ * {@link BeanValidatorBuilder#messageInterpolator}), and the traversable resolver decides which properties
+ * are validated and cascaded into. Closing the factory hands the constraint validator
  * instances of every validator it built back to their factory; the validators stay usable.
  *
  * @author Max Arulananthan
@@ -94,7 +94,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
-        this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider, messageInterpolator);
+        this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider, messageInterpolator, traversableResolver);
     }
 
     /**
@@ -103,7 +103,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
      */
     BeanValidator build(Collection<ValueExtractor<?>> additionalExtractors, ClockProvider clock,
                         ConstraintValidatorFactory constraintValidatorFactory, ParameterNameProvider parameterNameProvider,
-                        MessageInterpolator messageInterpolator) {
+                        MessageInterpolator messageInterpolator, TraversableResolver traversableResolver) {
         BeanValidatorBuilder builder = BeanValidator.builder();
         RuleContextOptions base = options != null ? options : StandardRuleContextOptions.build();
 
@@ -111,6 +111,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         builder.constraintValidatorFactory(constraintValidatorFactory);
         builder.parameterNameProvider(parameterNameProvider);
         builder.messageInterpolator(messageInterpolator);
+        builder.traversableResolver(traversableResolver);
         if (registry != null) builder.registry(registry);
 
         for (ConstraintMapper<?> mapper : mappers) {

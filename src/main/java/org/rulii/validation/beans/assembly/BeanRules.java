@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 /**
  * The rules materialized for one bean class: the property rules in property then declaration order,
@@ -243,19 +244,32 @@ public final class BeanRules implements MaterializedRules {
      */
     public RuleSet<?> ruleSet(RequestedGroups groups) {
         Assert.notNull(groups, "groups cannot be null.");
-        return ruleSets.computeIfAbsent(groups.getGroups(), key -> {
-            List<Rule> rules = new ArrayList<>();
+        return ruleSets.computeIfAbsent(groups.getGroups(), key -> ruleSet(groups, rule -> true));
+    }
 
-            for (MaterializedRule rule : propertyRules) {
-                if (rule.isActive(groups)) rules.add(rule.getRule());
-            }
+    /**
+     * The property and class rules active for the given groups and accepted by a filter, as a RuleSet
+     * named {@link #getName()}: what runs when a traversable resolver puts some properties out of reach.
+     * Built on every call, not cached; use {@link #ruleSet(RequestedGroups)} when every rule may run.
+     *
+     * @param groups the requested groups.
+     * @param filter which active rules to include.
+     * @return the RuleSet; empty when nothing is active and accepted.
+     */
+    public RuleSet<?> ruleSet(RequestedGroups groups, Predicate<MaterializedRule> filter) {
+        Assert.notNull(groups, "groups cannot be null.");
+        Assert.notNull(filter, "filter cannot be null.");
+        List<Rule> rules = new ArrayList<>();
 
-            for (MaterializedRule rule : classRules) {
-                if (rule.isActive(groups)) rules.add(rule.getRule());
-            }
+        for (MaterializedRule rule : propertyRules) {
+            if (rule.isActive(groups) && filter.test(rule)) rules.add(rule.getRule());
+        }
 
-            return RuleSet.builder().with(name).rules(rules).build();
-        });
+        for (MaterializedRule rule : classRules) {
+            if (rule.isActive(groups) && filter.test(rule)) rules.add(rule.getRule());
+        }
+
+        return RuleSet.builder().with(name).rules(rules).build();
     }
 
     /**

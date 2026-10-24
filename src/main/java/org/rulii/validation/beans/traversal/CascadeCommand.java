@@ -40,6 +40,10 @@ import org.rulii.validation.beans.model.ValueDeclaration;
  * field beside a getter. When the class's redefined Default group sequence applies, the element rules
  * already ran with the object's rules, so the walk here cascades only.</p>
  *
+ * <p>With a traversable resolver in the traversal, a property it puts out of reach is neither walked
+ * nor read; a reachable property it declares not cascadable keeps its element constraints and does
+ * not cascade, as the specification orders ({@code isReachable} first, then {@code isCascadable}).</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
@@ -62,25 +66,59 @@ final class CascadeCommand implements RuleFlowCommand {
         PropertyPath base = collector.getCurrentPath();
         Traversal traversal = Traversal.of(ruleContext);
         boolean elementRules = !traversal.appliesDefaultSequence(rules.getDefinition().getDefaultGroupSequence());
-        ContainerWalker walker = null;
+        ContainerWalker cascading = null;
+        ContainerWalker plain = null;
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
             if (property.getContainerElements().isEmpty() && !property.isCascaded()) continue;
 
-            if (walker == null) walker = new ContainerWalker(ruleContext, rules, true, elementRules);
-
             PropertyPath path = base.property(property.getName());
             BindingPlan plan = rules.getBindingPlan();
+            String name = property.getName();
 
             for (ContainerElementDefinition node : property.getContainerElements()) {
+                ValueDeclaration.Kind kind = node.getSourceDeclaration().getKind();
+                if (!traversal.isReachable(ruleContext, bean, name, kind)) continue;
+                // Element constraints of a reachable property run; element cascades need the property cascadable too.
+                boolean cascade = !cascades(node) || traversal.isCascadable(ruleContext, bean, name, kind);
+                ContainerWalker walker;
+
+                if (cascade) {
+                    if (cascading == null) cascading = new ContainerWalker(ruleContext, rules, true, elementRules);
+                    walker = cascading;
+                } else if (elementRules) {
+                    if (plain == null) plain = new ContainerWalker(ruleContext, rules, false, true);
+                    walker = plain;
+                } else {
+                    continue;
+                }
+
                 walker.walk(plan.read(ruleContext.getBindings(), bean, property, node.getSourceDeclaration()), node, path);
             }
 
             for (ValueDeclaration declaration : property.getCascadedDeclarations()) {
-                walker.cascade(plan.read(ruleContext.getBindings(), bean, property, declaration), declaration.getGenericType(), path,
+                if (!traversal.isReachable(ruleContext, bean, name, declaration.getKind())
+                        || !traversal.isCascadable(ruleContext, bean, name, declaration.getKind())) {
+                    continue;
+                }
+                if (cascading == null) cascading = new ContainerWalker(ruleContext, rules, true, elementRules);
+                cascading.cascade(plan.read(ruleContext.getBindings(), bean, property, declaration), declaration.getGenericType(), path,
                         property.getGroupConversions());
             }
         }
+    }
+
+    /**
+     * Whether a container element position, or one nested in it, is cascaded.
+     */
+    private static boolean cascades(ContainerElementDefinition node) {
+        if (node.isCascaded()) return true;
+
+        for (ContainerElementDefinition child : node.getChildren()) {
+            if (cascades(child)) return true;
+        }
+
+        return false;
     }
 
     @Override

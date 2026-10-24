@@ -21,6 +21,7 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.ruleflow.RuleFlowExecutionContext;
 import org.rulii.ruleflow.command.RuleFlowCommand;
+import org.rulii.ruleset.RuleSet;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
@@ -39,6 +40,9 @@ import java.util.List;
  * processed, the rules run member by member ({@link Traversal#forDefaultSequence}), and the rules of
  * the container element positions run here with them, since element constraints are constraints of the
  * bean and take part in the sequence; the cascade step then walks the containers for cascades only.</p>
+ *
+ * <p>With a traversable resolver in the traversal, the rules of a property it puts out of reach do not
+ * run, and the property's value is never read.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -65,22 +69,28 @@ final class RunRulesCommand implements RuleFlowCommand {
 
         try (BeanRuleViolations.Frame ignored = collector.enter(collector.getCurrentPath(), rules, bean)) {
             traversal.forDefaultSequence(ruleContext, sequence, groups -> {
-                rules.ruleSet(groups).run(ruleContext);
-                if (redefined) elementRules(ruleContext, collector, bean);
+                // Only a traversable resolver that may put properties out of reach costs the cached RuleSet.
+                RuleSet<?> ruleSet = traversal.consultsResolver()
+                        ? rules.ruleSet(groups, rule -> traversal.isReachable(ruleContext, bean, rule))
+                        : rules.ruleSet(groups);
+                ruleSet.run(ruleContext);
+                if (redefined) elementRules(ruleContext, collector, traversal, bean);
             });
         }
     }
 
     /**
-     * Runs the rules of every container element position of the object, without cascading.
+     * Runs the rules of every container element position of the object, without cascading; positions
+     * of a property the traversable resolver puts out of reach are not walked.
      */
-    private void elementRules(RuleContext ruleContext, BeanRuleViolations collector, Object bean) {
+    private void elementRules(RuleContext ruleContext, BeanRuleViolations collector, Traversal traversal, Object bean) {
         ContainerWalker walker = new ContainerWalker(ruleContext, rules, false);
         PropertyPath base = collector.getCurrentPath();
         BindingPlan plan = rules.getBindingPlan();
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
             for (ContainerElementDefinition node : property.getContainerElements()) {
+                if (!traversal.isReachable(ruleContext, bean, property.getName(), node.getSourceDeclaration().getKind())) continue;
                 walker.walk(plan.read(ruleContext.getBindings(), bean, property, node.getSourceDeclaration()), node,
                         base.property(property.getName()));
             }

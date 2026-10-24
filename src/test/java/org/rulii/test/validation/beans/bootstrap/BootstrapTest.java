@@ -33,6 +33,7 @@ import jakarta.validation.valueextraction.ValueExtractor;
 import org.junit.jupiter.api.Test;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.BeanValidator;
+import org.rulii.validation.beans.traversal.TraversableResolvers;
 import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.bootstrap.RuliiConfiguration;
 import org.rulii.validation.beans.bootstrap.RuliiValidationProvider;
@@ -191,7 +192,7 @@ public class BootstrapTest {
 
         assertEquals("{x}", configuration.getDefaultMessageInterpolator().interpolate("{x}", null));
         assertEquals("{x}", configuration.getDefaultMessageInterpolator().interpolate("{x}", null, Locale.GERMAN));
-        assertTrue(configuration.getDefaultTraversableResolver().isReachable(null, null, Order.class, null, null));
+        assertSame(TraversableResolvers.getDefault(), configuration.getDefaultTraversableResolver(), "the runtime default: JPA-aware when the persistence API is present");
         assertTrue(configuration.getDefaultTraversableResolver().isCascadable(null, null, Order.class, null, null));
         assertNotNull(configuration.getDefaultConstraintValidatorFactory().getInstance(SomeValidator.class));
         configuration.getDefaultConstraintValidatorFactory().releaseInstance(null);

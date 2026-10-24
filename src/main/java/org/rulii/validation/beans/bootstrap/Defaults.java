@@ -20,17 +20,16 @@ package org.rulii.validation.beans.bootstrap;
 import jakarta.validation.ClockProvider;
 import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.ParameterNameProvider;
-import jakarta.validation.Path;
 import jakarta.validation.TraversableResolver;
 import org.rulii.validation.beans.model.DefaultParameterNameProvider;
+import org.rulii.validation.beans.traversal.TraversableResolvers;
 import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
-import java.lang.annotation.ElementType;
 import java.time.Clock;
 
 /**
  * The default spec services a {@link RuliiConfiguration} reports when none is configured. They are
- * plain: the traversable resolver reaches and cascades into everything, the constraint validator
+ * plain: the traversable resolver is the runtime default ({@link TraversableResolvers#getDefault()}), the constraint validator
  * factory is the {@link DefaultConstraintValidatorFactory} (no-argument constructor), the parameter
  * name provider is the {@link DefaultParameterNameProvider} (the compiled parameter names), the clock is
  * the system clock. The default message interpolator is the {@link org.rulii.validation.beans.message.RuliiMessageInterpolator},
@@ -41,31 +40,12 @@ import java.time.Clock;
  */
 final class Defaults {
 
-    static final TraversableResolver TRAVERSABLE_RESOLVER = new ReachEverythingTraversableResolver();
+    static final TraversableResolver TRAVERSABLE_RESOLVER = TraversableResolvers.getDefault();
     static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new DefaultConstraintValidatorFactory();
     static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new DefaultParameterNameProvider();
     static final ClockProvider CLOCK_PROVIDER = Clock::systemDefaultZone;
 
     private Defaults() {
         super();
-    }
-
-    static final class ReachEverythingTraversableResolver implements TraversableResolver {
-
-        private ReachEverythingTraversableResolver() {
-            super();
-        }
-
-        @Override
-        public boolean isReachable(Object traversableObject, Path.Node traversableProperty, Class<?> rootBeanType,
-                                   Path pathToTraversableObject, ElementType elementType) {
-            return true;
-        }
-
-        @Override
-        public boolean isCascadable(Object traversableObject, Path.Node traversableProperty, Class<?> rootBeanType,
-                                    Path pathToTraversableObject, ElementType elementType) {
-            return true;
-        }
     }
 }

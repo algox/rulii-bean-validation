@@ -19,6 +19,7 @@ package org.rulii.validation.beans;
 
 import jakarta.validation.MessageInterpolator;
 import jakarta.validation.ParameterNameProvider;
+import jakarta.validation.TraversableResolver;
 import jakarta.validation.ValidationException;
 import jakarta.validation.Validator;
 import org.rulii.bind.Binding;
@@ -32,6 +33,7 @@ import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.ruleflow.RuleFlow;
+import org.rulii.ruleset.RuleSet;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
@@ -82,6 +84,7 @@ import java.util.concurrent.ConcurrentMap;
 public final class BeanValidator implements Validator {
 
     private final RuleRegistry registry;
+    private final TraversableResolver traversableResolver;
     private final MessageInterpolator messageInterpolator;
     private final MessageInterpolator consultedInterpolator;
     private final BeanValidationOptions options;
@@ -92,12 +95,15 @@ public final class BeanValidator implements Validator {
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     BeanValidator(RuleRegistry registry, ValueExtractorRegistry extractors, ConstraintMapperRegistry mappers,
-                  RuleContextOptions options, ParameterNameProvider parameterNameProvider, MessageInterpolator messageInterpolator) {
+                  RuleContextOptions options, ParameterNameProvider parameterNameProvider, MessageInterpolator messageInterpolator,
+                  TraversableResolver traversableResolver) {
         super();
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
         Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
+        Assert.notNull(traversableResolver, "traversableResolver cannot be null.");
         this.registry = registry;
+        this.traversableResolver = traversableResolver;
         this.messageInterpolator = messageInterpolator;
         // Our own interpolator renders exactly what the rules render; consulting it would only render twice.
         this.consultedInterpolator = messageInterpolator instanceof RuliiMessageInterpolator ? null : messageInterpolator;
@@ -197,10 +203,15 @@ public final class BeanValidator implements Validator {
 
             try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
                 traversal.forDefaultSequence(context, sequence, current -> {
-                    rules.propertyRuleSet(propertyName, current).run(context);
+                    // The traversable resolver is asked for this property as it is for any; validateValue, with no object, asks nothing.
+                    RuleSet<?> ruleSet = traversal.consultsResolver()
+                            ? rules.ruleSet(current, rule -> propertyName.equals(rule.getLeaf()) && traversal.isReachable(context, object, rule))
+                            : rules.propertyRuleSet(propertyName, current);
+                    ruleSet.run(context);
                     ContainerWalker walker = new ContainerWalker(context, rules, false);
 
                     for (ContainerElementDefinition node : property.getContainerElements()) {
+                        if (!traversal.isReachable(context, object, propertyName, node.getSourceDeclaration().getKind())) continue;
                         Object container = rules.getBindingPlan().read(bindings, object, property, node.getSourceDeclaration());
                         walker.walk(container, node, PropertyPath.root().property(propertyName));
                     }
@@ -472,7 +483,18 @@ public final class BeanValidator implements Validator {
     }
 
     Traversal traversal(RequestedGroups groups) {
-        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry);
+        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver);
+    }
+
+    /**
+     * The traversable resolver asked before a property is validated or cascaded into: the one given
+     * to the builder, else the runtime's default ({@link org.rulii.validation.beans.traversal.TraversableResolvers#getDefault()}:
+     * the Jakarta Persistence one when the persistence API is present, otherwise one that reaches everything).
+     *
+     * @return the resolver.
+     */
+    public TraversableResolver getTraversableResolver() {
+        return traversableResolver;
     }
 
     RuleContext context(Bindings bindings) {

@@ -20,6 +20,7 @@ package org.rulii.validation.beans;
 import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.MessageInterpolator;
 import jakarta.validation.ParameterNameProvider;
+import jakarta.validation.TraversableResolver;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
@@ -30,6 +31,7 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistryBuilder;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
+import org.rulii.validation.beans.traversal.TraversableResolvers;
 
 /**
  * Builds a {@link BeanValidator}. Everything is fixed at build time:
@@ -46,7 +48,9 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
  *   <li>{@link #parameterNameProvider(ParameterNameProvider)}: how the parameters of constrained
  *       methods and constructors are named;</li>
  *   <li>{@link #messageInterpolator(MessageInterpolator)}: a spec interpolator rendering the messages
- *       of constraint violations in place of rulii's message pipeline.</li>
+ *       of constraint violations in place of rulii's message pipeline;</li>
+ *   <li>{@link #traversableResolver(TraversableResolver)}: which properties may be validated and
+ *       cascaded into (lazy persistence associations, typically).</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -58,6 +62,7 @@ public final class BeanValidatorBuilder {
     private RuleContextOptions options;
     private ParameterNameProvider parameterNameProvider;
     private MessageInterpolator messageInterpolator;
+    private TraversableResolver traversableResolver;
     private final ConstraintMapperRegistryBuilder mappers = ConstraintMapperRegistryBuilder.standard();
     private ConstraintMapperRegistry mapperRegistry;
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
@@ -193,6 +198,23 @@ public final class BeanValidatorBuilder {
     }
 
     /**
+     * The specification's traversable resolver, asked before a property is validated ({@code isReachable})
+     * and before it is cascaded into ({@code isCascadable}), once per object and property per validation
+     * call; a property out of reach is neither validated nor read. Class-level constraints, parameters
+     * and return values are not subject to it. When not set, {@link TraversableResolvers#getDefault()}:
+     * the Jakarta Persistence resolver when the persistence API is on the classpath (a lazy association
+     * that was not loaded is left alone), otherwise one that reaches everything and costs nothing.
+     *
+     * @param traversableResolver the resolver.
+     * @return this builder.
+     */
+    public BeanValidatorBuilder traversableResolver(TraversableResolver traversableResolver) {
+        Assert.notNull(traversableResolver, "traversableResolver cannot be null.");
+        this.traversableResolver = traversableResolver;
+        return this;
+    }
+
+    /**
      * Builds the validator.
      *
      * @return the validator.
@@ -203,6 +225,7 @@ public final class BeanValidatorBuilder {
                 mapperRegistry != null ? mapperRegistry : mappers.build(),
                 options,
                 parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider(),
-                messageInterpolator);
+                messageInterpolator,
+                traversableResolver != null ? traversableResolver : TraversableResolvers.getDefault());
     }
 }
