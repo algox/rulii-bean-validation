@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans;
 
+import jakarta.validation.MessageInterpolator;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.ValidationException;
 import jakarta.validation.Validator;
@@ -41,6 +42,7 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
+import org.rulii.validation.beans.message.RuliiMessageInterpolator;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.BeanDefinitionLoader;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
@@ -80,6 +82,8 @@ import java.util.concurrent.ConcurrentMap;
 public final class BeanValidator implements Validator {
 
     private final RuleRegistry registry;
+    private final MessageInterpolator messageInterpolator;
+    private final MessageInterpolator consultedInterpolator;
     private final BeanValidationOptions options;
     private final BeanDefinitionLoader loader;
     private final RuleMaterializer materializer;
@@ -88,12 +92,15 @@ public final class BeanValidator implements Validator {
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     BeanValidator(RuleRegistry registry, ValueExtractorRegistry extractors, ConstraintMapperRegistry mappers,
-                  RuleContextOptions options, ParameterNameProvider parameterNameProvider) {
+                  RuleContextOptions options, ParameterNameProvider parameterNameProvider, MessageInterpolator messageInterpolator) {
         super();
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
         Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
         this.registry = registry;
+        this.messageInterpolator = messageInterpolator;
+        // Our own interpolator renders exactly what the rules render; consulting it would only render twice.
+        this.consultedInterpolator = messageInterpolator instanceof RuliiMessageInterpolator ? null : messageInterpolator;
         this.options = BeanValidationOptions.wrap(options != null ? options : StandardRuleContextOptions.build(), mappers);
         this.loader = new BeanDefinitionLoader(extractors, mappers, parameterNameProvider);
         this.materializer = new RuleMaterializer(mappers);
@@ -126,7 +133,7 @@ public final class BeanValidator implements Validator {
     public <T> BeanValidationResult<T> validate(T object, Class<?>... groups) {
         Assert.notNull(object, "object cannot be null.");
         GroupPlan plan = GroupPlan.of(groups);
-        BeanRuleViolations violations = new BeanRuleViolations(object);
+        BeanRuleViolations violations = violations(object, object.getClass(), null, null);
 
         run(plan, violations, step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
@@ -176,7 +183,7 @@ public final class BeanValidator implements Validator {
         BeanRules rules = getBeanRules(object.getClass());
         PropertyDefinition property = property(rules, propertyName);
         GroupPlan plan = GroupPlan.of(groups);
-        BeanRuleViolations violations = new BeanRuleViolations(object);
+        BeanRuleViolations violations = violations(object, object.getClass(), null, null);
         List<Class<?>> sequence = rules.getDefinition().getDefaultGroupSequence();
 
         run(plan, violations, step -> {
@@ -226,7 +233,7 @@ public final class BeanValidator implements Validator {
         PropertyDefinition property = property(entry.rules, propertyName);
         BeanRules rules = entry.valueRules.computeIfAbsent(propertyName, name -> materializer.materializeValue(entry.rules, property));
         GroupPlan plan = GroupPlan.of(groups);
-        BeanRuleViolations violations = new BeanRuleViolations(null, beanType);
+        BeanRuleViolations violations = violations(null, beanType, null, null);
         List<Class<?>> sequence = entry.rules.getDefinition().getDefaultGroupSequence();
 
         run(plan, violations, step -> {
@@ -318,7 +325,7 @@ public final class BeanValidator implements Validator {
         RequestedGroups requested = RequestedGroups.of(groups);
         ScopedBindings bindings = context.getBindings();
         RuleViolations existing = Traversal.anyCollector(context);
-        BeanRuleViolations own = existing == null ? new BeanRuleViolations(object) : null;
+        BeanRuleViolations own = existing == null ? violations(object, object.getClass(), null, null) : null;
         NamedScope scope = bindings.addScope();
 
         try {
@@ -393,6 +400,30 @@ public final class BeanValidator implements Validator {
      */
     public ParameterNameProvider getParameterNameProvider() {
         return loader.getParameterNameProvider();
+    }
+
+    /**
+     * The message interpolator given to the builder. A {@link RuliiMessageInterpolator} renders what the
+     * rules render and is not consulted; any other interpolator renders the message of every constraint
+     * violation from the template as declared, and chooses the locale.
+     *
+     * @return the interpolator; null when none was given, and the rules' messages stand.
+     */
+    public MessageInterpolator getMessageInterpolator() {
+        return messageInterpolator;
+    }
+
+    /**
+     * A report for a validation call, rendering through the interpolator when one is consulted.
+     *
+     * @param rootBean the object validation started from; null for constructor parameters or a value.
+     * @param rootBeanClass the class validation started from.
+     * @param executableParameters the arguments validated; null unless parameters are.
+     * @param executableReturnValue the return value validated; null unless a return value is.
+     * @return the report.
+     */
+    BeanRuleViolations violations(Object rootBean, Class<?> rootBeanClass, Object[] executableParameters, Object executableReturnValue) {
+        return new BeanRuleViolations(rootBean, rootBeanClass, executableParameters, executableReturnValue, consultedInterpolator);
     }
 
     /**

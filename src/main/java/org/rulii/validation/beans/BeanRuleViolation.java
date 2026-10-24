@@ -53,6 +53,7 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
 
     private final PropertyPath propertyPath;
     private final ConstraintDefinition constraint;
+    private final String messageTemplate;
     private final Object invalidValue;
     private final Object leafBean;
     private final Object rootBean;
@@ -111,10 +112,33 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
     public BeanRuleViolation(RuleViolation source, PropertyPath propertyPath, ConstraintDefinition constraint,
                              Object invalidValue, Object leafBean, Object rootBean, Class<?> rootBeanClass,
                              Object[] executableParameters, Object executableReturnValue) {
-        super(source(source).getRuleName(), source.getErrorCode(), source.getSeverity(), source.getErrorMessage(),
-                parameters(source, propertyPath));
+        this(source, source(source).getErrorMessage(), propertyPath, constraint, invalidValue, leafBean, rootBean, rootBeanClass,
+                executableParameters, executableReturnValue);
+    }
+
+    /**
+     * Stamps a violation with a message rendered elsewhere: by a configured {@code MessageInterpolator}
+     * in place of the rule's own.
+     *
+     * @param source the violation as the rule reported it.
+     * @param message the message, replacing the one the rule rendered.
+     * @param propertyPath where it occurred.
+     * @param constraint the constraint whose rule reported it; null for a rule that was not materialized
+     *                   from a constraint (a {@code @Validate} registry rule).
+     * @param invalidValue the value the rule rejected; null when unknown.
+     * @param leafBean the object the rule ran against; null when unknown.
+     * @param rootBean the object validation started from; null when unknown or when there is none.
+     * @param rootBeanClass the class validation started from; null when unknown.
+     * @param executableParameters the arguments validated; null unless parameters were.
+     * @param executableReturnValue the return value validated; null unless a return value was.
+     */
+    public BeanRuleViolation(RuleViolation source, String message, PropertyPath propertyPath, ConstraintDefinition constraint,
+                             Object invalidValue, Object leafBean, Object rootBean, Class<?> rootBeanClass,
+                             Object[] executableParameters, Object executableReturnValue) {
+        super(source(source).getRuleName(), source.getErrorCode(), source.getSeverity(), message, parameters(source, propertyPath));
         this.propertyPath = propertyPath;
         this.constraint = constraint;
+        this.messageTemplate = messageTemplate(source, constraint);
         this.invalidValue = invalidValue;
         this.leafBean = leafBean;
         this.rootBean = rootBean;
@@ -126,6 +150,15 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
     private static RuleViolation source(RuleViolation source) {
         Assert.notNull(source, "source cannot be null.");
         return source;
+    }
+
+    /**
+     * The template of a violation: its own when it was built at run time with one, the constraint's
+     * declared message otherwise.
+     */
+    static String messageTemplate(RuleViolation source, ConstraintDefinition constraint) {
+        if (source instanceof CustomPathRuleViolation custom && custom.getMessageTemplate() != null) return custom.getMessageTemplate();
+        return constraint != null ? constraint.getMessage() : null;
     }
 
     private static Map<String, Object> parameters(RuleViolation source, PropertyPath propertyPath) {
@@ -157,13 +190,14 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
     }
 
     /**
-     * The message template the constraint declared, before interpolation.
+     * The message template before interpolation: the one the constraint declared, or the one a
+     * constraint validator built this violation with.
      *
      * @return the template; null for a rule that was not materialized from a constraint.
      */
     @Override
     public String getMessageTemplate() {
-        return constraint != null ? constraint.getMessage() : null;
+        return messageTemplate;
     }
 
     /**

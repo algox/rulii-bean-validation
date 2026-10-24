@@ -17,6 +17,8 @@
  */
 package org.rulii.validation.beans;
 
+import jakarta.validation.MessageInterpolator;
+import jakarta.validation.ValidationException;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.RuleViolation;
@@ -24,6 +26,10 @@ import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.MaterializedRule;
 import org.rulii.validation.beans.assembly.MaterializedRules;
 import org.rulii.validation.beans.assembly.RulePlacement;
+import org.rulii.validation.beans.descriptor.ConstraintDefinitionDescriptor;
+import org.rulii.validation.beans.message.MessageInterpolationException;
+import org.rulii.validation.beans.message.RuliiMessageInterpolatorContext;
+import org.rulii.validation.beans.model.ConstraintDefinition;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -56,7 +62,10 @@ import java.util.List;
  * {@code @ReportAsSingleViolation} composition collapses its composing violations into one.
  * <p>
  * A report of an executable validation carries the arguments or the return value validated, which
- * every violation exposes. A report is used by a single call on a single thread.
+ * every violation exposes. A report built with a {@link MessageInterpolator} renders the message of
+ * every constraint violation through it, from the template as declared, in place of the message the
+ * rule rendered; violations of {@code @Validate} rules keep theirs. A report is used by a single call
+ * on a single thread.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -67,6 +76,7 @@ public class BeanRuleViolations extends RuleViolations {
     private final Class<?> rootBeanClass;
     private final Object[] executableParameters;
     private final Object executableReturnValue;
+    private final MessageInterpolator messageInterpolator;
     private final Deque<Frame> frames = new ArrayDeque<>();
     private final Deque<List<BeanRuleViolation>> captures = new ArrayDeque<>();
 
@@ -106,11 +116,37 @@ public class BeanRuleViolations extends RuleViolations {
      * @param executableReturnValue the return value validated; null when the arguments are.
      */
     public BeanRuleViolations(Object rootBean, Class<?> rootBeanClass, Object[] executableParameters, Object executableReturnValue) {
+        this(rootBean, rootBeanClass, executableParameters, executableReturnValue, null);
+    }
+
+    /**
+     * A report whose constraint violations are rendered by a configured message interpolator.
+     *
+     * @param rootBean the object validation started from; null for constructor parameters or a value.
+     * @param rootBeanClass the class validation started from; null when unknown.
+     * @param executableParameters the arguments validated; null unless parameters were.
+     * @param executableReturnValue the return value validated; null unless a return value was.
+     * @param messageInterpolator the interpolator rendering the message of every violation reported by a
+     *                            constraint's rule, from the template as declared; null to keep the message
+     *                            the rule rendered.
+     */
+    public BeanRuleViolations(Object rootBean, Class<?> rootBeanClass, Object[] executableParameters, Object executableReturnValue,
+                              MessageInterpolator messageInterpolator) {
         super();
         this.rootBean = rootBean;
         this.rootBeanClass = rootBeanClass;
         this.executableParameters = executableParameters;
         this.executableReturnValue = executableReturnValue;
+        this.messageInterpolator = messageInterpolator;
+    }
+
+    /**
+     * The interpolator rendering the messages of constraint violations.
+     *
+     * @return the interpolator; null when the rules' own messages stand.
+     */
+    public MessageInterpolator getMessageInterpolator() {
+        return messageInterpolator;
     }
 
     /**
@@ -265,10 +301,31 @@ public class BeanRuleViolations extends RuleViolations {
         return violation(error, path, rule.getDefinition(), invalidValue, frame.getBean());
     }
 
-    private BeanRuleViolation violation(RuleViolation error, PropertyPath path, org.rulii.validation.beans.model.ConstraintDefinition constraint,
+    private BeanRuleViolation violation(RuleViolation error, PropertyPath path, ConstraintDefinition constraint,
                                         Object invalidValue, Object leafBean) {
-        return new BeanRuleViolation(error, path, constraint, invalidValue, leafBean, rootBean, rootBeanClass,
+        String message = messageInterpolator != null && constraint != null ? interpolate(error, path, constraint, invalidValue) : error.getErrorMessage();
+        return new BeanRuleViolation(error, message, path, constraint, invalidValue, leafBean, rootBean, rootBeanClass,
                 executableParameters, executableReturnValue);
+    }
+
+    /**
+     * Renders a constraint violation's message through the configured interpolator, from the template
+     * as declared (or as the constraint validator built it), as the reference implementation does; the
+     * interpolator chooses the locale.
+     */
+    private String interpolate(RuleViolation error, PropertyPath path, ConstraintDefinition constraint, Object invalidValue) {
+        String template = BeanRuleViolation.messageTemplate(error, constraint);
+        boolean expressions = !(error instanceof CustomPathRuleViolation custom) || custom.isExpressionLanguageEnabled();
+        MessageInterpolator.Context context = new RuliiMessageInterpolatorContext(ConstraintDefinitionDescriptor.of(constraint), invalidValue,
+                rootBeanClass, path, error.getParameterValues(), expressions);
+
+        try {
+            return messageInterpolator.interpolate(template, context);
+        } catch (ValidationException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new MessageInterpolationException(template, messageInterpolator, e);
+        }
     }
 
     /**

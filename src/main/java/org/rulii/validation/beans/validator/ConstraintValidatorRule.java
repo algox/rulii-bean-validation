@@ -191,7 +191,8 @@ public class ConstraintValidatorRule extends ValueValidationRule {
             String template = custom.expressionLanguageEnabled() ? custom.messageTemplate() : MessageExpressions.escape(custom.messageTemplate());
             RuleViolationBuilder builder = violation(value)
                     .errorMessage(RuleMaterializer.message(annotationType, template, Map.of(), getValueName()));
-            ruleViolations.add(new CustomPathRuleViolation(builder.build(ruleContext), custom.pathExtension()));
+            ruleViolations.add(new CustomPathRuleViolation(builder.build(ruleContext), custom.pathExtension(), custom.messageTemplate(),
+                    custom.expressionLanguageEnabled()));
         }
     }
 

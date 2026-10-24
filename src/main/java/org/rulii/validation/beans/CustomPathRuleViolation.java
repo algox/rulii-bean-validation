@@ -36,18 +36,53 @@ import java.util.function.UnaryOperator;
 public class CustomPathRuleViolation extends RuleViolation {
 
     private final UnaryOperator<PropertyPath> pathExtension;
+    private final String messageTemplate;
+    private final boolean expressionLanguageEnabled;
 
     /**
-     * Creates the violation.
+     * Creates a violation with the message template of the rule.
      *
      * @param source the violation as the rule built it.
      * @param pathExtension how the rule's path extends to where the violation occurred.
      */
     public CustomPathRuleViolation(RuleViolation source, UnaryOperator<PropertyPath> pathExtension) {
+        this(source, pathExtension, null, true);
+    }
+
+    /**
+     * Creates a violation with its own message template, one built at run time.
+     *
+     * @param source the violation as the rule built it.
+     * @param pathExtension how the rule's path extends to where the violation occurred.
+     * @param messageTemplate the template as given, before any interpolation; null to report the rule's.
+     * @param expressionLanguageEnabled whether {@code ${...}} expressions of the template may be evaluated.
+     */
+    public CustomPathRuleViolation(RuleViolation source, UnaryOperator<PropertyPath> pathExtension, String messageTemplate,
+                                   boolean expressionLanguageEnabled) {
         super(source(source).getRuleName(), source.getErrorCode(), source.getSeverity(), source.getErrorMessage(),
                 source.getParameterValues());
         Assert.notNull(pathExtension, "pathExtension cannot be null.");
         this.pathExtension = pathExtension;
+        this.messageTemplate = messageTemplate;
+        this.expressionLanguageEnabled = expressionLanguageEnabled;
+    }
+
+    /**
+     * The message template as given, when the violation carries its own.
+     *
+     * @return the template; null when the rule's template applies.
+     */
+    public String getMessageTemplate() {
+        return messageTemplate;
+    }
+
+    /**
+     * Whether {@code ${...}} expressions of the template may be evaluated.
+     *
+     * @return true unless a run-time template left them disabled.
+     */
+    public boolean isExpressionLanguageEnabled() {
+        return expressionLanguageEnabled;
     }
 
     private static RuleViolation source(RuleViolation source) {

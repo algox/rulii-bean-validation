@@ -96,7 +96,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
     public <T> BeanValidationResult<T> validateParameters(T object, Method method, Object[] parameterValues, Class<?>... groups) {
         Assert.notNull(object, "object cannot be null.");
         Assert.notNull(method, "method cannot be null.");
-        BeanRuleViolations violations = new BeanRuleViolations(object, object.getClass(), parameterValues, null);
+        BeanRuleViolations violations = validator.violations(object, object.getClass(), parameterValues, null);
         ExecutableRules rules = rules(object.getClass(), method, parameterValues);
 
         if (rules != null) {
@@ -123,7 +123,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
     public <T> BeanValidationResult<T> validateReturnValue(T object, Method method, Object returnValue, Class<?>... groups) {
         Assert.notNull(object, "object cannot be null.");
         Assert.notNull(method, "method cannot be null.");
-        BeanRuleViolations violations = new BeanRuleViolations(object, object.getClass(), null, returnValue);
+        BeanRuleViolations violations = validator.violations(object, object.getClass(), null, returnValue);
         ExecutableRules rules = validator.getExecutableRules(object.getClass(), method);
 
         if (rules != null && rules.getDefinition().getReturnValue() != null) {
@@ -150,7 +150,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
     public <T> BeanValidationResult<T> validateConstructorParameters(Constructor<? extends T> constructor, Object[] parameterValues,
                                                                      Class<?>... groups) {
         Assert.notNull(constructor, "constructor cannot be null.");
-        BeanRuleViolations violations = new BeanRuleViolations(null, constructor.getDeclaringClass(), parameterValues, null);
+        BeanRuleViolations violations = validator.violations(null, constructor.getDeclaringClass(), parameterValues, null);
         ExecutableRules rules = rules(constructor.getDeclaringClass(), constructor, parameterValues);
 
         if (rules != null) {
@@ -176,7 +176,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
                                                                       Class<?>... groups) {
         Assert.notNull(constructor, "constructor cannot be null.");
         Assert.notNull(createdObject, "createdObject cannot be null.");
-        BeanRuleViolations violations = new BeanRuleViolations(createdObject, constructor.getDeclaringClass(), null, createdObject);
+        BeanRuleViolations violations = validator.violations(createdObject, constructor.getDeclaringClass(), null, createdObject);
         ExecutableRules rules = validator.getExecutableRules(constructor.getDeclaringClass(), constructor);
 
         if (rules != null) {

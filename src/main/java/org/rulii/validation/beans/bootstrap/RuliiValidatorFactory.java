@@ -47,11 +47,12 @@ import java.util.Map;
  * {@link ConfigurationState}, it holds one {@link BeanValidator} configured from it and hands it out from
  * {@link #getValidator()}; {@link #usingContext()} builds validators with per-context overrides.
  * <p>
- * The constraint validator factory, the parameter name provider and the clock provider are wired into
- * the validator: the first creates the validators of validator-backed constraints, the second names the
- * parameters of constrained executables, the third is the rules' clock. The message interpolator and
- * the traversable resolver are kept as configured and exposed, so a framework that set them finds them
- * again. Closing the factory hands the constraint validator
+ * The constraint validator factory, the parameter name provider, the clock provider and the message
+ * interpolator are wired into the validator: the first creates the validators of validator-backed
+ * constraints, the second names the parameters of constrained executables, the third is the rules'
+ * clock, the fourth renders the messages of constraint violations when it is not our own (see
+ * {@link BeanValidatorBuilder#messageInterpolator}). The traversable resolver is kept as configured and
+ * exposed, so a framework that set it finds it again. Closing the factory hands the constraint validator
  * instances of every validator it built back to their factory; the validators stay usable.
  *
  * @author Max Arulananthan
@@ -93,7 +94,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
-        this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider);
+        this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider, messageInterpolator);
     }
 
     /**
@@ -101,13 +102,15 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
      * for {@link #close()}.
      */
     BeanValidator build(Collection<ValueExtractor<?>> additionalExtractors, ClockProvider clock,
-                        ConstraintValidatorFactory constraintValidatorFactory, ParameterNameProvider parameterNameProvider) {
+                        ConstraintValidatorFactory constraintValidatorFactory, ParameterNameProvider parameterNameProvider,
+                        MessageInterpolator messageInterpolator) {
         BeanValidatorBuilder builder = BeanValidator.builder();
         RuleContextOptions base = options != null ? options : StandardRuleContextOptions.build();
 
         builder.options(new ClockOptions(base, clock));
         builder.constraintValidatorFactory(constraintValidatorFactory);
         builder.parameterNameProvider(parameterNameProvider);
+        builder.messageInterpolator(messageInterpolator);
         if (registry != null) builder.registry(registry);
 
         for (ConstraintMapper<?> mapper : mappers) {

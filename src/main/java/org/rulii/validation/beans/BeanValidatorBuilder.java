@@ -18,6 +18,7 @@
 package org.rulii.validation.beans;
 
 import jakarta.validation.ConstraintValidatorFactory;
+import jakarta.validation.MessageInterpolator;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
@@ -43,7 +44,9 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
  *   <li>{@link #options(RuleContextOptions)}: the core context every validation starts from (locale,
  *       message resolver, tracer, clock, ...);</li>
  *   <li>{@link #parameterNameProvider(ParameterNameProvider)}: how the parameters of constrained
- *       methods and constructors are named.</li>
+ *       methods and constructors are named;</li>
+ *   <li>{@link #messageInterpolator(MessageInterpolator)}: a spec interpolator rendering the messages
+ *       of constraint violations in place of rulii's message pipeline.</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -54,6 +57,7 @@ public final class BeanValidatorBuilder {
     private RuleRegistry registry;
     private RuleContextOptions options;
     private ParameterNameProvider parameterNameProvider;
+    private MessageInterpolator messageInterpolator;
     private final ConstraintMapperRegistryBuilder mappers = ConstraintMapperRegistryBuilder.standard();
     private ConstraintMapperRegistry mapperRegistry;
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
@@ -173,6 +177,22 @@ public final class BeanValidatorBuilder {
     }
 
     /**
+     * The specification's message interpolator, consulted for the message of every constraint violation
+     * with the template as declared, as the reference implementation consults it; the interpolator
+     * chooses the locale. Without one, messages render through rulii's message pipeline at the options'
+     * locale, which is also exactly what a {@link org.rulii.validation.beans.message.RuliiMessageInterpolator}
+     * renders, so that one is never consulted.
+     *
+     * @param messageInterpolator the interpolator.
+     * @return this builder.
+     */
+    public BeanValidatorBuilder messageInterpolator(MessageInterpolator messageInterpolator) {
+        Assert.notNull(messageInterpolator, "messageInterpolator cannot be null.");
+        this.messageInterpolator = messageInterpolator;
+        return this;
+    }
+
+    /**
      * Builds the validator.
      *
      * @return the validator.
@@ -182,6 +202,7 @@ public final class BeanValidatorBuilder {
                 extractorRegistry != null ? extractorRegistry : extractors.build(),
                 mapperRegistry != null ? mapperRegistry : mappers.build(),
                 options,
-                parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider());
+                parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider(),
+                messageInterpolator);
     }
 }

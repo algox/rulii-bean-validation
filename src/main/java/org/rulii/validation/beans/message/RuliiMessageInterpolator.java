@@ -49,6 +49,7 @@ public final class RuliiMessageInterpolator implements MessageInterpolator {
     private final ConstraintMapperRegistry mappers;
     private final MessageResolver resolver;
     private final MessageFormatter formatter;
+    private final Locale locale;
 
     /**
      * Creates the interpolator over the standard context options.
@@ -73,6 +74,7 @@ public final class RuliiMessageInterpolator implements MessageInterpolator {
         this.mappers = mappers;
         this.resolver = new BeanValidationMessageResolver(mappers, options.getMessageResolver());
         this.formatter = new BeanValidationMessageFormatter(options.getMessageFormatter(), resolver);
+        this.locale = options.getLocale() != null ? options.getLocale() : Locale.getDefault();
     }
 
     public MessageResolver getMessageResolver() {
@@ -83,14 +85,31 @@ public final class RuliiMessageInterpolator implements MessageInterpolator {
         return formatter;
     }
 
+    /**
+     * The locale of the options, used when a call names none.
+     *
+     * @return the locale.
+     */
+    public Locale getLocale() {
+        return locale;
+    }
+
+    /**
+     * Interpolates at the locale of the options this interpolator was built over, the locale the
+     * validator renders at.
+     */
     @Override
     public String interpolate(String messageTemplate, Context context) {
-        return interpolate(messageTemplate, context, Locale.getDefault());
+        return interpolate(messageTemplate, context, locale);
     }
 
     @Override
     public String interpolate(String messageTemplate, Context context, Locale locale) {
         Assert.notNull(messageTemplate, "messageTemplate cannot be null.");
+        // A template built at run time keeps its expressions as written unless the validator enabled them.
+        if (context instanceof RuliiMessageInterpolatorContext ours && !ours.isExpressionLanguageEnabled()) {
+            messageTemplate = MessageExpressions.escape(messageTemplate);
+        }
         ConstraintDescriptor<?> descriptor = context != null ? context.getConstraintDescriptor() : null;
         Map<String, Object> attributes = descriptor != null ? descriptor.getAttributes() : Map.of();
         Map<String, String> names = parameterNames(descriptor);
