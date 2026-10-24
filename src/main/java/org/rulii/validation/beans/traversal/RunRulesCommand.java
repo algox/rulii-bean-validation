@@ -21,15 +21,24 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.ruleflow.RuleFlowExecutionContext;
 import org.rulii.ruleflow.command.RuleFlowCommand;
-import org.rulii.ruleset.RuleSet;
 import org.rulii.validation.beans.BeanRuleViolations;
+import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.model.ContainerElementDefinition;
+import org.rulii.validation.beans.model.PropertyDefinition;
+
+import java.util.List;
 
 /**
- * Runs the property and class rules of the object bound as {@code $this}, filtered for the call's
- * groups, inside a collector frame at the current path so the violations are stamped with their
- * property paths and provenance.
+ * Runs the property and class rules of the object bound as {@code $this}, filtered for the groups
+ * being processed, inside a collector frame at the current path so the violations are stamped with
+ * their property paths and provenance.
+ *
+ * <p>When the class redefines its Default group with {@code @GroupSequence} and Default is being
+ * processed, the rules run member by member ({@link Traversal#forDefaultSequence}), and the rules of
+ * the container element positions run here with them, since element constraints are constraints of the
+ * bean and take part in the sequence; the cascade step then walks the containers for cascades only.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -50,10 +59,31 @@ final class RunRulesCommand implements RuleFlowCommand {
         BeanRuleViolations collector = Traversal.collector(ruleContext);
         Assert.notNull(collector, "no path-aware collector is bound as [" + BindingPlan.RULE_VIOLATIONS + "]; run through the bean flow.");
         Object bean = ruleContext.getBindings().getValue(BindingPlan.THIS);
-        RuleSet<?> ruleSet = Traversal.of(ruleContext).ruleSet(rules);
+        Traversal traversal = Traversal.of(ruleContext);
+        List<Class<?>> sequence = rules.getDefinition().getDefaultGroupSequence();
+        boolean redefined = traversal.appliesDefaultSequence(sequence);
 
         try (BeanRuleViolations.Frame ignored = collector.enter(collector.getCurrentPath(), rules, bean)) {
-            ruleSet.run(ruleContext);
+            traversal.forDefaultSequence(ruleContext, sequence, groups -> {
+                rules.ruleSet(groups).run(ruleContext);
+                if (redefined) elementRules(ruleContext, collector, bean);
+            });
+        }
+    }
+
+    /**
+     * Runs the rules of every container element position of the object, without cascading.
+     */
+    private void elementRules(RuleContext ruleContext, BeanRuleViolations collector, Object bean) {
+        ContainerWalker walker = new ContainerWalker(ruleContext, rules, false);
+        PropertyPath base = collector.getCurrentPath();
+        BindingPlan plan = rules.getBindingPlan();
+
+        for (PropertyDefinition property : rules.getDefinition().getProperties()) {
+            for (ContainerElementDefinition node : property.getContainerElements()) {
+                walker.walk(plan.read(ruleContext.getBindings(), bean, property, node.getSourceDeclaration()), node,
+                        base.property(property.getName()));
+            }
         }
     }
 

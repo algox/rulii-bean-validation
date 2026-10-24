@@ -31,7 +31,7 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ClassConstraintSource;
 import org.rulii.validation.beans.model.ConstraintDefinition;
-import org.rulii.validation.beans.model.GroupSequenceNotSupportedException;
+import jakarta.validation.GroupDefinitionException;
 import org.rulii.validation.beans.model.ValueDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
@@ -153,19 +153,15 @@ public class BeanDefinitionTest {
     // --- fail-fast ----------------------------------------------------------------------------
 
     @Test
-    public void groupSequenceOnTheClassFailsFast() {
-        GroupSequenceNotSupportedException e = assertThrows(GroupSequenceNotSupportedException.class,
-                () -> BeanDefinition.load(Sequenced.class, REGISTRY));
-        assertEquals(Sequenced.class, e.getType());
+    public void groupSequenceListingDefaultIsIllDefined() {
+        GroupDefinitionException e = assertThrows(GroupDefinitionException.class, () -> BeanDefinition.load(Sequenced.class, REGISTRY));
         assertTrue(e.getMessage().contains(Sequenced.class.getName()));
-        assertTrue(e.getMessage().contains("@GroupSequence"));
+        assertTrue(e.getMessage().contains("Default"));
     }
 
     @Test
-    public void groupSequenceOnASuperclassFailsFast() {
-        GroupSequenceNotSupportedException e = assertThrows(GroupSequenceNotSupportedException.class,
-                () -> BeanDefinition.load(SubOfSequenced.class, REGISTRY));
-        assertEquals(Sequenced.class, e.getType());
+    public void groupSequenceOnASuperclassIsNotInherited() {
+        assertNull(BeanDefinition.load(SubOfSequenced.class, REGISTRY).getDefaultGroupSequence());
     }
 
     @Test

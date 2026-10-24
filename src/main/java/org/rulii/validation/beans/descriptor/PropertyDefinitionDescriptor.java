@@ -35,7 +35,7 @@ import java.util.Set;
  * A {@link PropertyDefinition} seen through the spec's {@link PropertyDescriptor}. Its constraints are
  * those declared on the property's field, getter or record component; a constraint on a type argument
  * belongs to the {@link #getConstrainedContainerElementTypes() container element} it was declared on.
- * Group conversion is not supported, so there are none.
+ * The group conversions are the property's {@code @ConvertGroup}s.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -102,7 +102,7 @@ public final class PropertyDefinitionDescriptor extends DefinitionElementDescrip
 
     @Override
     public Set<GroupConversionDescriptor> getGroupConversions() {
-        return Set.of();
+        return GroupConversionDefinitionDescriptor.describe(getDefinition().getGroupConversions());
     }
 
     @Override

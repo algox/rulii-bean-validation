@@ -18,7 +18,6 @@
 package org.rulii.validation.beans.model;
 
 import jakarta.validation.Valid;
-import jakarta.validation.groups.ConvertGroup;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
@@ -30,7 +29,6 @@ import org.rulii.validation.beans.util.reflect.AnnotatedTypes;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedArrayType;
-import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.AnnotatedTypeVariable;
@@ -56,8 +54,8 @@ import java.util.Set;
  *
  * <p>Every kept position is resolved against the {@link ValueExtractorRegistry} at load time
  * and keeps its {@link #getExtractor() extractor}, so a position no extractor can serve fails
- * fast instead of being skipped at validation time. {@code @ConvertGroup} at a position
- * fails fast as well (group conversion is not supported).</p>
+ * fast instead of being skipped at validation time. {@code @ConvertGroup} beside {@code @Valid} at a
+ * position is kept as the position's {@link #getGroupConversions() group conversions}.</p>
  *
  * <p>A node may also stand for the <em>unwrapped</em> value of the property itself: a constraint
  * declared on an {@code OptionalInt} property applies to the int through the container's
@@ -77,13 +75,14 @@ public final class ContainerElementDefinition implements Definition {
     private final Type type;
     private final List<ConstraintDefinition> constraints;
     private final boolean cascaded;
+    private final GroupConversions groupConversions;
     private final List<ContainerElementDefinition> children;
     private final ValueExtractorDescriptor extractor;
     private final SourceDefinition source;
 
     private ContainerElementDefinition(ValueDeclaration sourceDeclaration, Class<?> containerType, int typeArgumentIndex,
                                        ValueExtractorDescriptor extractor, AnnotatedType annotatedType, Type type,
-                                       List<ConstraintDefinition> constraints, boolean cascaded,
+                                       List<ConstraintDefinition> constraints, boolean cascaded, GroupConversions groupConversions,
                                        List<ContainerElementDefinition> children) {
         super();
         this.sourceDeclaration = sourceDeclaration;
@@ -94,6 +93,7 @@ public final class ContainerElementDefinition implements Definition {
         this.type = type;
         this.constraints = constraints;
         this.cascaded = cascaded;
+        this.groupConversions = groupConversions;
         this.children = children;
         this.source = sourceDeclaration.getSourceDefinition();
     }
@@ -116,7 +116,8 @@ public final class ContainerElementDefinition implements Definition {
      * @param registry the value extractors available at validation time.
      * @return the top-level container element definitions, in type-argument order; empty if none.
      * @throws NoValueExtractorException if a constrained or cascaded position has no extractor.
-     * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared at a position.
+     * @throws jakarta.validation.ConstraintDeclarationException if a {@code @ConvertGroup} at a position
+     *         breaks a rule (see {@link GroupConversions}).
      */
     public static List<ContainerElementDefinition> load(ValueDeclaration sourceDeclaration, ValueExtractorRegistry registry) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
@@ -144,7 +145,7 @@ public final class ContainerElementDefinition implements Definition {
         if (type == null) type = descriptor.getExtractedType();
 
         return new ContainerElementDefinition(sourceDeclaration, descriptor.getContainerType(), descriptor.getTypeArgumentIndex(),
-                descriptor, annotatedType, type, constraints, false, Collections.emptyList());
+                descriptor, annotatedType, type, constraints, false, GroupConversions.NONE, Collections.emptyList());
     }
 
     /**
@@ -159,7 +160,7 @@ public final class ContainerElementDefinition implements Definition {
         merged.addAll(additional);
 
         return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor, annotatedType, type,
-                Collections.unmodifiableList(merged), cascaded, children);
+                Collections.unmodifiableList(merged), cascaded, groupConversions, children);
     }
 
     /**
@@ -192,7 +193,8 @@ public final class ContainerElementDefinition implements Definition {
 
         return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor,
                 annotatedType != null ? annotatedType : other.annotatedType, type, Collections.unmodifiableList(merged),
-                cascaded || other.cascaded, merge(children, other.children));
+                cascaded || other.cascaded, groupConversions.merge(other.groupConversions, sourceDeclaration.describe() + " " + getName()),
+                merge(children, other.children));
     }
 
     /**
@@ -217,27 +219,6 @@ public final class ContainerElementDefinition implements Definition {
         }
 
         return Collections.unmodifiableList(result);
-    }
-
-    /**
-     * Whether the given element declares {@code @ConvertGroup} or {@code @ConvertGroup.List}.
-     *
-     * @param element the element.
-     * @return true if group conversion is requested on it.
-     */
-    static boolean declaresGroupConversion(AnnotatedElement element) {
-        return element.isAnnotationPresent(ConvertGroup.class) || element.isAnnotationPresent(ConvertGroup.List.class);
-    }
-
-    /**
-     * Whether the given property declaration declares {@code @ConvertGroup} or {@code @ConvertGroup.List}.
-     *
-     * @param sourceDeclaration the property declaration.
-     * @return true if group conversion is requested on it.
-     */
-    static boolean declaresGroupConversion(ValueDeclaration sourceDeclaration) {
-        return sourceDeclaration.isAnnotationPresent(ConvertGroup.class)
-                || sourceDeclaration.isAnnotationPresent(ConvertGroup.List.class);
     }
 
     /**
@@ -354,10 +335,10 @@ public final class ContainerElementDefinition implements Definition {
         }
 
         private ContainerElementDefinition node(AnnotatedType type, List<ContainerElementDefinition> children) {
-            if (declaresGroupConversion(type)) throw new GroupConversionNotSupportedException(sourceDeclaration);
-
             List<ConstraintDefinition> constraints = constraints(type);
             boolean cascaded = type.isAnnotationPresent(Valid.class) && !excluded.contains(type.getAnnotation(Valid.class));
+            GroupConversions conversions = GroupConversions.load(type, cascaded,
+                    sourceDeclaration.describe() + " " + containerType.getSimpleName() + "<" + typeArgumentIndex + ">");
 
             if (constraints.isEmpty() && !cascaded && children.isEmpty()) return null;
 
@@ -370,7 +351,7 @@ public final class ContainerElementDefinition implements Definition {
 
             // The annotated tree carries the annotations as declared; the type is resolved against the owning class.
             return new ContainerElementDefinition(sourceDeclaration, containerType, typeArgumentIndex, extractor, type,
-                    sourceDeclaration.resolve(type.getType()), constraints, cascaded, Collections.unmodifiableList(children));
+                    sourceDeclaration.resolve(type.getType()), constraints, cascaded, conversions, Collections.unmodifiableList(children));
         }
 
         private List<ConstraintDefinition> constraints(AnnotatedType type) {
@@ -467,6 +448,15 @@ public final class ContainerElementDefinition implements Definition {
 
     public boolean isCascaded() {
         return cascaded;
+    }
+
+    /**
+     * The {@code @ConvertGroup} conversions of the cascade at this position.
+     *
+     * @return the conversions; {@link GroupConversions#NONE} when there are none.
+     */
+    public GroupConversions getGroupConversions() {
+        return groupConversions;
     }
 
     public List<ContainerElementDefinition> getChildren() {

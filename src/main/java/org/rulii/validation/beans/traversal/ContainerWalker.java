@@ -30,6 +30,7 @@ import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.MaterializedRules;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
+import org.rulii.validation.beans.model.GroupConversions;
 import org.rulii.validation.beans.util.reflect.Types;
 
 import java.lang.reflect.Type;
@@ -62,25 +63,41 @@ public final class ContainerWalker {
     private final RuleContext ruleContext;
     private final MaterializedRules rules;
     private final boolean cascading;
+    private final boolean elementRules;
     private final Traversal traversal;
     private final BeanRuleViolations collector;
     private final Object bean;
 
     /**
-     * Creates the walker of one run. The context must have {@code $this}, a {@link Traversal} and a
-     * {@link BeanRuleViolations} bound.
+     * Creates the walker of one run that runs element rules. The context must have {@code $this}, a
+     * {@link Traversal} and a {@link BeanRuleViolations} bound.
      *
      * @param ruleContext the context of the run.
      * @param rules the rules of the class or executable in scope.
      * @param cascading whether cascaded elements descend; false validates the elements' own constraints only.
      */
     public ContainerWalker(RuleContext ruleContext, MaterializedRules rules, boolean cascading) {
+        this(ruleContext, rules, cascading, true);
+    }
+
+    /**
+     * Creates the walker of one run.
+     *
+     * @param ruleContext the context of the run.
+     * @param rules the rules of the class or executable in scope.
+     * @param cascading whether cascaded elements descend.
+     * @param elementRules whether the rules of the positions run; false when a class-level default group
+     *                     sequence already ran them with the rules of the object.
+     */
+    public ContainerWalker(RuleContext ruleContext, MaterializedRules rules, boolean cascading, boolean elementRules) {
         super();
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
         Assert.notNull(rules, "rules cannot be null.");
+        Assert.isTrue(cascading || elementRules, "a walker that neither cascades nor runs element rules does nothing.");
         this.ruleContext = ruleContext;
         this.rules = rules;
         this.cascading = cascading;
+        this.elementRules = elementRules;
         this.traversal = Traversal.of(ruleContext);
         this.collector = Traversal.collector(ruleContext);
         Assert.notNull(collector, "the container walk needs a path-aware collector bound as ["
@@ -124,7 +141,7 @@ public final class ContainerWalker {
                 scope.getBindings().bind(Binding.builder().with(BindingPlan.KEY, Object.class).value(key).build());
             }
 
-            if (rules.hasElementRules(node)) {
+            if (elementRules && rules.hasElementRules(node)) {
                 try (BeanRuleViolations.Frame ignored = collector.enter(elementPath, rules, bean)) {
                     traversal.elementRuleSet(rules, node).run(ruleContext);
                 }
@@ -132,7 +149,7 @@ public final class ContainerWalker {
 
             if (value == null) return;
 
-            if (cascading && node.isCascaded()) traversal.descend(ruleContext, value, path);
+            if (cascading && node.isCascaded()) traversal.descend(ruleContext, value, path, node.getGroupConversions());
 
             for (ContainerElementDefinition child : node.getChildren()) {
                 walk(value, child, elementPath);
@@ -143,16 +160,30 @@ public final class ContainerWalker {
     }
 
     /**
-     * Cascades a {@code @Valid} property value: into the elements when the value is a container,
-     * into the value itself otherwise.
+     * Cascades a {@code @Valid} value with no group conversion.
      *
-     * @param value the property value; null cascades nothing.
-     * @param declaredType the declared type of the property.
-     * @param path the property path.
+     * @param value the value; null cascades nothing.
+     * @param declaredType the declared type of the value.
+     * @param path the path of the value.
+     * @see #cascade(Object, Type, PropertyPath, GroupConversions)
      */
     public void cascade(Object value, Type declaredType, PropertyPath path) {
+        cascade(value, declaredType, path, GroupConversions.NONE);
+    }
+
+    /**
+     * Cascades a {@code @Valid} value: into the elements when the value is a container, into the value
+     * itself otherwise, with the given group conversions.
+     *
+     * @param value the value; null cascades nothing.
+     * @param declaredType the declared type of the value.
+     * @param path the path of the value.
+     * @param conversions the {@code @ConvertGroup} conversions declared beside the {@code @Valid}.
+     */
+    public void cascade(Object value, Type declaredType, PropertyPath path, GroupConversions conversions) {
         Assert.notNull(declaredType, "declaredType cannot be null.");
         Assert.notNull(path, "path cannot be null.");
+        Assert.notNull(conversions, "conversions cannot be null.");
         Assert.isTrue(cascading, "this walker does not cascade.");
 
         if (value == null) return;
@@ -162,14 +193,14 @@ public final class ContainerWalker {
         if (descriptor == null) descriptor = legacyExtractor(value.getClass());
 
         if (descriptor == null) {
-            traversal.descend(ruleContext, value, path);
+            traversal.descend(ruleContext, value, path, conversions);
             return;
         }
 
         extract(descriptor, value, null, new Receiver(path, descriptor) {
             @Override
             void on(PropertyPath elementPath, String nodeName, boolean keyed, Object key, Object element) {
-                traversal.descend(ruleContext, element, elementPath);
+                traversal.descend(ruleContext, element, elementPath, conversions);
             }
         });
     }

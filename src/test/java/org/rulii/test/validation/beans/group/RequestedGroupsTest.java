@@ -22,7 +22,6 @@ import jakarta.validation.ValidationException;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import org.junit.jupiter.api.Test;
-import org.rulii.validation.beans.group.GroupSequenceRequestedException;
 import org.rulii.validation.beans.group.InvalidGroupException;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.model.ConstraintDefinition;
@@ -142,17 +141,22 @@ public class RequestedGroupsTest {
     }
 
     @Test
-    public void groupSequenceFailsFast() {
-        GroupSequenceRequestedException e = assertThrows(GroupSequenceRequestedException.class,
-                () -> RequestedGroups.of(Sequence.class));
-        assertEquals(Sequence.class, e.getGroup());
-        assertTrue(e.getMessage().contains(Sequence.class.getName()));
-        assertInstanceOf(ValidationException.class, e);
+    public void groupSequenceExpandsToItsMembers() {
+        // Unordered here; order and stopping are the plan's business.
+        RequestedGroups groups = RequestedGroups.of(Sequence.class);
+        assertTrue(groups.getGroups().containsAll(List.of(OnCreate.class, OnUpdate.class)));
+        assertFalse(groups.contains(Sequence.class));
 
-        // A sequence reached through a supergroup is refused as well.
-        GroupSequenceRequestedException inherited = assertThrows(GroupSequenceRequestedException.class,
-                () -> RequestedGroups.of(ExtendsSequence.class));
-        assertEquals(Sequence.class, inherited.getGroup());
+        // A sequence reached through a supergroup expands as well.
+        RequestedGroups inherited = RequestedGroups.of(ExtendsSequence.class);
+        assertTrue(inherited.getGroups().containsAll(List.of(ExtendsSequence.class, OnCreate.class, OnUpdate.class)));
+    }
+
+    @Test
+    public void withoutRemovesARequestedGroup() {
+        assertEquals(Set.of(OnUpdate.class), RequestedGroups.of(OnCreate.class, OnUpdate.class).without(OnCreate.class).getGroups());
+        assertTrue(RequestedGroups.DEFAULT.without(Default.class).isEmpty());
+        assertEquals(List.of(Default.class), RequestedGroups.DEFAULT.getRequestedOrDefault());
     }
 
     @Test

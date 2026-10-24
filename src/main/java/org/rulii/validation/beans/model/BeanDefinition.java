@@ -17,12 +17,15 @@
  */
 package org.rulii.validation.beans.model;
 
+import jakarta.validation.GroupDefinitionException;
 import jakarta.validation.GroupSequence;
 import jakarta.validation.ParameterNameProvider;
+import jakarta.validation.groups.Default;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
+import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;
 import org.rulii.validation.beans.util.reflect.TypeHierarchyVisitor;
 
@@ -38,8 +41,10 @@ import java.util.List;
  * Validation definition of one bean class: its {@link PropertyDefinition properties} in discovery
  * order, its class-level {@link ConstraintDefinition constraints} in hierarchy order, the registry
  * rules attached at class level with {@code @Validate} ({@link ValidateDefinition}), also in
- * hierarchy order, and its constrained {@link ExecutableDefinition methods and constructors}.
- * Everything declared on superclasses and interfaces is included, cumulatively.
+ * hierarchy order, its constrained {@link ExecutableDefinition methods and constructors}, and its
+ * redefined {@link #getDefaultGroupSequence() Default group}, if any. Everything declared on
+ * superclasses and interfaces is included, cumulatively, except the Default redefinition, which the
+ * specification does not inherit.
  *
  * <p>Loading walks the class hierarchy once ({@link TypeHierarchies}); the property declarations,
  * the class-level constraints and the methods are collected from the same walk. All declaration
@@ -56,12 +61,14 @@ public final class BeanDefinition implements Definition {
     private final List<ValidateDefinition> validateRules;
     private final List<ExecutableDefinition> methods;
     private final List<ExecutableDefinition> constructors;
+    private final List<Class<?>> defaultGroupSequence;
     private final SourceDefinition source;
     private final boolean constrained;
     private final boolean cascading;
 
     private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints,
-                           List<ValidateDefinition> validateRules, List<ExecutableDefinition> methods, List<ExecutableDefinition> constructors) {
+                           List<ValidateDefinition> validateRules, List<ExecutableDefinition> methods, List<ExecutableDefinition> constructors,
+                           List<Class<?>> defaultGroupSequence) {
         super();
         this.beanClass = beanClass;
         this.properties = properties;
@@ -69,6 +76,7 @@ public final class BeanDefinition implements Definition {
         this.validateRules = validateRules;
         this.methods = methods;
         this.constructors = constructors;
+        this.defaultGroupSequence = defaultGroupSequence;
         this.source = SourceDefinition.forClass(beanClass);
 
         boolean constrained = !classConstraints.isEmpty() || !validateRules.isEmpty();
@@ -103,10 +111,10 @@ public final class BeanDefinition implements Definition {
      * @param registry the value extractors available at validation time.
      * @param names the parameter name provider naming the parameters of constrained executables.
      * @return the bean definition.
-     * @throws GroupSequenceNotSupportedException if {@code @GroupSequence} is declared on the class
-     *         or one of its superclasses.
-     * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared on a property,
-     *         a parameter or a return value.
+     * @throws GroupDefinitionException if the class's {@code @GroupSequence} does not list the class
+     *         exactly once, lists {@code Default}, a sequence, or something that is not a group.
+     * @throws jakarta.validation.ConstraintDeclarationException if a {@code @ConvertGroup} breaks a rule
+     *         (see {@link GroupConversions}), or for the other declaration errors detected while loading.
      * @throws ValidateDeclarationException if a {@code @Validate} declares no name, a blank name, or
      *         a name already referenced for the same property or at class level.
      * @throws IllegalExecutableConstraintException if a method or constructor is constrained against
@@ -115,8 +123,6 @@ public final class BeanDefinition implements Definition {
      *         or the return value and the method has both.
      * @throws org.rulii.validation.beans.extract.NoValueExtractorException if a constrained or
      *         cascaded container element position has no extractor.
-     * @throws jakarta.validation.ConstraintDeclarationException for the other declaration errors
-     *         detected while loading.
      * @throws IllegalArgumentException if the class is a primitive or an array type.
      */
     public static BeanDefinition load(Class<?> beanClass, ValueExtractorRegistry registry, ParameterNameProvider names) {
@@ -138,7 +144,48 @@ public final class BeanDefinition implements Definition {
 
         return new BeanDefinition(beanClass, Collections.unmodifiableList(properties),
                 Collections.unmodifiableList(loader.classConstraints), Collections.unmodifiableList(loader.validateRules),
-                loader.executables.getMethods(registry, names), ExecutableDiscovery.constructors(beanClass, registry, names));
+                loader.executables.getMethods(registry, names), ExecutableDiscovery.constructors(beanClass, registry, names),
+                defaultGroupSequence(beanClass));
+    }
+
+    /**
+     * The class's redefined Default group: the members of its own {@code @GroupSequence}, in order,
+     * the class itself standing for {@code Default}.
+     *
+     * @param beanClass the class.
+     * @return the sequence; null when the class does not carry {@code @GroupSequence}.
+     * @throws GroupDefinitionException if the sequence does not list the class exactly once, lists
+     *         {@code Default} or a sequence, or lists something that is not a group interface.
+     */
+    public static List<Class<?>> defaultGroupSequence(Class<?> beanClass) {
+        Assert.notNull(beanClass, "beanClass cannot be null.");
+        GroupSequence sequence = beanClass.isInterface() ? null : beanClass.getAnnotation(GroupSequence.class);
+        if (sequence == null) return null;
+
+        List<Class<?>> result = new ArrayList<>(sequence.value().length);
+        boolean self = false;
+
+        for (Class<?> member : sequence.value()) {
+            if (member == beanClass) {
+                if (self) throw definition(beanClass, "lists the class itself twice.");
+                self = true;
+                result.add(Default.class);
+                continue;
+            }
+            if (member == Default.class) throw definition(beanClass, "lists Default; the class itself stands for its Default constraints.");
+            if (!member.isInterface()) throw definition(beanClass, "lists [" + member.getName() + "], which is not a group interface.");
+            if (GroupPlan.isSequence(member)) throw definition(beanClass, "lists the group sequence [" + member.getName() + "]; members must be plain groups.");
+            if (result.contains(member)) throw definition(beanClass, "lists [" + member.getName() + "] twice.");
+            result.add(member);
+        }
+
+        if (!self) throw definition(beanClass, "does not list the class itself, which stands for its Default constraints.");
+
+        return Collections.unmodifiableList(result);
+    }
+
+    private static GroupDefinitionException definition(Class<?> beanClass, String problem) {
+        return new GroupDefinitionException("@GroupSequence on [" + beanClass.getName() + "] " + problem);
     }
 
     private static boolean cascades(List<ContainerElementDefinition> elements) {
@@ -264,6 +311,16 @@ public final class BeanDefinition implements Definition {
     }
 
     /**
+     * The class's redefined Default group, when it carries {@code @GroupSequence}: the member groups
+     * in order, {@code Default} standing where the class listed itself. Not inherited from a superclass.
+     *
+     * @return the sequence; null when the class does not redefine Default.
+     */
+    public List<Class<?>> getDefaultGroupSequence() {
+        return defaultGroupSequence;
+    }
+
+    /**
      * Whether validating an instance of the class has anything to do: a constrained property, a
      * class-level constraint or a {@code @Validate} rule. Executable constraints do not count.
      *
@@ -286,7 +343,8 @@ public final class BeanDefinition implements Definition {
     public String toString() {
         return "BeanDefinition{beanClass=" + beanClass.getName() + ", properties=" + properties.size()
                 + ", classConstraints=" + classConstraints.size() + ", validateRules=" + validateRules.size()
-                + ", methods=" + methods.size() + ", constructors=" + constructors.size() + '}';
+                + ", methods=" + methods.size() + ", constructors=" + constructors.size()
+                + (defaultGroupSequence != null ? ", defaultGroupSequence=" + defaultGroupSequence : "") + '}';
     }
 
     /**
@@ -307,10 +365,6 @@ public final class BeanDefinition implements Definition {
 
         @Override
         public void visitType(Class<?> type) {
-            // A sequence on a class redefines its Default group; on an interface it only defines a group.
-            if (!type.isInterface() && type.isAnnotationPresent(GroupSequence.class)) {
-                throw new GroupSequenceNotSupportedException(type);
-            }
             classConstraints.addAll(ConstraintDefinition.load(type));
             validateRules.addAll(ValidateDefinition.load(type));
         }

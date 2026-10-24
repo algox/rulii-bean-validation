@@ -43,7 +43,6 @@ import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
 import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.DeclarationConstraintSource;
 import org.rulii.validation.beans.model.PropertyDefinition;
@@ -139,13 +138,13 @@ public class PropertyDefinitionTest {
     }
 
     @Test
-    public void groupConversionOnFieldFailsFast() throws Exception {
-        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class, () -> load("converted"));
-        assertEquals(field("converted"), e.getSourceDeclaration().getMember());
-        assertTrue(e.getMessage().contains("@ConvertGroup"));
-        assertTrue(e.getMessage().contains("converted"));
-        assertThrows(GroupConversionNotSupportedException.class, () -> load("convertedList"));
-        assertThrows(GroupConversionNotSupportedException.class, () -> load("convertedElements"));
+    public void groupConversionOnFieldIsRead() throws Exception {
+        assertEquals(Map.of(Default.class, Default.class), load("converted").getGroupConversions().asMap());
+        assertEquals(Map.of(Default.class, Default.class), load("convertedList").getGroupConversions().asMap());
+
+        PropertyDefinition elements = load("convertedElements");
+        assertTrue(elements.getGroupConversions().isEmpty(), "the conversion belongs to the element position");
+        assertEquals(Map.of(Default.class, Default.class), elements.getContainerElements().get(0).getGroupConversions().asMap());
     }
 
     @Test
@@ -352,11 +351,8 @@ public class PropertyDefinitionTest {
     }
 
     @Test
-    public void groupConversionOnGetterFailsFast() throws Exception {
-        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class,
-                () -> PropertyDefinition.load(getter("getConverted"), REGISTRY));
-        assertEquals(getter("getConverted"), e.getSourceDeclaration().getMember());
-        assertTrue(e.getMessage().contains("getConverted()"));
+    public void groupConversionOnGetterIsRead() throws Exception {
+        assertEquals(Map.of(Default.class, Default.class), PropertyDefinition.load(getter("getConverted"), REGISTRY).getGroupConversions().asMap());
     }
 
     @Test
@@ -501,10 +497,8 @@ public class PropertyDefinitionTest {
     }
 
     @Test
-    public void groupConversionOnRecordComponentFailsFast() throws Exception {
-        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class,
-                () -> PropertyDefinition.load(component("converted"), REGISTRY));
-        assertEquals(Customer.class.getDeclaredMethod("converted"), e.getSourceDeclaration().getMember());
+    public void groupConversionOnRecordComponentIsRead() throws Exception {
+        assertEquals(Map.of(Default.class, Default.class), PropertyDefinition.load(component("converted"), REGISTRY).getGroupConversions().asMap());
     }
 
     @Test

@@ -47,9 +47,10 @@ public final class ParameterDefinition implements Definition {
     private final List<ConstraintDefinition> constraints;
     private final List<ContainerElementDefinition> containerElements;
     private final List<ValueDeclaration> cascadedDeclarations;
+    private final GroupConversions groupConversions;
 
     private ParameterDefinition(int index, String name, List<ValueDeclaration> declarations, List<ConstraintDefinition> constraints,
-                                List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations) {
+                                List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations, GroupConversions groupConversions) {
         super();
         this.index = index;
         this.name = name;
@@ -57,6 +58,7 @@ public final class ParameterDefinition implements Definition {
         this.constraints = constraints;
         this.containerElements = containerElements;
         this.cascadedDeclarations = cascadedDeclarations;
+        this.groupConversions = groupConversions;
     }
 
     /**
@@ -75,6 +77,7 @@ public final class ParameterDefinition implements Definition {
         List<ConstraintDefinition> constraints = new ArrayList<>();
         List<ContainerElementDefinition> elements = Collections.emptyList();
         List<ValueDeclaration> cascaded = new ArrayList<>(1);
+        GroupConversions conversions = GroupConversions.NONE;
 
         for (ValueDeclaration declaration : declarations) {
             Assert.isTrue(declaration.getKind() == ValueDeclaration.Kind.PARAMETER, "[" + declaration.describe() + "] is not a parameter.");
@@ -84,10 +87,11 @@ public final class ParameterDefinition implements Definition {
             constraints.addAll(read.constraints());
             elements = ContainerElementDefinition.merge(elements, read.elements());
             if (read.cascaded()) cascaded.add(declaration);
+            conversions = conversions.merge(read.groupConversions(), declaration.describe());
         }
 
         return new ParameterDefinition(primary.getParameterIndex(), primary.getName(), List.copyOf(declarations),
-                Collections.unmodifiableList(constraints), elements, Collections.unmodifiableList(cascaded));
+                Collections.unmodifiableList(constraints), elements, Collections.unmodifiableList(cascaded), conversions);
     }
 
     /**
@@ -149,6 +153,15 @@ public final class ParameterDefinition implements Definition {
 
     public List<ValueDeclaration> getCascadedDeclarations() {
         return cascadedDeclarations;
+    }
+
+    /**
+     * The {@code @ConvertGroup} conversions of the cascade.
+     *
+     * @return the conversions; {@link GroupConversions#NONE} when there are none.
+     */
+    public GroupConversions getGroupConversions() {
+        return groupConversions;
     }
 
     /**

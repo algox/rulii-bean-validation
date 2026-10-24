@@ -21,14 +21,13 @@ import jakarta.validation.GroupSequence;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.groups.ConvertGroup;
 import jakarta.validation.groups.Default;
 import org.junit.jupiter.api.Test;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.BeanDefinitionLoader;
-import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
-import org.rulii.validation.beans.model.GroupSequenceNotSupportedException;
+import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
+import jakarta.validation.GroupDefinitionException;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -167,9 +166,9 @@ public class BeanDefinitionLoaderTest {
     public void aFailingClassIsPoisonedAndRethrowsTheSameException() {
         BeanDefinitionLoader loader = loader();
 
-        GroupSequenceNotSupportedException first = assertThrows(GroupSequenceNotSupportedException.class,
+        GroupDefinitionException first = assertThrows(GroupDefinitionException.class,
                 () -> loader.load(Sequenced.class));
-        GroupSequenceNotSupportedException second = assertThrows(GroupSequenceNotSupportedException.class,
+        GroupDefinitionException second = assertThrows(GroupDefinitionException.class,
                 () -> loader.load(Sequenced.class));
 
         assertSame(first, second);
@@ -181,26 +180,25 @@ public class BeanDefinitionLoaderTest {
     public void aFailingCascadeTargetPoisonsThePathToItButNotItsSiblings() {
         BeanDefinitionLoader loader = loader();
 
-        GroupSequenceNotSupportedException e = assertThrows(GroupSequenceNotSupportedException.class,
+        GroupDefinitionException e = assertThrows(GroupDefinitionException.class,
                 () -> loader.load(RootWithBadTarget.class));
-        assertEquals(Sequenced.class, e.getType());
 
         assertTrue(loader.isPoisoned(RootWithBadTarget.class));
         assertTrue(loader.isPoisoned(MiddleWithBadTarget.class));
         assertTrue(loader.isPoisoned(Sequenced.class));
         assertTrue(loader.isLoaded(Address.class), "sibling resolved before the failure stays loaded");
 
-        assertSame(e, assertThrows(GroupSequenceNotSupportedException.class, () -> loader.load(RootWithBadTarget.class)));
-        assertSame(e, assertThrows(GroupSequenceNotSupportedException.class, () -> loader.load(MiddleWithBadTarget.class)));
-        assertSame(e, assertThrows(GroupSequenceNotSupportedException.class, () -> loader.load(Sequenced.class)));
+        assertSame(e, assertThrows(GroupDefinitionException.class, () -> loader.load(RootWithBadTarget.class)));
+        assertSame(e, assertThrows(GroupDefinitionException.class, () -> loader.load(MiddleWithBadTarget.class)));
+        assertSame(e, assertThrows(GroupDefinitionException.class, () -> loader.load(Sequenced.class)));
     }
 
     @Test
     public void aPublishedPoisonFailsLaterRootsThatReachIt() {
         BeanDefinitionLoader loader = loader();
-        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class, () -> loader.load(BadMethod.class));
+        IllegalExecutableConstraintException e = assertThrows(IllegalExecutableConstraintException.class, () -> loader.load(BadMethod.class));
 
-        assertSame(e, assertThrows(GroupConversionNotSupportedException.class, () -> loader.load(ReachesBadMethod.class)));
+        assertSame(e, assertThrows(IllegalExecutableConstraintException.class, () -> loader.load(ReachesBadMethod.class)));
         assertTrue(loader.isPoisoned(ReachesBadMethod.class));
     }
 
@@ -285,7 +283,7 @@ public class BeanDefinitionLoaderTest {
     private static class RootWithBadTarget { @Valid private Address good; @Valid private MiddleWithBadTarget middle; }
 
     @SuppressWarnings("unused")
-    private static class BadMethod { @Valid @ConvertGroup(from = Default.class, to = Default.class) private Object inner; }
+    private static class BadMethod { @NotNull public void compute() { } }
     @SuppressWarnings("unused")
     private static class ReachesBadMethod { @Valid private BadMethod bad; }
     @SuppressWarnings("unused")

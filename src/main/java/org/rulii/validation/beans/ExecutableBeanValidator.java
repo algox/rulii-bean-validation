@@ -26,6 +26,7 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.ExecutableRules;
+import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.ParameterDefinition;
@@ -36,22 +37,25 @@ import org.rulii.validation.beans.traversal.Traversal;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
+import java.util.List;
 
 /**
  * The spec's {@link ExecutableValidator} of a {@link BeanValidator}: validates the arguments or the
  * return value of a method or constructor against the constraints declared on it, cascading into
- * {@code @Valid} arguments and return values and walking their container elements, exactly as the
- * bean validation does for properties. Frameworks that intercept method calls ({@code @Validated}
- * services, for instance) drive it through {@link BeanValidator#forExecutables()}.
+ * {@code @Valid} arguments and return values (with their {@code @ConvertGroup} conversions) and
+ * walking their container elements, exactly as the bean validation does for properties. Frameworks
+ * that intercept method calls ({@code @Validated} services, for instance) drive it through
+ * {@link BeanValidator#forExecutables()}.
  * <p>
  * The executable is looked up by signature on the runtime class of the object (the declaring class
  * for a constructor), so a method handed over from an interface or a superclass finds the definition
- * of the overriding chain. An executable with no constraints yields an empty result. Paths start at
- * the method or constructor node and continue with the parameter, return-value or cross-parameter
- * node, as the reference implementation renders them ({@code placeOrder.arg0},
- * {@code placeOrder.<return value>}, {@code placeOrder.<cross-parameter>}, {@code OrderService.arg0}).
- * Results are {@link BeanValidationResult}s whose violations expose the arguments or the return value
- * validated.
+ * of the overriding chain. An executable with no constraints yields an empty result. Groups are
+ * processed as for a bean ({@link GroupPlan}): requested sequences member by member, and the class's
+ * redefined Default group, if any, applies to its executables too. Paths start at the method or
+ * constructor node and continue with the parameter, return-value or cross-parameter node, as the
+ * reference implementation renders them ({@code placeOrder.arg0}, {@code placeOrder.<return value>},
+ * {@code placeOrder.<cross-parameter>}, {@code OrderService.arg0}). Results are
+ * {@link BeanValidationResult}s whose violations expose the arguments or the return value validated.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -97,7 +101,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
 
         if (rules != null) {
             parameters(rules, object, parameterValues, PropertyPath.root().method(method.getName(), method.getParameterTypes()),
-                    violations, RequestedGroups.of(groups));
+                    violations, GroupPlan.of(groups));
         }
 
         return new BeanValidationResult<>(object, violations);
@@ -124,7 +128,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
 
         if (rules != null && rules.getDefinition().getReturnValue() != null) {
             returnValue(rules, object, returnValue, PropertyPath.root().method(method.getName(), method.getParameterTypes()),
-                    violations, RequestedGroups.of(groups));
+                    violations, GroupPlan.of(groups));
         }
 
         return new BeanValidationResult<>(object, violations);
@@ -150,7 +154,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         ExecutableRules rules = rules(constructor.getDeclaringClass(), constructor, parameterValues);
 
         if (rules != null) {
-            parameters(rules, null, parameterValues, constructorPath(constructor), violations, RequestedGroups.of(groups));
+            parameters(rules, null, parameterValues, constructorPath(constructor), violations, GroupPlan.of(groups));
         }
 
         return new BeanValidationResult<>(null, violations);
@@ -176,7 +180,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         ExecutableRules rules = validator.getExecutableRules(constructor.getDeclaringClass(), constructor);
 
         if (rules != null) {
-            returnValue(rules, createdObject, createdObject, constructorPath(constructor), violations, RequestedGroups.of(groups));
+            returnValue(rules, createdObject, createdObject, constructorPath(constructor), violations, GroupPlan.of(groups));
         }
 
         return new BeanValidationResult<>(createdObject, violations);
@@ -194,57 +198,86 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
     }
 
     private void parameters(ExecutableRules rules, Object object, Object[] values, PropertyPath base, BeanRuleViolations violations,
-                            RequestedGroups groups) {
-        ScopedBindings bindings = bindings(object, violations, groups);
-        rules.getBindingPlan().load(bindings, values);
-        RuleContext context = validator.context(bindings);
+                            GroupPlan plan) {
+        List<Class<?>> sequence = validator.getBeanDefinition(rules.getBeanClass()).getDefaultGroupSequence();
 
-        try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
-            rules.parameterRuleSet(groups).run(context);
-            ContainerWalker walker = new ContainerWalker(context, rules, true);
+        BeanValidator.run(plan, violations, step -> {
+            Traversal traversal = validator.traversal(step);
+            ScopedBindings bindings = bindings(object, violations, traversal);
+            rules.getBindingPlan().load(bindings, values);
+            RuleContext context = validator.context(bindings);
+            boolean redefined = traversal.appliesDefaultSequence(sequence);
 
-            for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
-                if (parameter.getContainerElements().isEmpty() && !parameter.isCascaded()) continue;
-                Object value = values[parameter.getIndex()];
-                PropertyPath path = base.parameter(parameter.getName(), parameter.getIndex());
+            try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
+                traversal.forDefaultSequence(context, sequence, groups -> {
+                    rules.parameterRuleSet(groups).run(context);
+                    if (redefined) parameterElements(rules, values, base, new ContainerWalker(context, rules, false));
+                });
 
-                for (ContainerElementDefinition node : parameter.getContainerElements()) {
-                    walker.walk(value, node, path);
+                ContainerWalker walker = new ContainerWalker(context, rules, true, !redefined);
+
+                if (!redefined) parameterElements(rules, values, base, walker);
+
+                for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
+                    if (!parameter.isCascaded()) continue;
+                    walker.cascade(values[parameter.getIndex()], parameter.getGenericType(),
+                            base.parameter(parameter.getName(), parameter.getIndex()), parameter.getGroupConversions());
                 }
+            }
+        });
+    }
 
-                if (parameter.isCascaded()) walker.cascade(value, parameter.getGenericType(), path);
+    private static void parameterElements(ExecutableRules rules, Object[] values, PropertyPath base, ContainerWalker walker) {
+        for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
+            PropertyPath path = base.parameter(parameter.getName(), parameter.getIndex());
+
+            for (ContainerElementDefinition node : parameter.getContainerElements()) {
+                walker.walk(values[parameter.getIndex()], node, path);
             }
         }
     }
 
     private void returnValue(ExecutableRules rules, Object object, Object value, PropertyPath base, BeanRuleViolations violations,
-                             RequestedGroups groups) {
+                             GroupPlan plan) {
         ReturnValueDefinition returnValue = rules.getDefinition().getReturnValue();
-        ScopedBindings bindings = bindings(object, violations, groups);
-        bindings.bind(Binding.builder().with(BindingPlan.RETURN_VALUE, Object.class).value(value).editable(false).build());
-        RuleContext context = validator.context(bindings);
+        List<Class<?>> sequence = validator.getBeanDefinition(rules.getBeanClass()).getDefaultGroupSequence();
+        PropertyPath path = base.returnValue();
 
-        try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
-            rules.returnValueRuleSet(groups).run(context);
+        BeanValidator.run(plan, violations, step -> {
+            Traversal traversal = validator.traversal(step);
+            ScopedBindings bindings = bindings(object, violations, traversal);
+            bindings.bind(Binding.builder().with(BindingPlan.RETURN_VALUE, Object.class).value(value).editable(false).build());
+            RuleContext context = validator.context(bindings);
+            boolean redefined = traversal.appliesDefaultSequence(sequence);
 
-            if (returnValue.getContainerElements().isEmpty() && !returnValue.isCascaded()) return;
+            try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
+                traversal.forDefaultSequence(context, sequence, groups -> {
+                    rules.returnValueRuleSet(groups).run(context);
+                    if (redefined) returnValueElements(returnValue, value, path, new ContainerWalker(context, rules, false));
+                });
 
-            ContainerWalker walker = new ContainerWalker(context, rules, true);
-            PropertyPath path = base.returnValue();
+                if (returnValue.getContainerElements().isEmpty() && !returnValue.isCascaded()) return;
 
-            for (ContainerElementDefinition node : returnValue.getContainerElements()) {
-                walker.walk(value, node, path);
+                ContainerWalker walker = new ContainerWalker(context, rules, true, !redefined);
+
+                if (!redefined) returnValueElements(returnValue, value, path, walker);
+
+                if (returnValue.isCascaded()) walker.cascade(value, returnValue.getGenericType(), path, returnValue.getGroupConversions());
             }
+        });
+    }
 
-            if (returnValue.isCascaded()) walker.cascade(value, returnValue.getGenericType(), path);
+    private static void returnValueElements(ReturnValueDefinition returnValue, Object value, PropertyPath path, ContainerWalker walker) {
+        for (ContainerElementDefinition node : returnValue.getContainerElements()) {
+            walker.walk(value, node, path);
         }
     }
 
-    private ScopedBindings bindings(Object object, BeanRuleViolations violations, RequestedGroups groups) {
+    private static ScopedBindings bindings(Object object, BeanRuleViolations violations, Traversal traversal) {
         ScopedBindings bindings = Bindings.builder().scoped();
         bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
         bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(validator.traversal(groups)).build());
+        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
         return bindings;
     }
 

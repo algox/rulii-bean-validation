@@ -26,17 +26,19 @@ import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 /**
  * Descends from the object bound as {@code $this} into its properties, in property order: the
  * declared container element positions of a property are walked (element rules and element
- * cascades), then each {@code @Valid} declaration of the property cascades into its value.
+ * cascades), then each {@code @Valid} declaration of the property cascades into its value, with the
+ * property's {@code @ConvertGroup} conversions.
  *
  * <p>A value is read the way the property's constraints read it: through the property binding for
  * the primary declaration and for getters, through the declaration's accessor for a constrained
- * field beside a getter.</p>
+ * field beside a getter. When the class's redefined Default group sequence applies, the element rules
+ * already ran with the object's rules, so the walk here cascades only.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -58,12 +60,14 @@ final class CascadeCommand implements RuleFlowCommand {
         Assert.notNull(collector, "no path-aware collector is bound as [" + BindingPlan.RULE_VIOLATIONS + "]; run through the bean flow.");
         Object bean = ruleContext.getBindings().getValue(BindingPlan.THIS);
         PropertyPath base = collector.getCurrentPath();
+        Traversal traversal = Traversal.of(ruleContext);
+        boolean elementRules = !traversal.appliesDefaultSequence(rules.getDefinition().getDefaultGroupSequence());
         ContainerWalker walker = null;
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
             if (property.getContainerElements().isEmpty() && !property.isCascaded()) continue;
 
-            if (walker == null) walker = new ContainerWalker(ruleContext, rules, true);
+            if (walker == null) walker = new ContainerWalker(ruleContext, rules, true, elementRules);
 
             PropertyPath path = base.property(property.getName());
             BindingPlan plan = rules.getBindingPlan();
@@ -73,7 +77,8 @@ final class CascadeCommand implements RuleFlowCommand {
             }
 
             for (ValueDeclaration declaration : property.getCascadedDeclarations()) {
-                walker.cascade(plan.read(ruleContext.getBindings(), bean, property, declaration), declaration.getGenericType(), path);
+                walker.cascade(plan.read(ruleContext.getBindings(), bean, property, declaration), declaration.getGenericType(), path,
+                        property.getGroupConversions());
             }
         }
     }

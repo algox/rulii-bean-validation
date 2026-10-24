@@ -119,7 +119,7 @@ public final class ContainerElementDefinitionDescriptor extends DefinitionElemen
 
     @Override
     public Set<GroupConversionDescriptor> getGroupConversions() {
-        return Set.of();
+        return GroupConversionDefinitionDescriptor.describe(getDefinition().getGroupConversions());
     }
 
     @Override

@@ -71,7 +71,7 @@ public final class ReturnValueDefinitionDescriptor extends DefinitionElementDesc
 
     @Override
     public Set<GroupConversionDescriptor> getGroupConversions() {
-        return Set.of();
+        return GroupConversionDefinitionDescriptor.describe(getDefinition().getGroupConversions());
     }
 
     @Override

@@ -25,6 +25,7 @@ import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.util.reflect.TypeResolver;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedParameterizedType;
 import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.ParameterizedType;
@@ -35,9 +36,9 @@ import java.util.List;
 
 /**
  * What one {@link ValueDeclaration} contributes to the value it declares: the constraints on the value
- * itself, the constrained positions within its type, whether it is cascaded, and its {@code @Validate}
- * rules. Shared by properties, parameters and return values, which differ only in how declarations
- * are grouped.
+ * itself, the constrained positions within its type, whether it is cascaded and with which group
+ * conversions, and its {@code @Validate} rules. Shared by properties, parameters and return values,
+ * which differ only in how declarations are grouped.
  *
  * <p>Constraints are read from the declaration annotations and from the annotations on the type use;
  * Java mirrors a constraint that targets both onto both places, so the two reads are merged without
@@ -49,12 +50,13 @@ import java.util.List;
  * @param constraints the constraints on the value itself.
  * @param elements the constrained positions within the value's type, the unwrapped node included.
  * @param cascaded whether the value is cascaded ({@code @Valid}).
+ * @param groupConversions the {@code @ConvertGroup} conversions of the cascade.
  * @param validateRules the {@code @Validate} rules attached to the declaration.
  * @author Max Arulananthan
  * @since 1.0
  */
 record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerElementDefinition> elements, boolean cascaded,
-                         List<ValidateDefinition> validateRules) {
+                         GroupConversions groupConversions, List<ValidateDefinition> validateRules) {
 
     /**
      * Reads a declaration.
@@ -62,22 +64,19 @@ record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerE
      * @param declaration the declaration.
      * @param registry the value extractors available at validation time.
      * @return what the declaration contributes.
-     * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared on the declaration
-     *         or on its type use.
      * @throws ConstraintDeclarationException if value unwrapping is requested but cannot be resolved to
-     *         exactly one extractor, or both {@code Unwrap} and {@code Skip} are requested.
+     *         exactly one extractor, both {@code Unwrap} and {@code Skip} are requested, or a
+     *         {@code @ConvertGroup} breaks a rule (see {@link GroupConversions}).
      */
     static DeclarationReader read(ValueDeclaration declaration, ValueExtractorRegistry registry) {
         Assert.notNull(declaration, "declaration cannot be null.");
         Assert.notNull(registry, "registry cannot be null.");
         AnnotatedType annotatedType = declaration.getAnnotatedType();
 
-        if (ContainerElementDefinition.declaresGroupConversion(declaration)
-                || ContainerElementDefinition.declaresGroupConversion(annotatedType)) {
-            throw new GroupConversionNotSupportedException(declaration);
-        }
-
         boolean cascaded = declaration.isAnnotationPresent(Valid.class) || annotatedType.isAnnotationPresent(Valid.class);
+        List<Annotation> annotations = new ArrayList<>(declaration.getDeclaredAnnotations());
+        annotations.addAll(List.of(annotatedType.getDeclaredAnnotations()));
+        GroupConversions conversions = GroupConversions.load(annotations, cascaded, declaration.describe());
         List<ConstraintDefinition> declared = merge(ConstraintDefinition.load(declaration),
                 ConstraintDefinition.load(declaration, annotatedType));
         List<ContainerElementDefinition> elements = new ArrayList<>(ContainerElementDefinition.load(declaration, registry));
@@ -102,7 +101,7 @@ record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerE
         }
 
         return new DeclarationReader(Collections.unmodifiableList(onValue), Collections.unmodifiableList(elements), cascaded,
-                ValidateDefinition.load(declaration));
+                conversions, ValidateDefinition.load(declaration));
     }
 
     /**

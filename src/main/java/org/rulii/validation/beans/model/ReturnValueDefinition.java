@@ -42,14 +42,16 @@ public final class ReturnValueDefinition implements Definition {
     private final List<ConstraintDefinition> constraints;
     private final List<ContainerElementDefinition> containerElements;
     private final List<ValueDeclaration> cascadedDeclarations;
+    private final GroupConversions groupConversions;
 
     private ReturnValueDefinition(List<ValueDeclaration> declarations, List<ConstraintDefinition> constraints,
-                                  List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations) {
+                                  List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations, GroupConversions groupConversions) {
         super();
         this.declarations = declarations;
         this.constraints = constraints;
         this.containerElements = containerElements;
         this.cascadedDeclarations = cascadedDeclarations;
+        this.groupConversions = groupConversions;
     }
 
     /**
@@ -66,6 +68,7 @@ public final class ReturnValueDefinition implements Definition {
         List<ConstraintDefinition> constraints = new ArrayList<>();
         List<ContainerElementDefinition> elements = Collections.emptyList();
         List<ValueDeclaration> cascaded = new ArrayList<>(1);
+        GroupConversions conversions = GroupConversions.NONE;
 
         for (ValueDeclaration declaration : declarations) {
             Assert.isTrue(declaration.getKind() == ValueDeclaration.Kind.RETURN_VALUE || declaration.getKind() == ValueDeclaration.Kind.GETTER,
@@ -74,10 +77,11 @@ public final class ReturnValueDefinition implements Definition {
             constraints.addAll(read.constraints());
             elements = ContainerElementDefinition.merge(elements, read.elements());
             if (read.cascaded()) cascaded.add(declaration);
+            conversions = conversions.merge(read.groupConversions(), declaration.describe());
         }
 
         return new ReturnValueDefinition(List.copyOf(declarations), Collections.unmodifiableList(constraints), elements,
-                Collections.unmodifiableList(cascaded));
+                Collections.unmodifiableList(cascaded), conversions);
     }
 
     /**
@@ -128,6 +132,15 @@ public final class ReturnValueDefinition implements Definition {
 
     public List<ValueDeclaration> getCascadedDeclarations() {
         return cascadedDeclarations;
+    }
+
+    /**
+     * The {@code @ConvertGroup} conversions of the cascade.
+     *
+     * @return the conversions; {@link GroupConversions#NONE} when there are none.
+     */
+    public GroupConversions getGroupConversions() {
+        return groupConversions;
     }
 
     /**

@@ -81,7 +81,7 @@ public final class ParameterDefinitionDescriptor extends DefinitionElementDescri
 
     @Override
     public Set<GroupConversionDescriptor> getGroupConversions() {
-        return Set.of();
+        return GroupConversionDefinitionDescriptor.describe(getDefinition().getGroupConversions());
     }
 
     @Override

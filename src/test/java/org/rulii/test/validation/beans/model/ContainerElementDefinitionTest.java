@@ -36,7 +36,6 @@ import org.rulii.validation.beans.extract.NoValueExtractorException;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
 import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.ElementType;
@@ -247,11 +246,12 @@ public class ContainerElementDefinitionTest {
     }
 
     @Test
-    public void groupConversionAtPositionFailsFast() throws Exception {
-        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class,
-                () -> ContainerElementDefinition.load(source("convertedElements"), REGISTRY));
-        assertEquals(field("convertedElements"), e.getSourceDeclaration().getMember());
-        assertTrue(e.getMessage().contains("convertedElements"));
+    public void groupConversionAtPositionIsRead() throws Exception {
+        List<ContainerElementDefinition> nodes = ContainerElementDefinition.load(source("convertedElements"), REGISTRY);
+
+        assertEquals(1, nodes.size());
+        assertTrue(nodes.get(0).isCascaded());
+        assertEquals(Map.of(Default.class, Default.class), nodes.get(0).getGroupConversions().asMap());
     }
 
     @Test

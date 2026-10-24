@@ -38,6 +38,7 @@ import org.rulii.validation.beans.assembly.ExecutableRules;
 import org.rulii.validation.beans.assembly.RuleMaterializer;
 import org.rulii.validation.beans.descriptor.BeanDefinitionDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
+import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
@@ -51,6 +52,8 @@ import org.rulii.validation.beans.traversal.Traversal;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
+import java.util.List;
+import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -122,16 +125,36 @@ public final class BeanValidator implements Validator {
     @Override
     public <T> BeanValidationResult<T> validate(T object, Class<?>... groups) {
         Assert.notNull(object, "object cannot be null.");
-        RequestedGroups requested = RequestedGroups.of(groups);
+        GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = new BeanRuleViolations(object);
-        ScopedBindings bindings = Bindings.builder().scoped();
 
-        bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
-        bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(requested)).build());
-        getRuleFlow(object.getClass()).run(context(bindings));
+        run(plan, violations, step -> {
+            ScopedBindings bindings = Bindings.builder().scoped();
+            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
+            bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
+            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(step)).build());
+            getRuleFlow(object.getClass()).run(context(bindings));
+        });
 
         return new BeanValidationResult<>(object, violations);
+    }
+
+    /**
+     * Runs a step body for every step of a plan, in order: plain groups first, then each requested
+     * sequence member by member, a sequence stopping after the first step that added violations.
+     *
+     * @param plan the plan.
+     * @param violations the collector the steps report into.
+     * @param step the body of one step.
+     */
+    static void run(GroupPlan plan, BeanRuleViolations violations, Consumer<RequestedGroups> step) {
+        for (GroupPlan.Pass pass : plan.getPasses()) {
+            for (RequestedGroups groups : pass.steps()) {
+                int before = violations.size();
+                step.accept(groups);
+                if (pass.sequence() && violations.size() > before) break;
+            }
+        }
     }
 
     /**
@@ -152,25 +175,31 @@ public final class BeanValidator implements Validator {
         Assert.notNull(object, "object cannot be null.");
         BeanRules rules = getBeanRules(object.getClass());
         PropertyDefinition property = property(rules, propertyName);
-        RequestedGroups requested = RequestedGroups.of(groups);
+        GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = new BeanRuleViolations(object);
-        ScopedBindings bindings = Bindings.builder().scoped();
+        List<Class<?>> sequence = rules.getDefinition().getDefaultGroupSequence();
 
-        bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
-        bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(requested)).build());
-        rules.getBindingPlan().load(bindings, object);
-        RuleContext context = context(bindings);
+        run(plan, violations, step -> {
+            Traversal traversal = traversal(step);
+            ScopedBindings bindings = Bindings.builder().scoped();
+            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
+            bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
+            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
+            rules.getBindingPlan().load(bindings, object);
+            RuleContext context = context(bindings);
 
-        try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
-            rules.propertyRuleSet(propertyName, requested).run(context);
-            ContainerWalker walker = new ContainerWalker(context, rules, false);
+            try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
+                traversal.forDefaultSequence(context, sequence, current -> {
+                    rules.propertyRuleSet(propertyName, current).run(context);
+                    ContainerWalker walker = new ContainerWalker(context, rules, false);
 
-            for (ContainerElementDefinition node : property.getContainerElements()) {
-                Object container = rules.getBindingPlan().read(bindings, object, property, node.getSourceDeclaration());
-                walker.walk(container, node, PropertyPath.root().property(propertyName));
+                    for (ContainerElementDefinition node : property.getContainerElements()) {
+                        Object container = rules.getBindingPlan().read(bindings, object, property, node.getSourceDeclaration());
+                        walker.walk(container, node, PropertyPath.root().property(propertyName));
+                    }
+                });
             }
-        }
+        });
 
         return new BeanValidationResult<>(object, violations);
     }
@@ -196,24 +225,30 @@ public final class BeanValidator implements Validator {
         Entry entry = entry(beanType);
         PropertyDefinition property = property(entry.rules, propertyName);
         BeanRules rules = entry.valueRules.computeIfAbsent(propertyName, name -> materializer.materializeValue(entry.rules, property));
-        RequestedGroups requested = RequestedGroups.of(groups);
+        GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = new BeanRuleViolations(null, beanType);
-        ScopedBindings bindings = Bindings.builder().scoped();
+        List<Class<?>> sequence = entry.rules.getDefinition().getDefaultGroupSequence();
 
-        bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value((Object) null).build());
-        bindings.bind(Binding.builder().with(rules.getBindingPlan().getBindingName(property), Object.class).value(value).build());
-        bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(requested)).build());
-        RuleContext context = context(bindings);
+        run(plan, violations, step -> {
+            Traversal traversal = traversal(step);
+            ScopedBindings bindings = Bindings.builder().scoped();
+            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value((Object) null).build());
+            bindings.bind(Binding.builder().with(rules.getBindingPlan().getBindingName(property), Object.class).value(value).build());
+            bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
+            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
+            RuleContext context = context(bindings);
 
-        try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, null)) {
-            rules.ruleSet(requested).run(context);
-            ContainerWalker walker = new ContainerWalker(context, rules, false);
+            try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, null)) {
+                traversal.forDefaultSequence(context, sequence, current -> {
+                    rules.ruleSet(current).run(context);
+                    ContainerWalker walker = new ContainerWalker(context, rules, false);
 
-            for (ContainerElementDefinition node : property.getContainerElements()) {
-                walker.walk(value, node, PropertyPath.root().property(propertyName));
+                    for (ContainerElementDefinition node : property.getContainerElements()) {
+                        walker.walk(value, node, PropertyPath.root().property(propertyName));
+                    }
+                });
             }
-        }
+        });
 
         return new BeanValidationResult<>(null, violations);
     }

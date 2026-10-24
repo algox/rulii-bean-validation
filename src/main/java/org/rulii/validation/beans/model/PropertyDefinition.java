@@ -66,17 +66,19 @@ public final class PropertyDefinition implements Definition {
     private final List<ConstraintDefinition> constraints;
     private final List<ContainerElementDefinition> containerElements;
     private final List<ValueDeclaration> cascadedDeclarations;
+    private final GroupConversions groupConversions;
     private final List<ValidateDefinition> validateRules;
     private final SourceDefinition source;
 
     private PropertyDefinition(PropertySource propertySource, List<ConstraintDefinition> constraints,
                                List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations,
-                               List<ValidateDefinition> validateRules) {
+                               GroupConversions groupConversions, List<ValidateDefinition> validateRules) {
         super();
         this.propertySource = propertySource;
         this.constraints = constraints;
         this.containerElements = containerElements;
         this.cascadedDeclarations = cascadedDeclarations;
+        this.groupConversions = groupConversions;
         this.validateRules = validateRules;
         this.source = propertySource.getSourceDefinition();
     }
@@ -155,19 +157,21 @@ public final class PropertyDefinition implements Definition {
         List<ContainerElementDefinition> elements = Collections.emptyList();
         List<ValidateDefinition> validateRules = new ArrayList<>();
         List<ValueDeclaration> cascadedDeclarations = new ArrayList<>(1);
+        GroupConversions conversions = GroupConversions.NONE;
 
         for (ValueDeclaration declaration : propertySource.getDeclarations()) {
             DeclarationReader read = DeclarationReader.read(declaration, registry);
             constraints.addAll(read.constraints());
             elements = ContainerElementDefinition.merge(elements, read.elements());
             if (read.cascaded()) cascadedDeclarations.add(declaration);
+            conversions = conversions.merge(read.groupConversions(), "property [" + propertySource.getName() + "]");
             validateRules.addAll(read.validateRules());
         }
 
         ValidateDefinition.checkDistinct(validateRules, "property [" + propertySource.getName() + "]");
 
         return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements,
-                Collections.unmodifiableList(cascadedDeclarations), Collections.unmodifiableList(validateRules));
+                Collections.unmodifiableList(cascadedDeclarations), conversions, Collections.unmodifiableList(validateRules));
     }
 
     /**
@@ -247,6 +251,15 @@ public final class PropertyDefinition implements Definition {
      */
     public boolean isCascaded() {
         return !cascadedDeclarations.isEmpty();
+    }
+
+    /**
+     * The {@code @ConvertGroup} conversions of the cascade, merged across declarations.
+     *
+     * @return the conversions; {@link GroupConversions#NONE} when there are none.
+     */
+    public GroupConversions getGroupConversions() {
+        return groupConversions;
     }
 
     /**
