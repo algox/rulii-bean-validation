@@ -31,9 +31,8 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ClassConstraintSource;
 import org.rulii.validation.beans.model.ConstraintDefinition;
-import org.rulii.validation.beans.model.ConstraintOnNonGetterException;
 import org.rulii.validation.beans.model.GroupSequenceNotSupportedException;
-import org.rulii.validation.beans.model.PropertyDeclaration.Kind;
+import org.rulii.validation.beans.model.ValueDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
 import java.lang.annotation.ElementType;
@@ -177,10 +176,15 @@ public class BeanDefinitionTest {
     }
 
     @Test
-    public void propertyDeclarationErrorsPropagate() {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> BeanDefinition.load(ConstrainedMethod.class, REGISTRY));
-        assertEquals(NotNull.class, e.getAnnotation().annotationType());
+    public void constrainedNonGetterIsAMethodDefinition() {
+        BeanDefinition bean = BeanDefinition.load(ConstrainedMethod.class, REGISTRY);
+
+        assertEquals(List.of(), names(bean));
+        assertEquals(1, bean.getMethods().size());
+        assertNotNull(bean.getMethod("compute"));
+        assertEquals(1, bean.getMethod("compute").getReturnValue().getConstraints().size());
+        assertEquals(NotNull.class, bean.getMethod("compute").getReturnValue().getConstraints().get(0).getAnnotationType());
+        assertFalse(bean.isConstrained(), "executable constraints do not make the bean constrained");
     }
 
     @Test

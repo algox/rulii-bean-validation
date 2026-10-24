@@ -25,8 +25,8 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.PropertySource;
 
@@ -79,28 +79,33 @@ public final class BindingPlan implements BindingLoader<Object> {
     public static final String VALUE = "$value";
     /** The traversal of the current validation call. */
     public static final String TRAVERSAL = "$traversal";
+    /** The arguments of the executable being validated, as a whole. */
+    public static final String PARAMETERS = "$parameters";
+    /** The return value of the executable being validated. */
+    public static final String RETURN_VALUE = "$returnValue";
     /** The violations collector. */
     public static final String RULE_VIOLATIONS = "ruleViolations";
 
     /**
-     * Names a property cannot be bound under: the engine's reserved names and this library's own.
+     * Names a property or parameter cannot be bound under: the engine's reserved names and this
+     * library's own.
      */
     public static final Set<String> RESERVED_NAMES;
 
     static {
         Set<String> reserved = new HashSet<>(ReservedBindings.reservedBindingNames());
-        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, TRAVERSAL, RULE_VIOLATIONS));
+        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, TRAVERSAL, PARAMETERS, RETURN_VALUE, RULE_VIOLATIONS));
         RESERVED_NAMES = Collections.unmodifiableSet(reserved);
     }
 
     private final BeanDefinition bean;
     private final Map<String, PropertyDefinition> bindings;
     private final Map<String, String> properties;
-    private final Map<PropertyDeclaration, PropertyAccessor> accessors;
-    private final Set<PropertyDeclaration> primaries;
+    private final Map<ValueDeclaration, PropertyAccessor> accessors;
+    private final Set<ValueDeclaration> primaries;
 
     private BindingPlan(BeanDefinition bean, Map<String, PropertyDefinition> bindings, Map<String, String> properties,
-                        Map<PropertyDeclaration, PropertyAccessor> accessors, Set<PropertyDeclaration> primaries) {
+                        Map<ValueDeclaration, PropertyAccessor> accessors, Set<ValueDeclaration> primaries) {
         super();
         this.bean = bean;
         this.bindings = bindings;
@@ -121,12 +126,12 @@ public final class BindingPlan implements BindingLoader<Object> {
 
         Map<String, PropertyDefinition> bindings = new LinkedHashMap<>();
         Map<String, String> properties = new LinkedHashMap<>();
-        Map<PropertyDeclaration, PropertyAccessor> accessors = new LinkedHashMap<>();
-        Set<PropertyDeclaration> primaries = new HashSet<>();
+        Map<ValueDeclaration, PropertyAccessor> accessors = new LinkedHashMap<>();
+        Set<ValueDeclaration> primaries = new HashSet<>();
 
         for (PropertyDefinition property : bean.getProperties()) {
             PropertySource source = property.getPropertySource();
-            PropertyDeclaration primary = source.getPrimary();
+            ValueDeclaration primary = source.getPrimary();
             String name = property.getName();
             String binding = unique(RESERVED_NAMES.contains(name) ? name + "$" : name, bindings.keySet());
 
@@ -137,8 +142,8 @@ public final class BindingPlan implements BindingLoader<Object> {
             // inaccessible but unconstrained member (a JDK class reached through @Valid) costs nothing.
             accessors.put(primary, property.isConstrained() ? PropertyAccessor.of(primary) : PropertyAccessor.lazy(primary));
 
-            for (PropertyDeclaration declaration : readDeclarations(property)) {
-                if (!declaration.equals(primary) && declaration.getKind() != PropertyDeclaration.Kind.GETTER) {
+            for (ValueDeclaration declaration : readDeclarations(property)) {
+                if (!declaration.equals(primary) && declaration.getKind() != ValueDeclaration.Kind.GETTER) {
                     accessors.computeIfAbsent(declaration, PropertyAccessor::of);
                 }
             }
@@ -152,11 +157,11 @@ public final class BindingPlan implements BindingLoader<Object> {
      * The declarations of a property that validation reads: those carrying a constraint, a cascade
      * or container elements.
      */
-    private static Set<PropertyDeclaration> readDeclarations(PropertyDefinition property) {
-        Set<PropertyDeclaration> result = new HashSet<>();
+    private static Set<ValueDeclaration> readDeclarations(PropertyDefinition property) {
+        Set<ValueDeclaration> result = new HashSet<>();
 
         for (ConstraintDefinition constraint : property.getConstraints()) {
-            result.add(((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration());
+            result.add(((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration());
         }
 
         result.addAll(property.getCascadedDeclarations());
@@ -207,11 +212,11 @@ public final class BindingPlan implements BindingLoader<Object> {
      * @param declaration the declaration to read.
      * @return the value.
      */
-    public Object read(Bindings bindings, Object bean, PropertyDefinition property, PropertyDeclaration declaration) {
+    public Object read(Bindings bindings, Object bean, PropertyDefinition property, ValueDeclaration declaration) {
         Assert.notNull(bindings, "bindings cannot be null.");
         Assert.notNull(declaration, "declaration cannot be null.");
 
-        if (isPrimary(declaration) || declaration.getKind() == PropertyDeclaration.Kind.GETTER) {
+        if (isPrimary(declaration) || declaration.getKind() == ValueDeclaration.Kind.GETTER) {
             return bindings.getValue(getBindingName(property));
         }
 
@@ -256,7 +261,7 @@ public final class BindingPlan implements BindingLoader<Object> {
      * @param declaration the declaration.
      * @return true for a primary declaration.
      */
-    public boolean isPrimary(PropertyDeclaration declaration) {
+    public boolean isPrimary(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         return primaries.contains(declaration);
     }
@@ -268,7 +273,7 @@ public final class BindingPlan implements BindingLoader<Object> {
      * @return the accessor.
      * @throws IllegalArgumentException if the declaration is not one validation reads.
      */
-    public PropertyAccessor getAccessor(PropertyDeclaration declaration) {
+    public PropertyAccessor getAccessor(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         PropertyAccessor result = accessors.get(declaration);
         Assert.notNull(result, "declaration [" + declaration.describe() + "] is not read by the validation of ["
@@ -281,7 +286,7 @@ public final class BindingPlan implements BindingLoader<Object> {
      *
      * @return the accessors by declaration; unmodifiable.
      */
-    public Map<PropertyDeclaration, PropertyAccessor> getAccessors() {
+    public Map<ValueDeclaration, PropertyAccessor> getAccessors() {
         return accessors;
     }
 

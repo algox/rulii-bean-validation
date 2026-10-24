@@ -19,11 +19,12 @@ package org.rulii.validation.beans.util.reflect;
 
 import org.rulii.lib.spring.util.Assert;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Member;
 
 /**
- * Reflection member helpers.
+ * Describes reflective members for messages.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -35,14 +36,17 @@ public final class Members {
     }
 
     /**
-     * Human-readable description of a member for diagnostics: {@code com.acme.Order.total}
-     * for a field, {@code com.acme.Order.getTotal()} for a method.
+     * Describes a member as {@code declaring.Class.name} for a field, {@code declaring.Class.name()}
+     * for a method and {@code declaring.Class.SimpleName()} for a constructor.
      *
      * @param member the member.
      * @return the description.
      */
     public static String describe(Member member) {
         Assert.notNull(member, "member cannot be null.");
+        if (member instanceof Constructor<?>) {
+            return member.getDeclaringClass().getName() + "." + member.getDeclaringClass().getSimpleName() + "()";
+        }
         String result = member.getDeclaringClass().getName() + "." + member.getName();
         return member instanceof Field ? result : result + "()";
     }

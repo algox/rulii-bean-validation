@@ -66,9 +66,9 @@ public final class ValidateDefinition implements Definition {
      * @throws ValidateDeclarationException if the annotation declares no name, a blank name or a
      *         repeated name.
      */
-    public static List<ValidateDefinition> load(PropertyDeclaration sourceDeclaration) {
+    public static List<ValidateDefinition> load(ValueDeclaration sourceDeclaration) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
-        return load(new PropertyConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
+        return load(new DeclarationConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
     }
 
     /**

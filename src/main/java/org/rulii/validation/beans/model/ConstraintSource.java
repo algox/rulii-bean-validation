@@ -22,7 +22,7 @@ import org.rulii.model.SourceDefinition;
 import java.lang.reflect.AnnotatedElement;
 
 /**
- * Where a constraint is declared: on a {@link PropertyConstraintSource property declaration} (a
+ * Where a constraint is declared: on a {@link DeclarationConstraintSource property declaration} (a
  * field, getter or record component, or a container element position within its type) or on a
  * {@link ClassConstraintSource class} (a class-level constraint of the bean class, one of its
  * superclasses or one of its interfaces).

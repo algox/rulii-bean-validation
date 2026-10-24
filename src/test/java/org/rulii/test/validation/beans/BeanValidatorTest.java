@@ -46,6 +46,7 @@ import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.validation.beans.BeanValidationResult;
 import org.rulii.validation.beans.BeanValidator;
+import org.rulii.validation.beans.ExecutableBeanValidator;
 import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.ValidateRuleNotFoundException;
 import org.rulii.validation.beans.assembly.BindingPlan;
@@ -293,8 +294,8 @@ public class BeanValidatorTest {
         assertSame(validator, validator.unwrap(BeanValidator.class));
         assertSame(validator, validator.unwrap(Validator.class));
         assertThrows(ValidationException.class, () -> validator.unwrap(String.class));
-        ValidationException executables = assertThrows(ValidationException.class, validator::forExecutables);
-        assertTrue(executables.getMessage().contains("not supported"));
+        assertSame(validator.forExecutables(), validator.forExecutables(), "one executable validator per validator");
+        assertSame(validator, ((ExecutableBeanValidator) validator.forExecutables()).getBeanValidator());
     }
 
     @Test

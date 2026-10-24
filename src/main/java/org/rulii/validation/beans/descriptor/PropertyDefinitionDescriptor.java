@@ -22,8 +22,8 @@ import jakarta.validation.metadata.GroupConversionDescriptor;
 import jakarta.validation.metadata.PropertyDescriptor;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.model.ConstraintDefinition;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
 import java.lang.annotation.ElementType;
@@ -67,10 +67,10 @@ public final class PropertyDefinitionDescriptor extends DefinitionElementDescrip
     }
 
     private static ElementType elementType(ConstraintDefinition constraint) {
-        if (constraint.getConstraintSource() instanceof PropertyConstraintSource source) {
-            PropertyDeclaration.Kind kind = source.getDeclaration().getKind();
-            if (kind == PropertyDeclaration.Kind.GETTER) return ElementType.METHOD;
-            if (kind == PropertyDeclaration.Kind.RECORD_COMPONENT) return ElementType.RECORD_COMPONENT;
+        if (constraint.getConstraintSource() instanceof DeclarationConstraintSource source) {
+            ValueDeclaration.Kind kind = source.getDeclaration().getKind();
+            if (kind == ValueDeclaration.Kind.GETTER) return ElementType.METHOD;
+            if (kind == ValueDeclaration.Kind.RECORD_COMPONENT) return ElementType.RECORD_COMPONENT;
         }
 
         return ElementType.FIELD;

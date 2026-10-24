@@ -29,11 +29,11 @@ import java.lang.reflect.AnnotatedElement;
  * @author Max Arulananthan
  * @since 1.0
  */
-public final class PropertyConstraintSource implements ConstraintSource {
+public final class DeclarationConstraintSource implements ConstraintSource {
 
-    private final PropertyDeclaration declaration;
+    private final ValueDeclaration declaration;
 
-    public PropertyConstraintSource(PropertyDeclaration declaration) {
+    public DeclarationConstraintSource(ValueDeclaration declaration) {
         super();
         Assert.notNull(declaration, "declaration cannot be null.");
         this.declaration = declaration;
@@ -44,7 +44,7 @@ public final class PropertyConstraintSource implements ConstraintSource {
      *
      * @return the declaration.
      */
-    public PropertyDeclaration getDeclaration() {
+    public ValueDeclaration getDeclaration() {
         return declaration;
     }
 
@@ -72,7 +72,7 @@ public final class PropertyConstraintSource implements ConstraintSource {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        PropertyConstraintSource that = (PropertyConstraintSource) o;
+        DeclarationConstraintSource that = (DeclarationConstraintSource) o;
         return declaration.equals(that.declaration);
     }
 

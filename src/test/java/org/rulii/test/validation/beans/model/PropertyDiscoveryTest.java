@@ -27,9 +27,8 @@ import jakarta.validation.constraints.Size;
 import jakarta.validation.groups.ConvertGroup;
 import jakarta.validation.groups.Default;
 import org.junit.jupiter.api.Test;
-import org.rulii.validation.beans.model.ConstraintOnNonGetterException;
-import org.rulii.validation.beans.model.PropertyDeclaration;
-import org.rulii.validation.beans.model.PropertyDeclaration.Kind;
+import org.rulii.validation.beans.model.ValueDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDiscovery;
 import org.rulii.validation.beans.model.PropertySource;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;
@@ -61,8 +60,8 @@ public class PropertyDiscoveryTest {
         assertEquals(List.of("name", "age", "label"), names(sources));
 
         PropertySource name = sources.get(0);
-        assertEquals(List.of(PropertyDeclaration.ofField(Simple.class.getDeclaredField("name")),
-                PropertyDeclaration.ofGetter(Simple.class.getDeclaredMethod("getName"))), name.getDeclarations());
+        assertEquals(List.of(ValueDeclaration.ofField(Simple.class.getDeclaredField("name")),
+                ValueDeclaration.ofGetter(Simple.class.getDeclaredMethod("getName"))), name.getDeclarations());
         assertEquals(Kind.GETTER, name.getPrimary().getKind());
         assertEquals(1, sources.get(1).getDeclarations().size());
         assertEquals(Kind.GETTER, sources.get(2).getPrimary().getKind());
@@ -108,16 +107,16 @@ public class PropertyDiscoveryTest {
         Map<String, PropertySource> sources = byName(PropertyDiscovery.discover(Employee.class));
         PropertySource name = sources.get("name");
 
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("name"), Employee.class),
-                PropertyDeclaration.ofField(Employee.class.getDeclaredField("name"), Employee.class)), name.getDeclarations(Kind.FIELD));
+        assertEquals(List.of(ValueDeclaration.ofField(Person.class.getDeclaredField("name"), Employee.class),
+                ValueDeclaration.ofField(Employee.class.getDeclaredField("name"), Employee.class)), name.getDeclarations(Kind.FIELD));
         assertTrue(name.getDeclarations().get(0).isAnnotationPresent(NotNull.class));
         assertTrue(name.getDeclarations().get(1).isAnnotationPresent(Size.class));
         // A getter exists for name, so it is primary; code has no getter and the subclass field wins.
         assertEquals(Person.class.getDeclaredMethod("getName"), name.getMember());
 
         PropertySource code = sources.get("code");
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("code"), Employee.class),
-                PropertyDeclaration.ofField(Employee.class.getDeclaredField("code"), Employee.class)), code.getDeclarations());
+        assertEquals(List.of(ValueDeclaration.ofField(Person.class.getDeclaredField("code"), Employee.class),
+                ValueDeclaration.ofField(Employee.class.getDeclaredField("code"), Employee.class)), code.getDeclarations());
         assertEquals(Employee.class, code.getDeclaringClass());
         assertEquals(Kind.FIELD, code.getPrimary().getKind());
         assertTrue(code.hasMultipleDeclarations());
@@ -128,9 +127,9 @@ public class PropertyDiscoveryTest {
         Map<String, PropertySource> sources = byName(PropertyDiscovery.discover(Employee.class));
         PropertySource id = sources.get("id");
 
-        assertEquals(List.of(PropertyDeclaration.ofField(Person.class.getDeclaredField("id"), Employee.class),
-                PropertyDeclaration.ofGetter(Person.class.getDeclaredMethod("getId"), Employee.class),
-                PropertyDeclaration.ofGetter(Employee.class.getDeclaredMethod("getId"), Employee.class)), id.getDeclarations());
+        assertEquals(List.of(ValueDeclaration.ofField(Person.class.getDeclaredField("id"), Employee.class),
+                ValueDeclaration.ofGetter(Person.class.getDeclaredMethod("getId"), Employee.class),
+                ValueDeclaration.ofGetter(Employee.class.getDeclaredMethod("getId"), Employee.class)), id.getDeclarations());
         assertEquals(Employee.class.getDeclaredMethod("getId"), id.getMember());
         assertEquals(Integer.class, id.getType());
     }
@@ -202,68 +201,25 @@ public class PropertyDiscoveryTest {
         assertDoesNotThrow(() -> PropertyDiscovery.discover(Customer.class));
     }
 
-    // --- fail-fast ----------------------------------------------------------------------------
+    // --- non-getters ----------------------------------------------------------------------------
 
     @Test
-    public void constraintOnNonGetterFailsFast() throws Exception {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(ConstrainedMethod.class));
-        assertEquals(ConstrainedMethod.class.getDeclaredMethod("calculateTotal"), e.getMethod());
-        assertEquals(NotNull.class, e.getAnnotation().annotationType());
-        assertTrue(e.getMessage().contains(ConstrainedMethod.class.getName() + ".calculateTotal()"));
-        assertTrue(e.getMessage().contains("NotNull"));
+    public void constrainedNonGettersAreNotProperties() {
+        // Their constraints belong to executable validation; discovery leaves them alone.
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ConstrainedMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ValidMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ConvertGroupMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ContainerMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(TypeUseMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(TypeUseArrayMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(SubOfConstrainedMethod.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ImplementsConstrainedMethod.class)));
     }
 
     @Test
-    public void validOnNonGetterFailsFast() {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(ValidMethod.class));
-        assertEquals(Valid.class, e.getAnnotation().annotationType());
-    }
-
-    @Test
-    public void convertGroupOnNonGetterFailsFast() {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(ConvertGroupMethod.class));
-        assertEquals(ConvertGroup.class, e.getAnnotation().annotationType());
-    }
-
-    @Test
-    public void repeatedConstraintContainerOnNonGetterFailsFast() {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(ContainerMethod.class));
-        assertEquals(Size.List.class, e.getAnnotation().annotationType());
-    }
-
-    @Test
-    public void typeUseConstraintInNonGetterReturnTypeFailsFast() throws Exception {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(TypeUseMethod.class));
-        assertEquals(TypeUseMethod.class.getDeclaredMethod("values"), e.getMethod());
-        assertEquals(NotBlank.class, e.getAnnotation().annotationType());
-
-        e = assertThrows(ConstraintOnNonGetterException.class, () -> PropertyDiscovery.discover(TypeUseArrayMethod.class));
-        assertEquals(Max.class, e.getAnnotation().annotationType());
-    }
-
-    @Test
-    public void getterShapedMethodWithParametersOrWrapperBooleanIsNotAGetter() throws Exception {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(ParameterizedGetter.class));
-        assertEquals(ParameterizedGetter.class.getDeclaredMethod("getName", String.class), e.getMethod());
-
-        e = assertThrows(ConstraintOnNonGetterException.class, () -> PropertyDiscovery.discover(WrapperIs.class));
-        assertEquals(WrapperIs.class.getDeclaredMethod("isActive"), e.getMethod());
-    }
-
-    @Test
-    public void nonGetterOnSuperclassOrInterfaceFailsFastToo() throws Exception {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
-                () -> PropertyDiscovery.discover(SubOfConstrainedMethod.class));
-        assertEquals(ConstrainedMethod.class.getDeclaredMethod("calculateTotal"), e.getMethod());
-
-        e = assertThrows(ConstraintOnNonGetterException.class, () -> PropertyDiscovery.discover(ImplementsConstrainedMethod.class));
-        assertEquals(ConstrainedInterface.class.getDeclaredMethod("compute"), e.getMethod());
+    public void getterShapedMethodWithParametersOrWrapperBooleanIsNotAGetter() {
+        assertEquals(List.of(), names(PropertyDiscovery.discover(ParameterizedGetter.class)));
+        assertEquals(List.of(), names(PropertyDiscovery.discover(WrapperIs.class)));
     }
 
     @Test
@@ -283,7 +239,7 @@ public class PropertyDiscoveryTest {
     }
 
     private static List<Kind> kinds(PropertySource source) {
-        return source.getDeclarations().stream().map(PropertyDeclaration::getKind).toList();
+        return source.getDeclarations().stream().map(ValueDeclaration::getKind).toList();
     }
 
     // --- fixtures -----------------------------------------------------------------------------

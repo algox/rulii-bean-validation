@@ -20,12 +20,14 @@ package org.rulii.validation.beans.validator;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorFactory;
+import jakarta.validation.constraintvalidation.ValidationTarget;
 import org.rulii.lib.spring.core.annotation.AnnotationUtils;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.lib.spring.util.ClassUtils;
 import org.rulii.rule.Rule;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintTarget;
+import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.util.reflect.TypeResolver;
 import org.rulii.validation.beans.util.reflect.Types;
 
@@ -34,6 +36,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -44,10 +47,12 @@ import java.util.Set;
  * named in its {@code @Constraint(validatedBy)}. The registry synthesizes one for a constraint that has
  * no registered mapper, so a constraint written for the reference implementation runs unchanged.
  *
- * <p>Applicability follows the specification: of the validator classes, those whose validated type (the
- * {@code T} of {@code ConstraintValidator<A, T>}) is assignable from the declared type of the constrained
- * value are candidates, and the most specific of them is chosen; none makes the constraint inapplicable
- * to the type, several that are equally specific are an {@link AmbiguousConstraintValidatorException}.
+ * <p>Applicability follows the specification: of the validator classes supporting the validation
+ * target (the annotated element, or the parameters for a cross-parameter constraint, per their
+ * {@code @SupportedValidationTarget}), those whose validated type (the {@code T} of
+ * {@code ConstraintValidator<A, T>}) is assignable from the declared type of the constrained value are
+ * candidates, and the most specific of them is chosen; none makes the constraint inapplicable to the
+ * type, several that are equally specific are an {@link AmbiguousConstraintValidatorException}.
  * Primitives are considered through their wrapper types.</p>
  *
  * <p>Materialization creates one validator instance per constraint occurrence through the
@@ -67,6 +72,7 @@ public final class ConstraintValidatorMapper<A extends Annotation> implements Co
     private final Class<A> annotationType;
     private final List<Class<? extends ConstraintValidator<?, ?>>> validatorClasses;
     private final List<Class<?>> supportedTypes;
+    private final List<ValidationTarget> supportedTargets;
     private final ConstraintValidatorFactory factory;
     private final List<ConstraintValidator<?, ?>> instances = new ArrayList<>();
 
@@ -87,12 +93,15 @@ public final class ConstraintValidatorMapper<A extends Annotation> implements Co
         this.validatorClasses = List.of(annotationType.getAnnotation(Constraint.class).validatedBy());
         this.factory = factory;
         Set<Class<?>> types = new LinkedHashSet<>();
+        Set<ValidationTarget> targets = EnumSet.noneOf(ValidationTarget.class);
 
         for (Class<? extends ConstraintValidator<?, ?>> validatorClass : validatorClasses) {
             types.add(validatedType(validatorClass));
+            targets.addAll(ExecutableDefinition.validatorTargets(validatorClass));
         }
 
         this.supportedTypes = List.copyOf(types);
+        this.supportedTargets = List.copyOf(targets);
     }
 
     /**
@@ -143,34 +152,69 @@ public final class ConstraintValidatorMapper<A extends Annotation> implements Co
         return supportedTypes;
     }
 
+    /**
+     * The validation targets the validators support, as their {@code @SupportedValidationTarget} declare.
+     */
+    @Override
+    public List<ValidationTarget> getSupportedTargets() {
+        return supportedTargets;
+    }
+
     public ConstraintValidatorFactory getConstraintValidatorFactory() {
         return factory;
     }
 
     /**
-     * Whether one of the validators validates the type: {@link #select(Class)} finds one.
+     * Whether one of the validators of the annotated element validates the type: {@link #select(Class)}
+     * finds one.
      *
      * @throws AmbiguousConstraintValidatorException if several do and none is the most specific.
      */
     @Override
     public boolean isApplicable(Class<?> type) {
-        return select(type) != null;
+        return isApplicable(type, ValidationTarget.ANNOTATED_ELEMENT);
     }
 
     /**
-     * The validator class for a declared type: of the classes whose validated type is assignable from it,
-     * the most specific.
+     * Whether one of the validators of the target validates the type: {@link #select(Class, ValidationTarget)}
+     * finds one.
+     *
+     * @throws AmbiguousConstraintValidatorException if several do and none is the most specific.
+     */
+    @Override
+    public boolean isApplicable(Class<?> type, ValidationTarget target) {
+        return select(type, target) != null;
+    }
+
+    /**
+     * The validator class for a declared type of the annotated element.
      *
      * @param type the declared type of the constrained value.
      * @return the class; null if no validator validates the type.
      * @throws AmbiguousConstraintValidatorException if several do and none is the most specific.
+     * @see #select(Class, ValidationTarget)
      */
     public Class<? extends ConstraintValidator<?, ?>> select(Class<?> type) {
+        return select(type, ValidationTarget.ANNOTATED_ELEMENT);
+    }
+
+    /**
+     * The validator class for a declared type and a validation target: of the classes supporting the
+     * target whose validated type is assignable from the type, the most specific.
+     *
+     * @param type the declared type of the constrained value; {@code Object[]} for the parameters.
+     * @param target the validation target.
+     * @return the class; null if no validator validates the type for the target.
+     * @throws AmbiguousConstraintValidatorException if several do and none is the most specific.
+     */
+    public Class<? extends ConstraintValidator<?, ?>> select(Class<?> type, ValidationTarget target) {
         Assert.notNull(type, "type cannot be null.");
+        Assert.notNull(target, "target cannot be null.");
         Class<?> declared = ClassUtils.resolvePrimitiveIfNecessary(type);
         List<Class<? extends ConstraintValidator<?, ?>>> candidates = new ArrayList<>();
 
         for (Class<? extends ConstraintValidator<?, ?>> validatorClass : validatorClasses) {
+            if (!ExecutableDefinition.validatorTargets(validatorClass).contains(target)) continue;
             if (validatedType(validatorClass).isAssignableFrom(declared)) candidates.add(validatorClass);
         }
 
@@ -206,9 +250,9 @@ public final class ConstraintValidatorMapper<A extends Annotation> implements Co
     public List<Rule> map(A annotation, ConstraintTarget target) {
         Assert.notNull(annotation, "annotation cannot be null.");
         Assert.notNull(target, "target cannot be null.");
-        Class<? extends ConstraintValidator<?, ?>> validatorClass = select(target.getType());
+        Class<? extends ConstraintValidator<?, ?>> validatorClass = select(target.getType(), target.getValidationTarget());
         Assert.notNull(validatorClass, "no validator of constraint [" + annotationType.getName() + "] validates type ["
-                + target.getType().getName() + "]; validators: " + validatorClasses);
+                + target.getType().getName() + "] for target [" + target.getValidationTarget() + "]; validators: " + validatorClasses);
 
         ConstraintValidator<?, ?> validator = create(validatorClass, annotation);
         Map<String, Object> attributes = AnnotationUtils.getAnnotationAttributes(annotation);

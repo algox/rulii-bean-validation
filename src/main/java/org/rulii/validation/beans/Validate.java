@@ -32,7 +32,8 @@ import java.lang.annotation.Target;
  * <p>At class level the runnable sees the whole bean: the root object and every property are bound.
  * On a field, getter or record component the runnable additionally sees that property's value, and
  * its violations report at that property's path. Setters and other non-getter methods cannot carry
- * the annotation; such a declaration fails fast when the class is read.</p>
+ * the annotation; such a declaration fails fast when the class is read, since executable validation
+ * runs constraints, not registry rules.</p>
  *
  * <p>Names are resolved at validation time, so what is registered under a name can change without
  * recompiling the domain class; a name that resolves to nothing fails loudly, never silently. The

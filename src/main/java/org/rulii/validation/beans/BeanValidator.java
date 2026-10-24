@@ -17,9 +17,9 @@
  */
 package org.rulii.validation.beans;
 
+import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.ValidationException;
 import jakarta.validation.Validator;
-import jakarta.validation.executable.ExecutableValidator;
 import org.rulii.bind.Binding;
 import org.rulii.bind.Bindings;
 import org.rulii.bind.NamedScope;
@@ -34,6 +34,7 @@ import org.rulii.ruleflow.RuleFlow;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.assembly.ExecutableRules;
 import org.rulii.validation.beans.assembly.RuleMaterializer;
 import org.rulii.validation.beans.descriptor.BeanDefinitionDescriptor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
@@ -42,11 +43,14 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.BeanDefinitionLoader;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
+import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.traversal.ContainerWalker;
 import org.rulii.validation.beans.traversal.RuleFlowAssembler;
 import org.rulii.validation.beans.traversal.Traversal;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -59,9 +63,9 @@ import java.util.concurrent.ConcurrentMap;
  * It is a drop-in for any consumer of a {@code jakarta.validation.Validator}: {@link #validate},
  * {@link #validateProperty} and {@link #validateValue} return the spec's set of constraint violations,
  * {@link #getConstraintsForClass} describes a class. The result is also a {@link BeanValidationResult},
- * which owns the rulii {@link BeanRuleViolations} the rules reported into. Executable validation is not
- * supported, so {@link #forExecutables()} throws. The validator is wired explicitly; it is not found by
- * {@code Validation.buildDefaultValidatorFactory()}.
+ * which owns the rulii {@link BeanRuleViolations} the rules reported into. {@link #forExecutables()}
+ * validates method and constructor calls. The validator is built explicitly here, or by the bootstrap
+ * ({@code Validation.buildDefaultValidatorFactory()}) when the library is on the classpath.
  * <p>
  * rulii-native use: {@link #validateIn} runs a validation inside an existing {@link RuleContext} so
  * annotation rules, hand-written rules and the trace share one execution; {@link #getRuleFlow} hands out
@@ -77,18 +81,21 @@ public final class BeanValidator implements Validator {
     private final BeanDefinitionLoader loader;
     private final RuleMaterializer materializer;
     private final RuleFlowAssembler assembler;
+    private final ExecutableBeanValidator executableValidator;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     BeanValidator(RuleRegistry registry, ValueExtractorRegistry extractors, ConstraintMapperRegistry mappers,
-                  RuleContextOptions options) {
+                  RuleContextOptions options, ParameterNameProvider parameterNameProvider) {
         super();
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
+        Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
         this.registry = registry;
         this.options = BeanValidationOptions.wrap(options != null ? options : StandardRuleContextOptions.build(), mappers);
-        this.loader = new BeanDefinitionLoader(extractors, mappers);
+        this.loader = new BeanDefinitionLoader(extractors, mappers, parameterNameProvider);
         this.materializer = new RuleMaterializer(mappers);
         this.assembler = new RuleFlowAssembler(this::getRuleFlow, extractors);
+        this.executableValidator = new ExecutableBeanValidator(this);
     }
 
     /**
@@ -243,13 +250,14 @@ public final class BeanValidator implements Validator {
     }
 
     /**
-     * Executable (method and constructor) validation is not supported.
+     * The validator of method and constructor calls: parameters, return values and cross-parameter
+     * constraints. One per validator, sharing its cache.
      *
-     * @throws ValidationException always.
+     * @return the executable validator.
      */
     @Override
-    public ExecutableValidator forExecutables() {
-        throw new ValidationException("executable (method/constructor) validation is not supported by rulii bean validation.");
+    public ExecutableBeanValidator forExecutables() {
+        return executableValidator;
     }
 
     // ---- rulii-native ----
@@ -325,6 +333,34 @@ public final class BeanValidator implements Validator {
     }
 
     /**
+     * The rules materialized for a method or constructor, as defined on the given class: the method
+     * is matched by signature, so the method of an interface or a superclass finds the definition of
+     * the overriding chain on the class. Read on first request.
+     *
+     * @param beanClass the class the executable is called on, or the class a constructor constructs.
+     * @param executable the method or constructor.
+     * @return its rules; null when the executable is not constrained on the class.
+     */
+    public ExecutableRules getExecutableRules(Class<?> beanClass, Executable executable) {
+        Assert.notNull(executable, "executable cannot be null.");
+        Entry entry = entry(beanClass);
+        BeanDefinition definition = entry.rules.getDefinition();
+        ExecutableDefinition found = executable instanceof Constructor<?>
+                ? definition.getConstructor(executable.getParameterTypes())
+                : definition.getMethod(executable.getName(), executable.getParameterTypes());
+        return found != null ? entry.executableRules.computeIfAbsent(found, materializer::materialize) : null;
+    }
+
+    /**
+     * The provider naming the parameters of constrained executables.
+     *
+     * @return the provider.
+     */
+    public ParameterNameProvider getParameterNameProvider() {
+        return loader.getParameterNameProvider();
+    }
+
+    /**
      * The registry {@code @Validate} names resolve through.
      *
      * @return the registry; null when none was configured.
@@ -369,11 +405,11 @@ public final class BeanValidator implements Validator {
         });
     }
 
-    private Traversal traversal(RequestedGroups groups) {
+    Traversal traversal(RequestedGroups groups) {
         return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry);
     }
 
-    private RuleContext context(Bindings bindings) {
+    RuleContext context(Bindings bindings) {
         RuleContextBuilder builder = RuleContext.builder().with(options);
         builder.bindings(bindings);
         if (registry != null) builder.registry(registry);
@@ -393,6 +429,7 @@ public final class BeanValidator implements Validator {
         private final BeanRules rules;
         private final RuleFlow<?> flow;
         private final ConcurrentMap<String, BeanRules> valueRules = new ConcurrentHashMap<>();
+        private final ConcurrentMap<ExecutableDefinition, ExecutableRules> executableRules = new ConcurrentHashMap<>();
 
         private Entry(BeanRules rules, RuleFlow<?> flow) {
             super();

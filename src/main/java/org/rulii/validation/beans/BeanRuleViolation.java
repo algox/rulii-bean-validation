@@ -34,7 +34,8 @@ import java.util.Objects;
  * and a jakarta {@link ConstraintViolation} at once, so code written against either reads it unchanged:
  * {@link #getPropertyPath()}, {@link #getMessage()}, {@link #getInvalidValue()}, {@link #getLeafBean()},
  * {@link #getRootBean()}, {@link #getConstraintDescriptor()}; the constraint definition itself is
- * {@link #getConstraint()}. Executable validation is not supported, so the executable accessors return null.
+ * {@link #getConstraint()}. A violation from an executable validation also exposes the arguments or the
+ * return value validated ({@link #getExecutableParameters()}, {@link #getExecutableReturnValue()}).
  * <p>
  * The rendered path is also placed in the parameter map under {@link #PROPERTY_PATH_PARAMETER}, so code
  * that only sees a plain {@link RuleViolation} still finds it. Equality is the rule name, the error code
@@ -56,6 +57,8 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
     private final Object leafBean;
     private final Object rootBean;
     private final Class<?> rootBeanClass;
+    private final Object[] executableParameters;
+    private final Object executableReturnValue;
 
     /**
      * Stamps a violation; the root bean class is the root bean's class.
@@ -88,6 +91,26 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
      */
     public BeanRuleViolation(RuleViolation source, PropertyPath propertyPath, ConstraintDefinition constraint,
                              Object invalidValue, Object leafBean, Object rootBean, Class<?> rootBeanClass) {
+        this(source, propertyPath, constraint, invalidValue, leafBean, rootBean, rootBeanClass, null, null);
+    }
+
+    /**
+     * Stamps a violation reported by an executable validation.
+     *
+     * @param source the violation as the rule reported it.
+     * @param propertyPath where it occurred.
+     * @param constraint the constraint whose rule reported it; null for a rule that was not materialized
+     *                   from a constraint (a {@code @Validate} registry rule).
+     * @param invalidValue the value the rule rejected; null when unknown.
+     * @param leafBean the object the rule ran against; null when unknown.
+     * @param rootBean the object validation started from; null when unknown or when there is none.
+     * @param rootBeanClass the class validation started from; null when unknown.
+     * @param executableParameters the arguments validated; null unless parameters were.
+     * @param executableReturnValue the return value validated; null unless a return value was.
+     */
+    public BeanRuleViolation(RuleViolation source, PropertyPath propertyPath, ConstraintDefinition constraint,
+                             Object invalidValue, Object leafBean, Object rootBean, Class<?> rootBeanClass,
+                             Object[] executableParameters, Object executableReturnValue) {
         super(source(source).getRuleName(), source.getErrorCode(), source.getSeverity(), source.getErrorMessage(),
                 parameters(source, propertyPath));
         this.propertyPath = propertyPath;
@@ -96,6 +119,8 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
         this.leafBean = leafBean;
         this.rootBean = rootBean;
         this.rootBeanClass = rootBeanClass;
+        this.executableParameters = executableParameters;
+        this.executableReturnValue = executableReturnValue;
     }
 
     private static RuleViolation source(RuleViolation source) {
@@ -203,23 +228,23 @@ public class BeanRuleViolation extends RuleViolation implements ConstraintViolat
     }
 
     /**
-     * Executable validation is not supported.
+     * The arguments of the executable whose parameters were validated.
      *
-     * @return null.
+     * @return the arguments; null unless the violation comes from a parameter validation.
      */
     @Override
     public Object[] getExecutableParameters() {
-        return null;
+        return executableParameters;
     }
 
     /**
-     * Executable validation is not supported.
+     * The return value of the executable that was validated.
      *
-     * @return null.
+     * @return the return value; null unless the violation comes from a return-value validation.
      */
     @Override
     public Object getExecutableReturnValue() {
-        return null;
+        return executableReturnValue;
     }
 
     /**

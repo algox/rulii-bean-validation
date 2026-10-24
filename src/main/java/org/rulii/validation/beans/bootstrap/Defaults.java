@@ -22,25 +22,18 @@ import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.Path;
 import jakarta.validation.TraversableResolver;
-import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.lang.annotation.ElementType;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Executable;
-import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
 import java.time.Clock;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * The default spec services a {@link RuliiConfiguration} reports when none is configured. They are
  * plain: the traversable resolver reaches and cascades into everything, the constraint validator
  * factory is the {@link DefaultConstraintValidatorFactory} (no-argument constructor), the parameter
- * name provider reads the compiled parameter names, the clock is the system clock. The default
- * message interpolator is the {@link org.rulii.validation.beans.message.RuliiMessageInterpolator},
+ * name provider is the {@link DefaultParameterNameProvider} (the compiled parameter names), the clock is
+ * the system clock. The default message interpolator is the {@link org.rulii.validation.beans.message.RuliiMessageInterpolator},
  * built per configuration.
  *
  * @author Max Arulananthan
@@ -50,7 +43,7 @@ final class Defaults {
 
     static final TraversableResolver TRAVERSABLE_RESOLVER = new ReachEverythingTraversableResolver();
     static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new DefaultConstraintValidatorFactory();
-    static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new ReflectionParameterNameProvider();
+    static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new DefaultParameterNameProvider();
     static final ClockProvider CLOCK_PROVIDER = Clock::systemDefaultZone;
 
     private Defaults() {
@@ -73,35 +66,6 @@ final class Defaults {
         public boolean isCascadable(Object traversableObject, Path.Node traversableProperty, Class<?> rootBeanType,
                                     Path pathToTraversableObject, ElementType elementType) {
             return true;
-        }
-    }
-
-    static final class ReflectionParameterNameProvider implements ParameterNameProvider {
-
-        private ReflectionParameterNameProvider() {
-            super();
-        }
-
-        @Override
-        public List<String> getParameterNames(Constructor<?> constructor) {
-            Assert.notNull(constructor, "constructor cannot be null.");
-            return names(constructor);
-        }
-
-        @Override
-        public List<String> getParameterNames(Method method) {
-            Assert.notNull(method, "method cannot be null.");
-            return names(method);
-        }
-
-        private static List<String> names(Executable executable) {
-            List<String> result = new ArrayList<>();
-
-            for (Parameter parameter : executable.getParameters()) {
-                result.add(parameter.getName());
-            }
-
-            return Collections.unmodifiableList(result);
         }
     }
 }

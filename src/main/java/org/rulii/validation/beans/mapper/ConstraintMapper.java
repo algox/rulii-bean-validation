@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans.mapper;
 
+import jakarta.validation.constraintvalidation.ValidationTarget;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.lib.spring.util.ClassUtils;
 import org.rulii.rule.Rule;
@@ -81,6 +82,31 @@ public interface ConstraintMapper<A extends Annotation> {
      */
     default Map<String, String> getParameterNames() {
         return Collections.emptyMap();
+    }
+
+    /**
+     * What the constraint validates: the annotated element (a property, parameter, return value or
+     * class) for an ordinary constraint; the parameters of a method or constructor as a whole, as an
+     * {@code Object[]}, for a cross-parameter constraint. A mapper may support both.
+     *
+     * @return the validation targets; the annotated element alone by default.
+     */
+    default List<ValidationTarget> getSupportedTargets() {
+        return List.of(ValidationTarget.ANNOTATED_ELEMENT);
+    }
+
+    /**
+     * Determines whether the constraint may be declared for the given validation target on a value of
+     * the given static type: the target is supported and the type is {@link #isApplicable(Class)
+     * applicable}.
+     *
+     * @param type the declared (static) type of the constrained value; {@code Object[]} for the parameters.
+     * @param target the validation target.
+     * @return true if the constraint can apply.
+     */
+    default boolean isApplicable(Class<?> type, ValidationTarget target) {
+        Assert.notNull(target, "target cannot be null.");
+        return getSupportedTargets().contains(target) && isApplicable(type);
     }
 
     /**

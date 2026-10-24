@@ -49,7 +49,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Max Arulananthan
  * @since 1.0
  */
-public final class BeanRules {
+public final class BeanRules implements MaterializedRules {
 
     /**
      * The rules of one container element position within a property.
@@ -139,6 +139,7 @@ public final class BeanRules {
         return definition;
     }
 
+    @Override
     public Class<?> getBeanClass() {
         return definition.getBeanClass();
     }
@@ -178,6 +179,11 @@ public final class BeanRules {
         return byNode.get(node);
     }
 
+    @Override
+    public boolean hasElementRules(ContainerElementDefinition node) {
+        return getElementRules(node) != null;
+    }
+
     /**
      * Rules of the class-level constraints, in hierarchy order.
      *
@@ -192,6 +198,7 @@ public final class BeanRules {
      *
      * @return all rules.
      */
+    @Override
     public List<MaterializedRule> getRules() {
         return new ArrayList<>(byName.values());
     }
@@ -202,6 +209,7 @@ public final class BeanRules {
      * @param name the rule name.
      * @return the rule; null if there is none.
      */
+    @Override
     public MaterializedRule getRule(String name) {
         Assert.notNull(name, "name cannot be null.");
         return byName.get(name);
@@ -221,6 +229,7 @@ public final class BeanRules {
      *
      * @return the name.
      */
+    @Override
     public String getName() {
         return name;
     }
@@ -280,6 +289,7 @@ public final class BeanRules {
      * @param groups the requested groups.
      * @return the RuleSet; empty when nothing is active or the position has no constraints.
      */
+    @Override
     public RuleSet<?> elementRuleSet(ContainerElementDefinition node, RequestedGroups groups) {
         Assert.notNull(node, "node cannot be null.");
         Assert.notNull(groups, "groups cannot be null.");

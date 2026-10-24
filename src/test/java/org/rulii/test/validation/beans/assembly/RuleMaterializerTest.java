@@ -111,7 +111,7 @@ public class RuleMaterializerTest {
         assertEquals(BindingPlan.KEY, rules.getRule("counts_Map0_notBlank").getBindingName());
         assertEquals(BindingPlan.VALUE, rules.getRule("counts_Map1_positive").getBindingName());
         assertFalse(plan.isPrimary(rules.getDefinition().getProperty("name").getPropertySource().getDeclarations(
-                org.rulii.validation.beans.model.PropertyDeclaration.Kind.FIELD).get(0)));
+                org.rulii.validation.beans.model.ValueDeclaration.Kind.FIELD).get(0)));
 
         // Leaves: property rules report at the property; class and element rules leave it to the traversal.
         assertEquals("name", rules.getRule("name_notNull").getLeaf());
@@ -360,7 +360,7 @@ public class RuleMaterializerTest {
     @Test
     public void nullsAreRejected() {
         assertThrows(IllegalArgumentException.class, () -> new RuleMaterializer(null));
-        assertThrows(IllegalArgumentException.class, () -> new RuleMaterializer(mappers()).materialize(null));
+        assertThrows(IllegalArgumentException.class, () -> new RuleMaterializer(mappers()).materialize((BeanDefinition) null));
         BeanRules rules = materialize(Order.class, mappers());
         assertThrows(IllegalArgumentException.class, () -> rules.getRule(null));
         assertThrows(IllegalArgumentException.class, () -> rules.ruleSet(null));

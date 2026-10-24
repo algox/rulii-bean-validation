@@ -29,7 +29,7 @@ import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
 import org.rulii.model.SourceDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.Annotation;
 import java.lang.annotation.Documented;
@@ -86,7 +86,7 @@ public class ConstraintDefinitionTest {
     @Test
     public void originalAnnotationInstanceIsKept() throws Exception {
         Field field = field("name");
-        ConstraintDefinition definition = ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0);
+        ConstraintDefinition definition = ConstraintDefinition.load(ValueDeclaration.ofField(field)).get(0);
         assertSame(field.getAnnotation(NotBlank.class), definition.getAnnotation());
     }
 
@@ -159,7 +159,7 @@ public class ConstraintDefinitionTest {
     public void unwrappedConstraintsAreTheOriginalInstances() throws Exception {
         Field field = field("repeated");
         Pattern[] originals = field.getAnnotation(Pattern.List.class).value();
-        List<ConstraintDefinition> result = ConstraintDefinition.load(PropertyDeclaration.ofField(field));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(ValueDeclaration.ofField(field));
         assertSame(originals[0], result.get(0).getAnnotation());
         assertSame(originals[1], result.get(1).getAnnotation());
     }
@@ -211,14 +211,14 @@ public class ConstraintDefinitionTest {
     public void loadSingleRejectsNonConstraint() throws Exception {
         Field field = field("child");
         assertThrows(IllegalArgumentException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), field.getAnnotation(Valid.class)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field), field.getAnnotation(Valid.class)));
     }
 
     @Test
     public void malformedConstraintFailsFast() throws Exception {
         Field field = field("broken");
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field)));
         assertTrue(e.getMessage().contains("[message]"));
         assertTrue(e.getMessage().contains(MissingMessage.class.getName()));
     }
@@ -226,11 +226,11 @@ public class ConstraintDefinitionTest {
     @Test
     public void nullArgumentsAreRejected() throws Exception {
         Field field = field("name");
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null, field.getAnnotation(NotBlank.class)));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (Annotation) null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field), (AnnotatedElement) null));
-        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((PropertyDeclaration) null, field.getAnnotatedType()));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((ValueDeclaration) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((ValueDeclaration) null, field.getAnnotation(NotBlank.class)));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(ValueDeclaration.ofField(field), (Annotation) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load(ValueDeclaration.ofField(field), (AnnotatedElement) null));
+        assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((ValueDeclaration) null, field.getAnnotatedType()));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.isConstraint(null));
     }
 
@@ -254,8 +254,8 @@ public class ConstraintDefinitionTest {
         assertTrue(a.toString().contains("NotBlank"));
     }
 
-    private static PropertyDeclaration source(String name) throws NoSuchFieldException {
-        return PropertyDeclaration.ofField(field(name));
+    private static ValueDeclaration source(String name) throws NoSuchFieldException {
+        return ValueDeclaration.ofField(field(name));
     }
 
     private static Field field(String name) throws NoSuchFieldException {

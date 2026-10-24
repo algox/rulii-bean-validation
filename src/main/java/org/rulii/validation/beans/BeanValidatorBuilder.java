@@ -18,11 +18,13 @@
 package org.rulii.validation.beans;
 
 import jakarta.validation.ConstraintValidatorFactory;
+import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
+import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.extract.ValueExtractorRegistryBuilder;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
@@ -39,7 +41,9 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
  *   <li>{@link #extractor(ValueExtractor)} / {@link #extractors(ValueExtractorRegistry)}: how containers
  *       are walked, on top of (or instead of) the standard extractors;</li>
  *   <li>{@link #options(RuleContextOptions)}: the core context every validation starts from (locale,
- *       message resolver, tracer, clock, ...).</li>
+ *       message resolver, tracer, clock, ...);</li>
+ *   <li>{@link #parameterNameProvider(ParameterNameProvider)}: how the parameters of constrained
+ *       methods and constructors are named.</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -49,6 +53,7 @@ public final class BeanValidatorBuilder {
 
     private RuleRegistry registry;
     private RuleContextOptions options;
+    private ParameterNameProvider parameterNameProvider;
     private final ConstraintMapperRegistryBuilder mappers = ConstraintMapperRegistryBuilder.standard();
     private ConstraintMapperRegistry mapperRegistry;
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
@@ -155,6 +160,19 @@ public final class BeanValidatorBuilder {
     }
 
     /**
+     * The provider naming the parameters of constrained methods and constructors, for the paths and
+     * bindings of executable validation. The compiler's names when not set.
+     *
+     * @param parameterNameProvider the provider.
+     * @return this builder.
+     */
+    public BeanValidatorBuilder parameterNameProvider(ParameterNameProvider parameterNameProvider) {
+        Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
+        this.parameterNameProvider = parameterNameProvider;
+        return this;
+    }
+
+    /**
      * Builds the validator.
      *
      * @return the validator.
@@ -163,6 +181,7 @@ public final class BeanValidatorBuilder {
         return new BeanValidator(registry != null ? registry : (options != null ? options.getRuleRegistry() : null),
                 extractorRegistry != null ? extractorRegistry : extractors.build(),
                 mapperRegistry != null ? mapperRegistry : mappers.build(),
-                options);
+                options,
+                parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider());
     }
 }

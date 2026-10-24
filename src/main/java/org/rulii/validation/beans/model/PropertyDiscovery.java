@@ -17,22 +17,10 @@
  */
 package org.rulii.validation.beans.model;
 
-import jakarta.validation.Valid;
-import jakarta.validation.groups.ConvertGroup;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.validation.beans.Validate;
-import org.rulii.validation.beans.util.reflect.AnnotatedTypeVisitor;
-import org.rulii.validation.beans.util.reflect.AnnotatedTypes;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;
 import org.rulii.validation.beans.util.reflect.TypeHierarchyVisitor;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.AnnotatedArrayType;
-import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.AnnotatedParameterizedType;
-import java.lang.reflect.AnnotatedType;
-import java.lang.reflect.AnnotatedTypeVariable;
-import java.lang.reflect.AnnotatedWildcardType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
@@ -58,10 +46,8 @@ import java.util.Map;
  * properties in the same order. Within a property the declarations follow the hierarchy top-down,
  * fields then getters; see {@link PropertySource}.</p>
  *
- * <p>A constraint, {@code @Valid}, {@code @ConvertGroup} or {@code @Validate} declared on, or within
- * the return type of, an instance method that is not a getter fails fast with
- * {@link ConstraintOnNonGetterException}: method validation is out of scope and the annotation would
- * otherwise be ignored silently.</p>
+ * <p>Methods that are not getters are not properties: their constraints belong to executable
+ * validation and are read by {@link ExecutableDiscovery}.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -69,8 +55,8 @@ import java.util.Map;
 public final class PropertyDiscovery implements TypeHierarchyVisitor {
 
     private final Class<?> owner;
-    private final Map<String, List<PropertyDeclaration>> fields = new LinkedHashMap<>();
-    private final List<PropertyDeclaration> getters = new ArrayList<>();
+    private final Map<String, List<ValueDeclaration>> fields = new LinkedHashMap<>();
+    private final List<ValueDeclaration> getters = new ArrayList<>();
 
     /**
      * Discovery for the given bean class: the owner every declaration is read for, against which
@@ -98,9 +84,6 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
      *
      * @param beanClass the class or interface.
      * @return the property sources, in discovery order; empty if the class has no properties.
-     * @throws ConstraintOnNonGetterException if a constraint, {@code @Valid}, {@code @ConvertGroup}
-     *         or {@code @Validate} is declared on or within the return type of a method that is not
-     *         a getter.
      * @throws IllegalArgumentException if the class is a primitive or an array type.
      */
     public static List<PropertySource> discover(Class<?> beanClass) {
@@ -113,146 +96,58 @@ public final class PropertyDiscovery implements TypeHierarchyVisitor {
     @Override
     public void visitField(Field field) {
         Assert.notNull(field, "field cannot be null.");
-        add(fields, PropertyDeclaration.ofField(field, owner));
+        add(fields, ValueDeclaration.ofField(field, owner));
     }
 
     @Override
     public void visitRecordComponent(RecordComponent component) {
         Assert.notNull(component, "component cannot be null.");
-        add(fields, PropertyDeclaration.ofRecordComponent(component));
+        add(fields, ValueDeclaration.ofRecordComponent(component));
     }
 
     /**
-     * Collects the method as a getter, or fails fast if a method that is not a getter carries an
-     * annotation only a property may carry.
+     * Collects the method when it is a JavaBeans getter; any other method is left to executable
+     * discovery.
      *
-     * @param method the method.
-     * @throws ConstraintOnNonGetterException if the method is not a getter and carries a constraint,
-     *         {@code @Valid}, {@code @ConvertGroup} or {@code @Validate}, directly or within its
-     *         return type.
+     * @param method an instance method.
      */
     @Override
     public void visitMethod(Method method) {
         Assert.notNull(method, "method cannot be null.");
-
-        if (PropertyDeclaration.isGetter(method)) {
-            getters.add(PropertyDeclaration.ofGetter(method, owner));
-            return;
-        }
-
-        Annotation annotation = findPropertyAnnotation(method);
-        if (annotation != null) throw new ConstraintOnNonGetterException(method, annotation);
+        if (ValueDeclaration.isGetter(method)) getters.add(ValueDeclaration.ofGetter(method, owner));
     }
 
     /**
-     * The properties discovered so far: field (or record component) properties first, then
-     * getter-only properties, each in hierarchy order.
+     * The properties discovered so far, grouped and ordered as described in the class documentation.
      *
-     * @return the property sources; empty before any walk.
+     * @return the property sources; empty if none were discovered.
      */
     public List<PropertySource> getSources() {
-        Map<String, List<PropertyDeclaration>> properties = new LinkedHashMap<>();
+        Map<String, List<ValueDeclaration>> properties = new LinkedHashMap<>();
 
-        for (Map.Entry<String, List<PropertyDeclaration>> entry : fields.entrySet()) {
+        for (Map.Entry<String, List<ValueDeclaration>> entry : fields.entrySet()) {
             properties.put(entry.getKey(), new ArrayList<>(entry.getValue()));
         }
 
-        for (PropertyDeclaration getter : getters) {
+        for (ValueDeclaration getter : getters) {
             add(properties, getter);
         }
 
         List<PropertySource> result = new ArrayList<>(properties.size());
 
-        for (List<PropertyDeclaration> declarations : properties.values()) {
+        for (List<ValueDeclaration> declarations : properties.values()) {
             result.add(PropertySource.of(declarations));
         }
 
         return List.copyOf(result);
     }
 
-    /**
-     * Whether the given method carries an annotation that only a property may carry: a constraint,
-     * a repeated-constraint container, {@code @Valid}, {@code @ConvertGroup},
-     * {@code @ConvertGroup.List} or {@code @Validate}, directly or anywhere within its annotated
-     * return type.
-     *
-     * @param method the method.
-     * @return the first such annotation; null if there is none.
-     */
-    static Annotation findPropertyAnnotation(Method method) {
-        Annotation result = propertyAnnotation(method);
-        return result != null ? result : AnnotatedTypes.accept(method.getAnnotatedReturnType(), new ReturnTypeScan());
-    }
-
-    private static Annotation propertyAnnotation(AnnotatedElement element) {
-        for (Annotation annotation : element.getDeclaredAnnotations()) {
-            Class<? extends Annotation> type = annotation.annotationType();
-            if (type == Valid.class || type == ConvertGroup.class || type == ConvertGroup.List.class || type == Validate.class
-                    || ConstraintDefinition.isConstraint(annotation)
-                    || ConstraintDefinition.isConstraintContainer(annotation)) {
-                return annotation;
-            }
-        }
-
-        return null;
-    }
-
-    private static void add(Map<String, List<PropertyDeclaration>> target, PropertyDeclaration declaration) {
+    private static void add(Map<String, List<ValueDeclaration>> target, ValueDeclaration declaration) {
         target.computeIfAbsent(declaration.getName(), name -> new ArrayList<>()).add(declaration);
     }
 
-    /**
-     * Finds the first property-only annotation anywhere in an annotated type tree.
-     */
-    private static final class ReturnTypeScan implements AnnotatedTypeVisitor<Annotation> {
-
-        private ReturnTypeScan() {
-            super();
-        }
-
-        @Override
-        public Annotation visitParameterized(AnnotatedParameterizedType type) {
-            Annotation result = propertyAnnotation(type);
-
-            for (AnnotatedType argument : type.getAnnotatedActualTypeArguments()) {
-                if (result != null) break;
-                result = AnnotatedTypes.accept(argument, this);
-            }
-
-            return result;
-        }
-
-        @Override
-        public Annotation visitArray(AnnotatedArrayType type) {
-            Annotation result = propertyAnnotation(type);
-            return result != null ? result : AnnotatedTypes.accept(type.getAnnotatedGenericComponentType(), this);
-        }
-
-        @Override
-        public Annotation visitWildcard(AnnotatedWildcardType type) {
-            Annotation result = propertyAnnotation(type);
-
-            for (AnnotatedType bound : type.getAnnotatedUpperBounds()) {
-                if (result != null) break;
-                result = AnnotatedTypes.accept(bound, this);
-            }
-
-            for (AnnotatedType bound : type.getAnnotatedLowerBounds()) {
-                if (result != null) break;
-                result = AnnotatedTypes.accept(bound, this);
-            }
-
-            return result;
-        }
-
-        @Override
-        public Annotation visitTypeVariable(AnnotatedTypeVariable type) {
-            return propertyAnnotation(type);
-        }
-
-        @Override
-        public Annotation visitClass(AnnotatedType type) {
-            return propertyAnnotation(type);
-        }
+    @Override
+    public String toString() {
+        return "PropertyDiscovery{owner=" + owner.getName() + ", fields=" + fields.size() + ", getters=" + getters.size() + '}';
     }
 }

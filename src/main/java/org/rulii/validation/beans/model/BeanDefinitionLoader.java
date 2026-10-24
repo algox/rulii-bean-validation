@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans.model;
 
+import jakarta.validation.ParameterNameProvider;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
@@ -69,10 +70,12 @@ public final class BeanDefinitionLoader {
 
     private final ValueExtractorRegistry extractorRegistry;
     private final ConstraintMapperRegistry mapperRegistry;
+    private final ParameterNameProvider parameterNameProvider;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     /**
-     * Creates a loader using the given value extractors and the standard constraint mappers.
+     * Creates a loader using the given value extractors, the standard constraint mappers and the
+     * compiler's parameter names.
      *
      * @param extractorRegistry the value extractors available at validation time.
      */
@@ -81,17 +84,40 @@ public final class BeanDefinitionLoader {
     }
 
     /**
-     * Creates a loader.
+     * Creates a loader using the compiler's parameter names.
      *
      * @param extractorRegistry the value extractors available at validation time.
      * @param mapperRegistry the constraint mappers available at validation time.
      */
     public BeanDefinitionLoader(ValueExtractorRegistry extractorRegistry, ConstraintMapperRegistry mapperRegistry) {
+        this(extractorRegistry, mapperRegistry, new DefaultParameterNameProvider());
+    }
+
+    /**
+     * Creates a loader.
+     *
+     * @param extractorRegistry the value extractors available at validation time.
+     * @param mapperRegistry the constraint mappers available at validation time.
+     * @param parameterNameProvider the provider naming the parameters of constrained executables.
+     */
+    public BeanDefinitionLoader(ValueExtractorRegistry extractorRegistry, ConstraintMapperRegistry mapperRegistry,
+                                ParameterNameProvider parameterNameProvider) {
         super();
         Assert.notNull(extractorRegistry, "extractorRegistry cannot be null.");
         Assert.notNull(mapperRegistry, "mapperRegistry cannot be null.");
+        Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
         this.extractorRegistry = extractorRegistry;
         this.mapperRegistry = mapperRegistry;
+        this.parameterNameProvider = parameterNameProvider;
+    }
+
+    /**
+     * The provider naming the parameters of constrained executables.
+     *
+     * @return the provider.
+     */
+    public ParameterNameProvider getParameterNameProvider() {
+        return parameterNameProvider;
     }
 
     /**
@@ -190,7 +216,7 @@ public final class BeanDefinitionLoader {
         if (resolution.resolved.containsKey(type) || !resolution.inProgress.add(type)) return;
 
         try {
-            BeanDefinition definition = BeanDefinition.load(type, extractorRegistry);
+            BeanDefinition definition = BeanDefinition.load(type, extractorRegistry, parameterNameProvider);
             ConstraintSupportCheck.check(definition, mapperRegistry);
 
             for (Class<?> target : cascadeTargets(definition)) {
@@ -217,7 +243,27 @@ public final class BeanDefinitionLoader {
             addElementTargets(property.getContainerElements(), result);
         }
 
+        for (ExecutableDefinition method : definition.getMethods()) {
+            addExecutableTargets(method, result);
+        }
+
+        for (ExecutableDefinition constructor : definition.getConstructors()) {
+            addExecutableTargets(constructor, result);
+        }
+
         return result;
+    }
+
+    private void addExecutableTargets(ExecutableDefinition executable, Set<Class<?>> result) {
+        for (ParameterDefinition parameter : executable.getParameters()) {
+            if (parameter.isCascaded()) addTargets(parameter.getGenericType(), result);
+            addElementTargets(parameter.getContainerElements(), result);
+        }
+
+        if (executable.getReturnValue() != null) {
+            if (executable.getReturnValue().isCascaded()) addTargets(executable.getReturnValue().getGenericType(), result);
+            addElementTargets(executable.getReturnValue().getContainerElements(), result);
+        }
     }
 
     private void addElementTargets(List<ContainerElementDefinition> elements, Set<Class<?>> result) {

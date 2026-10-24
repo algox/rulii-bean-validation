@@ -37,7 +37,7 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -96,8 +96,8 @@ public class ContainerElementDefinitionTest {
     public void fieldLevelConstraintsAreNotCollectedHere() throws Exception {
         // @NotEmpty is on the field; only the element @NotBlank belongs to the element node.
         Field field = field("names");
-        assertEquals(NotEmpty.class, ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0).getAnnotationType());
-        ContainerElementDefinition element = ContainerElementDefinition.load(PropertyDeclaration.ofField(field), REGISTRY).get(0);
+        assertEquals(NotEmpty.class, ConstraintDefinition.load(ValueDeclaration.ofField(field)).get(0).getAnnotationType());
+        ContainerElementDefinition element = ContainerElementDefinition.load(ValueDeclaration.ofField(field), REGISTRY).get(0);
         assertEquals(1, element.getConstraints().size());
         assertEquals(NotBlank.class, element.getConstraints().get(0).getAnnotationType());
     }
@@ -228,8 +228,8 @@ public class ContainerElementDefinitionTest {
         // The field-level read sees it as a field constraint; the container walk drops the mirrored
         // duplicate, so the (extractor-less) array component is not constrained.
         Field field = field("tags");
-        assertEquals(NotBlank.class, ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0).getAnnotationType());
-        assertTrue(ContainerElementDefinition.load(PropertyDeclaration.ofField(field), REGISTRY).isEmpty());
+        assertEquals(NotBlank.class, ConstraintDefinition.load(ValueDeclaration.ofField(field)).get(0).getAnnotationType());
+        assertTrue(ContainerElementDefinition.load(ValueDeclaration.ofField(field), REGISTRY).isEmpty());
     }
 
     @Test
@@ -307,7 +307,7 @@ public class ContainerElementDefinitionTest {
     @Test
     public void nullRegistryIsRejected() throws Exception {
         Field field = field("names");
-        assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(PropertyDeclaration.ofField(field), null));
+        assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(ValueDeclaration.ofField(field), null));
     }
 
     @Test
@@ -333,8 +333,8 @@ public class ContainerElementDefinitionTest {
         assertThrows(IllegalArgumentException.class, () -> ContainerElementDefinition.load(null, REGISTRY));
     }
 
-    private static PropertyDeclaration source(String name) throws NoSuchFieldException {
-        return PropertyDeclaration.ofField(field(name));
+    private static ValueDeclaration source(String name) throws NoSuchFieldException {
+        return ValueDeclaration.ofField(field(name));
     }
 
     private static Field field(String name) throws NoSuchFieldException {

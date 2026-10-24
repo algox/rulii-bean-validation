@@ -20,7 +20,7 @@ package org.rulii.validation.beans.assembly;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.lib.spring.util.ReflectionUtils;
 import org.rulii.model.UnrulyException;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -34,8 +34,8 @@ import java.lang.reflect.Method;
  * Reads one property declaration (a field or a getter) off a bean through a {@link MethodHandle}.
  * The member is made accessible once, when the handle is resolved.
  *
- * <p>{@link #of(PropertyDeclaration)} resolves the handle immediately, so a declaration the
- * validation reads fails fast if it cannot be read. {@link #lazy(PropertyDeclaration)} resolves it
+ * <p>{@link #of(ValueDeclaration)} resolves the handle immediately, so a declaration the
+ * validation reads fails fast if it cannot be read. {@link #lazy(ValueDeclaration)} resolves it
  * on the first read: for a property nothing in the library reads, which only a user rule might
  * ask for by name, an inaccessible member (a JDK class reached through {@code @Valid}, say) must not
  * fail the class.</p>
@@ -47,10 +47,10 @@ public final class PropertyAccessor {
 
     private static final MethodType READ = MethodType.methodType(Object.class, Object.class);
 
-    private final PropertyDeclaration declaration;
+    private final ValueDeclaration declaration;
     private volatile MethodHandle handle;
 
-    private PropertyAccessor(PropertyDeclaration declaration, MethodHandle handle) {
+    private PropertyAccessor(ValueDeclaration declaration, MethodHandle handle) {
         super();
         this.declaration = declaration;
         this.handle = handle;
@@ -63,7 +63,7 @@ public final class PropertyAccessor {
      * @return the accessor.
      * @throws InaccessiblePropertyException if the member cannot be made accessible.
      */
-    public static PropertyAccessor of(PropertyDeclaration declaration) {
+    public static PropertyAccessor of(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         return new PropertyAccessor(declaration, resolve(declaration));
     }
@@ -74,12 +74,12 @@ public final class PropertyAccessor {
      * @param declaration the declaration to read.
      * @return the accessor.
      */
-    public static PropertyAccessor lazy(PropertyDeclaration declaration) {
+    public static PropertyAccessor lazy(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         return new PropertyAccessor(declaration, null);
     }
 
-    private static MethodHandle resolve(PropertyDeclaration declaration) {
+    private static MethodHandle resolve(ValueDeclaration declaration) {
         Member member = declaration.getMember();
         MethodHandle handle;
 
@@ -105,7 +105,7 @@ public final class PropertyAccessor {
      *
      * @return the declaration.
      */
-    public PropertyDeclaration getDeclaration() {
+    public ValueDeclaration getDeclaration() {
         return declaration;
     }
 

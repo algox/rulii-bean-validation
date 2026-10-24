@@ -47,10 +47,11 @@ import java.util.Map;
  * {@link ConfigurationState}, it holds one {@link BeanValidator} configured from it and hands it out from
  * {@link #getValidator()}; {@link #usingContext()} builds validators with per-context overrides.
  * <p>
- * The constraint validator factory and the clock provider are wired into the validator: the first
- * creates the validators of validator-backed constraints, the second is the rules' clock. The message
- * interpolator, traversable resolver and parameter name provider are kept as configured and exposed, so
- * a framework that set them finds them again. Closing the factory hands the constraint validator
+ * The constraint validator factory, the parameter name provider and the clock provider are wired into
+ * the validator: the first creates the validators of validator-backed constraints, the second names the
+ * parameters of constrained executables, the third is the rules' clock. The message interpolator and
+ * the traversable resolver are kept as configured and exposed, so a framework that set them finds them
+ * again. Closing the factory hands the constraint validator
  * instances of every validator it built back to their factory; the validators stay usable.
  *
  * @author Max Arulananthan
@@ -92,7 +93,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
-        this.validator = build(List.of(), clockProvider, constraintValidatorFactory);
+        this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider);
     }
 
     /**
@@ -100,12 +101,13 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
      * for {@link #close()}.
      */
     BeanValidator build(Collection<ValueExtractor<?>> additionalExtractors, ClockProvider clock,
-                        ConstraintValidatorFactory constraintValidatorFactory) {
+                        ConstraintValidatorFactory constraintValidatorFactory, ParameterNameProvider parameterNameProvider) {
         BeanValidatorBuilder builder = BeanValidator.builder();
         RuleContextOptions base = options != null ? options : StandardRuleContextOptions.build();
 
         builder.options(new ClockOptions(base, clock));
         builder.constraintValidatorFactory(constraintValidatorFactory);
+        builder.parameterNameProvider(parameterNameProvider);
         if (registry != null) builder.registry(registry);
 
         for (ConstraintMapper<?> mapper : mappers) {

@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.rulii.validation.beans.model.ConstraintCompositionCycleException;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.InvalidAttributeOverrideException;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -83,7 +83,7 @@ public class ComposedConstraintDefinitionTest {
     @Test
     public void hostAnnotationIsTheOriginalInstance() throws Exception {
         Field field = field("validName");
-        ConstraintDefinition definition = ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0);
+        ConstraintDefinition definition = ConstraintDefinition.load(ValueDeclaration.ofField(field)).get(0);
         assertSame(field.getAnnotation(ValidName.class), definition.getAnnotation());
     }
 
@@ -222,7 +222,7 @@ public class ComposedConstraintDefinitionTest {
     public void overrideOfMissingAttributeFailsFast() throws Exception {
         Field field = field("badAttribute");
         InvalidAttributeOverrideException e = assertThrows(InvalidAttributeOverrideException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field)));
         assertEquals(BadAttribute.class, e.getHostType());
         assertEquals("length", e.getHostAttribute());
         assertEquals(Size.class, e.getComposingType());
@@ -234,7 +234,7 @@ public class ComposedConstraintDefinitionTest {
     public void overrideWithDifferentTypeFailsFast() throws Exception {
         Field field = field("badType");
         InvalidAttributeOverrideException e = assertThrows(InvalidAttributeOverrideException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field)));
         assertEquals(BadType.class, e.getHostType());
         assertEquals("max", e.getTargetAttribute());
         assertTrue(e.getMessage().contains("java.lang.String"));
@@ -245,7 +245,7 @@ public class ComposedConstraintDefinitionTest {
     public void mutualCompositionCycleFailsFast() throws Exception {
         Field field = field("cycle");
         ConstraintCompositionCycleException e = assertThrows(ConstraintCompositionCycleException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field)));
         assertEquals(List.of(CycleA.class, CycleB.class, CycleA.class), e.getPath());
         assertTrue(e.getMessage().contains("CycleA -> CycleB -> CycleA"));
         assertTrue(e.getMessage().contains(Sample.class.getName() + ".cycle"));
@@ -255,7 +255,7 @@ public class ComposedConstraintDefinitionTest {
     public void selfCompositionFailsFast() throws Exception {
         Field field = field("selfCycle");
         ConstraintCompositionCycleException e = assertThrows(ConstraintCompositionCycleException.class,
-                () -> ConstraintDefinition.load(PropertyDeclaration.ofField(field)));
+                () -> ConstraintDefinition.load(ValueDeclaration.ofField(field)));
         assertEquals(List.of(SelfRef.class, SelfRef.class), e.getPath());
     }
 
@@ -277,7 +277,7 @@ public class ComposedConstraintDefinitionTest {
     }
 
     private static ConstraintDefinition single(String name) throws NoSuchFieldException {
-        List<ConstraintDefinition> result = ConstraintDefinition.load(PropertyDeclaration.ofField(field(name)));
+        List<ConstraintDefinition> result = ConstraintDefinition.load(ValueDeclaration.ofField(field(name)));
         assertEquals(1, result.size());
         return result.get(0);
     }

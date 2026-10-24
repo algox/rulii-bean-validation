@@ -29,8 +29,8 @@ import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.PropertyAccessor;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
-import org.rulii.validation.beans.model.PropertyDeclaration;
-import org.rulii.validation.beans.model.PropertyDeclaration.Kind;
+import org.rulii.validation.beans.model.ValueDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
 import java.lang.reflect.ParameterizedType;
@@ -73,8 +73,8 @@ public class BindingPlanTest {
         BeanDefinition bean = BeanDefinition.load(Dual.class, REGISTRY);
         BindingPlan plan = BindingPlan.of(bean);
         PropertyDefinition name = bean.getProperty("name");
-        PropertyDeclaration field = name.getPropertySource().getDeclarations(Kind.FIELD).get(0);
-        PropertyDeclaration getter = name.getPropertySource().getPrimary();
+        ValueDeclaration field = name.getPropertySource().getDeclarations(Kind.FIELD).get(0);
+        ValueDeclaration getter = name.getPropertySource().getPrimary();
 
         // One binding, held by the getter; the constrained field gets an accessor, no binding.
         assertEquals(List.of("name"), List.copyOf(plan.getBindings().keySet()));
@@ -94,12 +94,12 @@ public class BindingPlanTest {
         BeanDefinition bean = BeanDefinition.load(Child.class, REGISTRY);
         BindingPlan plan = BindingPlan.of(bean);
         PropertyDefinition id = bean.getProperty("id");
-        List<PropertyDeclaration> declarations = id.getPropertySource().getDeclarations();
+        List<ValueDeclaration> declarations = id.getPropertySource().getDeclarations();
 
         assertEquals(List.of("id", "label"), List.copyOf(plan.getBindings().keySet()));
         assertEquals(2, declarations.size());
-        PropertyDeclaration parentField = declarations.stream().filter(d -> d.getDeclaringClass() == Parent.class).findFirst().orElseThrow();
-        PropertyDeclaration childField = declarations.stream().filter(d -> d.getDeclaringClass() == Child.class).findFirst().orElseThrow();
+        ValueDeclaration parentField = declarations.stream().filter(d -> d.getDeclaringClass() == Parent.class).findFirst().orElseThrow();
+        ValueDeclaration childField = declarations.stream().filter(d -> d.getDeclaringClass() == Child.class).findFirst().orElseThrow();
         assertTrue(plan.isPrimary(childField));
         assertFalse(plan.isPrimary(parentField));
 
@@ -118,9 +118,9 @@ public class BindingPlanTest {
 
         // Parent.label is an unconstrained field beside the getter: never read. The overridden getter is virtual.
         assertEquals(List.of("id", "label"), List.copyOf(plan.getBindings().keySet()));
-        PropertyDeclaration field = label.getPropertySource().getDeclarations(Kind.FIELD).get(0);
+        ValueDeclaration field = label.getPropertySource().getDeclarations(Kind.FIELD).get(0);
         assertThrows(IllegalArgumentException.class, () -> plan.getAccessor(field));
-        List<PropertyDeclaration> getters = label.getPropertySource().getDeclarations(Kind.GETTER);
+        List<ValueDeclaration> getters = label.getPropertySource().getDeclarations(Kind.GETTER);
         assertEquals(2, getters.size());
         assertEquals(1, getters.stream().filter(plan::isPrimary).count());
         assertEquals(OverridingChild.class, label.getPropertySource().getPrimary().getDeclaringClass());
@@ -133,12 +133,12 @@ public class BindingPlanTest {
         BindingPlan plan = BindingPlan.of(bean);
 
         PropertyDefinition child = bean.getProperty("child");
-        PropertyDeclaration childField = child.getPropertySource().getDeclarations(Kind.FIELD).get(0);
+        ValueDeclaration childField = child.getPropertySource().getDeclarations(Kind.FIELD).get(0);
         assertEquals(List.of(childField), child.getCascadedDeclarations());
         assertNotNull(plan.getAccessor(childField));
 
         PropertyDefinition tags = bean.getProperty("tags");
-        PropertyDeclaration tagsField = tags.getPropertySource().getDeclarations(Kind.FIELD).get(0);
+        ValueDeclaration tagsField = tags.getPropertySource().getDeclarations(Kind.FIELD).get(0);
         assertSame(tagsField, tags.getContainerElements().get(0).getSourceDeclaration());
         assertNotNull(plan.getAccessor(tagsField));
         assertEquals(4, plan.getAccessors().size());

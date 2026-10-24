@@ -21,8 +21,9 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.RuleViolation;
 import org.rulii.validation.RuleViolations;
-import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.MaterializedRule;
+import org.rulii.validation.beans.assembly.MaterializedRules;
+import org.rulii.validation.beans.assembly.RulePlacement;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -36,22 +37,26 @@ import java.util.List;
  * collector stamps each one with its {@link PropertyPath} and provenance before storing it as a
  * {@link BeanRuleViolation}.
  * <p>
- * The traversal tells the collector where it is through frames: {@link #enter(PropertyPath, BeanRules, Object)}
- * pushes the current path, the rules of the class in scope and the object in scope, and returns a handle
- * whose {@link Frame#close()} pops it, so the traversal writes try-with-resources;
+ * The traversal tells the collector where it is through frames: {@link #enter(PropertyPath, MaterializedRules, Object)}
+ * pushes the current path, the rules of the class or executable in scope and the object in scope, and
+ * returns a handle whose {@link Frame#close()} pops it, so the traversal writes try-with-resources;
  * {@link #enter(PropertyPath, Object)} pushes a path alone. Stamping an incoming violation then needs
  * no name parsing:
  * <ul>
- *   <li>a rule known to the frame's {@link BeanRules} with a leaf property reports at
- *       {@code framePath.property(leaf)}; a class-level rule at {@code framePath.bean()}; a container
- *       element rule at the frame path, which the walk has already extended with the element node;</li>
+ *   <li>a rule known to the frame's rules reports where its {@link RulePlacement placement} says,
+ *       relative to the frame path: at a property, a parameter, the return value, the parameters as a
+ *       whole, the bean itself, or the frame path when the walk has already extended it with the
+ *       element node;</li>
+ *   <li>a {@link CustomPathRuleViolation} extends the rule's path itself, and a class-level rule's
+ *       custom violation does so from the frame path, without the bean node;</li>
  *   <li>a rule unknown to the frame (a {@code @Validate} registry rule) reports at the frame path;</li>
  *   <li>with no frame open (an embedded run) the violation reports at the root path.</li>
  * </ul>
  * {@link #capture(Runnable)} diverts the violations added while a body runs, which is how a
  * {@code @ReportAsSingleViolation} composition collapses its composing violations into one.
  * <p>
- * A report is used by a single call on a single thread.
+ * A report of an executable validation carries the arguments or the return value validated, which
+ * every violation exposes. A report is used by a single call on a single thread.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -60,6 +65,8 @@ public class BeanRuleViolations extends RuleViolations {
 
     private final Object rootBean;
     private final Class<?> rootBeanClass;
+    private final Object[] executableParameters;
+    private final Object executableReturnValue;
     private final Deque<Frame> frames = new ArrayDeque<>();
     private final Deque<List<BeanRuleViolation>> captures = new ArrayDeque<>();
 
@@ -87,9 +94,23 @@ public class BeanRuleViolations extends RuleViolations {
      * @param rootBeanClass the root bean class; may be null when unknown.
      */
     public BeanRuleViolations(Object rootBean, Class<?> rootBeanClass) {
+        this(rootBean, rootBeanClass, null, null);
+    }
+
+    /**
+     * A report for an executable validation call.
+     *
+     * @param rootBean the object the executable was called on; null for constructor parameters.
+     * @param rootBeanClass the class declaring the executable.
+     * @param executableParameters the arguments validated; null when the return value is.
+     * @param executableReturnValue the return value validated; null when the arguments are.
+     */
+    public BeanRuleViolations(Object rootBean, Class<?> rootBeanClass, Object[] executableParameters, Object executableReturnValue) {
         super();
         this.rootBean = rootBean;
         this.rootBeanClass = rootBeanClass;
+        this.executableParameters = executableParameters;
+        this.executableReturnValue = executableReturnValue;
     }
 
     /**
@@ -108,6 +129,24 @@ public class BeanRuleViolations extends RuleViolations {
      */
     public Class<?> getRootBeanClass() {
         return rootBeanClass;
+    }
+
+    /**
+     * The arguments of the executable validated.
+     *
+     * @return the arguments; null unless this is a parameter validation report.
+     */
+    public Object[] getExecutableParameters() {
+        return executableParameters;
+    }
+
+    /**
+     * The return value of the executable validated.
+     *
+     * @return the return value; null unless this is a return-value validation report.
+     */
+    public Object getExecutableReturnValue() {
+        return executableReturnValue;
     }
 
     /**
@@ -135,14 +174,15 @@ public class BeanRuleViolations extends RuleViolations {
 
     /**
      * Opens a frame. The traversal opens one per object descended into, per container element walked,
-     * and around each {@code @Validate} run, always with the path already extended to that point.
+     * per executable validated, and around each {@code @Validate} run, always with the path already
+     * extended to that point.
      *
      * @param path the current path.
-     * @param rules the rules of the class in scope, consulted to place known rules.
+     * @param rules the rules of the class or executable in scope, consulted to place known rules.
      * @param bean the object in scope; may be null.
      * @return the frame; close it to pop.
      */
-    public Frame enter(PropertyPath path, BeanRules rules, Object bean) {
+    public Frame enter(PropertyPath path, MaterializedRules rules, Object bean) {
         Assert.notNull(path, "path cannot be null.");
         Assert.notNull(rules, "rules cannot be null.");
         Frame frame = new Frame(path, rules, bean);
@@ -205,26 +245,30 @@ public class BeanRuleViolations extends RuleViolations {
     private BeanRuleViolation stamp(RuleViolation error) {
         Frame frame = frames.peek();
         if (frame == null) {
-            return new BeanRuleViolation(error, PropertyPath.root(), null, null, null, rootBean, rootBeanClass);
+            return violation(error, PropertyPath.root(), null, null, null);
         }
         MaterializedRule rule = frame.getRules() != null ? frame.getRules().getRule(error.getRuleName()) : null;
         CustomPathRuleViolation custom = error instanceof CustomPathRuleViolation c ? c : null;
         if (rule == null) {
             PropertyPath path = custom != null ? custom.extend(frame.getPath()) : frame.getPath();
-            return new BeanRuleViolation(error, path, null, null, frame.getBean(), rootBean, rootBeanClass);
+            return violation(error, path, null, null, frame.getBean());
         }
+        RulePlacement placement = rule.getPlacement();
         PropertyPath path = frame.getPath();
-        if (rule.getLeaf() != null) {
-            path = path.property(rule.getLeaf());
-        }
-        // A violation that names its own place extends the rule's path; otherwise a class-level rule reports at the bean.
+        // A violation that names its own place extends the rule's path; a class-level rule's does so without the bean node.
         if (custom != null) {
-            path = custom.extend(path);
-        } else if (rule.getTarget().isClassLevel()) {
-            path = path.bean();
+            path = custom.extend(placement.getKind() == RulePlacement.Kind.BEAN ? path : placement.apply(path));
+        } else {
+            path = placement.apply(path);
         }
         Object invalidValue = error.getParameterValues().get(rule.getTarget().getValueName());
-        return new BeanRuleViolation(error, path, rule.getDefinition(), invalidValue, frame.getBean(), rootBean, rootBeanClass);
+        return violation(error, path, rule.getDefinition(), invalidValue, frame.getBean());
+    }
+
+    private BeanRuleViolation violation(RuleViolation error, PropertyPath path, org.rulii.validation.beans.model.ConstraintDefinition constraint,
+                                        Object invalidValue, Object leafBean) {
+        return new BeanRuleViolation(error, path, constraint, invalidValue, leafBean, rootBean, rootBeanClass,
+                executableParameters, executableReturnValue);
     }
 
     /**
@@ -234,10 +278,10 @@ public class BeanRuleViolations extends RuleViolations {
     public final class Frame implements AutoCloseable {
 
         private final PropertyPath path;
-        private final BeanRules rules;
+        private final MaterializedRules rules;
         private final Object bean;
 
-        private Frame(PropertyPath path, BeanRules rules, Object bean) {
+        private Frame(PropertyPath path, MaterializedRules rules, Object bean) {
             super();
             this.path = path;
             this.rules = rules;
@@ -249,11 +293,11 @@ public class BeanRuleViolations extends RuleViolations {
         }
 
         /**
-         * The rules of the class in scope.
+         * The rules of the class or executable in scope.
          *
          * @return the rules; null for a path-only frame.
          */
-        public BeanRules getRules() {
+        public MaterializedRules getRules() {
             return rules;
         }
 
@@ -271,7 +315,7 @@ public class BeanRuleViolations extends RuleViolations {
 
         @Override
         public String toString() {
-            return "Frame{path='" + path + "'" + (rules != null ? ", beanClass=" + rules.getBeanClass().getName() : "") + '}';
+            return "Frame{path='" + path + "'" + (rules != null ? ", rules=" + rules.getName() : "") + '}';
         }
     }
 }

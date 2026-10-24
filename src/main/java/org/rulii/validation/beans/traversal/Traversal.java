@@ -30,6 +30,7 @@ import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.assembly.MaterializedRules;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
@@ -150,11 +151,11 @@ public final class Traversal {
     /**
      * The rules of a container element position active for the call's groups.
      *
-     * @param rules the bean rules.
+     * @param rules the rules of the class or executable in scope.
      * @param node the position.
      * @return the RuleSet to run per element.
      */
-    public RuleSet<?> elementRuleSet(BeanRules rules, ContainerElementDefinition node) {
+    public RuleSet<?> elementRuleSet(MaterializedRules rules, ContainerElementDefinition node) {
         Assert.notNull(rules, "rules cannot be null.");
         Assert.notNull(node, "node cannot be null.");
         return rules.elementRuleSet(node, groups);

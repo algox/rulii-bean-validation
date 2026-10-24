@@ -30,9 +30,9 @@ import jakarta.validation.ConstraintDeclarationException;
  */
 public class GroupConversionNotSupportedException extends ConstraintDeclarationException {
 
-    private final PropertyDeclaration sourceDeclaration;
+    private final ValueDeclaration sourceDeclaration;
 
-    public GroupConversionNotSupportedException(PropertyDeclaration sourceDeclaration) {
+    public GroupConversionNotSupportedException(ValueDeclaration sourceDeclaration) {
         super("@ConvertGroup declared on property [" + sourceDeclaration.describe()
                 + "] is not supported; cascaded objects are validated against the groups of the root call."
                 + " Remove the annotation or validate the cascaded object separately with the groups you need.");
@@ -44,7 +44,7 @@ public class GroupConversionNotSupportedException extends ConstraintDeclarationE
      *
      * @return the source declaration.
      */
-    public PropertyDeclaration getSourceDeclaration() {
+    public ValueDeclaration getSourceDeclaration() {
         return sourceDeclaration;
     }
 }

@@ -75,9 +75,9 @@ import java.util.Objects;
  * declare, or whose type differs ({@link InvalidAttributeOverrideException}); a constraint that is
  * composed of itself at any depth ({@link ConstraintCompositionCycleException}).</p>
  *
- * <p>{@link #load(PropertyDeclaration)} inspects only the declaration annotations of a property;
+ * <p>{@link #load(ValueDeclaration)} inspects only the declaration annotations of a property;
  * annotations on its type arguments (container elements) are read per position through
- * {@link #load(PropertyDeclaration, AnnotatedElement)}; {@link #load(Class)} reads the class-level
+ * {@link #load(ValueDeclaration, AnnotatedElement)}; {@link #load(Class)} reads the class-level
  * constraints of one class or interface. Repeated constraints are unwrapped from their container
  * (e.g. {@code @Pattern.List}) in place, so the result keeps declaration order.</p>
  *
@@ -120,9 +120,9 @@ public final class ConstraintDefinition implements Definition {
      * @param sourceDeclaration the property declaration to inspect.
      * @return the constraint definitions, in declaration order; empty if none.
      */
-    public static List<ConstraintDefinition> load(PropertyDeclaration sourceDeclaration) {
+    public static List<ConstraintDefinition> load(ValueDeclaration sourceDeclaration) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
-        return load(new PropertyConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
+        return load(new DeclarationConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
     }
 
     /**
@@ -134,10 +134,10 @@ public final class ConstraintDefinition implements Definition {
      * @param element the element whose declared annotations are inspected.
      * @return the constraint definitions, in declaration order; empty if none.
      */
-    public static List<ConstraintDefinition> load(PropertyDeclaration sourceDeclaration, AnnotatedElement element) {
+    public static List<ConstraintDefinition> load(ValueDeclaration sourceDeclaration, AnnotatedElement element) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
         Assert.notNull(element, "element cannot be null.");
-        return load(new PropertyConstraintSource(sourceDeclaration), Arrays.asList(element.getDeclaredAnnotations()));
+        return load(new DeclarationConstraintSource(sourceDeclaration), Arrays.asList(element.getDeclaredAnnotations()));
     }
 
     /**
@@ -152,7 +152,15 @@ public final class ConstraintDefinition implements Definition {
         return load(new ClassConstraintSource(type), Arrays.asList(type.getDeclaredAnnotations()));
     }
 
-    private static List<ConstraintDefinition> load(ConstraintSource constraintSource, List<Annotation> annotations) {
+    /**
+     * Loads the constraint definitions among the given annotations for the given source: plain
+     * constraints and the constraints of repeatable containers, in declaration order.
+     *
+     * @param constraintSource where the annotations are declared.
+     * @param annotations the annotations.
+     * @return the constraint definitions.
+     */
+    static List<ConstraintDefinition> load(ConstraintSource constraintSource, List<Annotation> annotations) {
         List<ConstraintDefinition> result = new ArrayList<>();
 
         for (Annotation annotation : annotations) {
@@ -181,9 +189,9 @@ public final class ConstraintDefinition implements Definition {
      *         (or of a composing constraint) cannot be applied.
      * @throws ConstraintCompositionCycleException if the constraint is composed of itself.
      */
-    public static ConstraintDefinition load(PropertyDeclaration sourceDeclaration, Annotation annotation) {
+    public static ConstraintDefinition load(ValueDeclaration sourceDeclaration, Annotation annotation) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
-        return load(new PropertyConstraintSource(sourceDeclaration), annotation);
+        return load(new DeclarationConstraintSource(sourceDeclaration), annotation);
     }
 
     /**
@@ -392,7 +400,7 @@ public final class ConstraintDefinition implements Definition {
                 && returnType.getComponentType().isAnnotationPresent(Constraint.class);
     }
 
-    private static Annotation[] repeatedConstraints(Annotation container) {
+    static Annotation[] repeatedConstraints(Annotation container) {
         Method value = valueMethod(container.annotationType());
         // The container may be declared in a non-public type; the annotation is on the bean, so reading it is legitimate.
         ReflectionUtils.makeAccessible(value);

@@ -23,10 +23,10 @@ import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ClassConstraintSource;
-import org.rulii.validation.beans.model.ConstraintOnNonGetterException;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
-import org.rulii.validation.beans.model.PropertyDeclaration;
-import org.rulii.validation.beans.model.PropertyDeclaration.Kind;
+import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ValueDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration.Kind;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.ValidateDeclarationException;
 import org.rulii.validation.beans.model.ValidateDefinition;
@@ -64,7 +64,7 @@ public class ValidateDefinitionTest {
         assertSame(OnField.class.getDeclaredField("code").getAnnotation(Validate.class), definition.getAnnotation());
         assertEquals(OnField.class.getName(), definition.getSource().getClassName());
 
-        PropertyConstraintSource source = assertInstanceOf(PropertyConstraintSource.class, definition.getDeclarationSource());
+        DeclarationConstraintSource source = assertInstanceOf(DeclarationConstraintSource.class, definition.getDeclarationSource());
         assertEquals(Kind.FIELD, source.getDeclaration().getKind());
         assertEquals(OnField.class, source.getDeclaringClass());
         assertTrue(definition.toString().contains("codeRules"));
@@ -88,8 +88,8 @@ public class ValidateDefinitionTest {
         assertEquals(2, rules.size());
         assertEquals(List.of("fieldRule"), rules.get(0).getRuleNames());
         assertEquals(List.of("getterRule1", "getterRule2"), rules.get(1).getRuleNames());
-        assertEquals(Kind.FIELD, ((PropertyConstraintSource) rules.get(0).getDeclarationSource()).getDeclaration().getKind());
-        assertEquals(Kind.GETTER, ((PropertyConstraintSource) rules.get(1).getDeclarationSource()).getDeclaration().getKind());
+        assertEquals(Kind.FIELD, ((DeclarationConstraintSource) rules.get(0).getDeclarationSource()).getDeclaration().getKind());
+        assertEquals(Kind.GETTER, ((DeclarationConstraintSource) rules.get(1).getDeclarationSource()).getDeclaration().getKind());
     }
 
     @Test
@@ -137,20 +137,20 @@ public class ValidateDefinitionTest {
         // Mirrored onto the backing field and the component; read once.
         assertEquals(1, rules.size());
         assertEquals(List.of("recordRule"), rules.get(0).getRuleNames());
-        assertEquals(Kind.RECORD_COMPONENT, ((PropertyConstraintSource) rules.get(0).getDeclarationSource()).getDeclaration().getKind());
+        assertEquals(Kind.RECORD_COMPONENT, ((DeclarationConstraintSource) rules.get(0).getDeclarationSource()).getDeclaration().getKind());
         assertEquals(1, bean.getProperty("name").getConstraints().size());
     }
 
     @Test
     public void directLoad() throws Exception {
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(OnField.class.getDeclaredField("code"));
+        ValueDeclaration declaration = ValueDeclaration.ofField(OnField.class.getDeclaredField("code"));
         List<ValidateDefinition> rules = ValidateDefinition.load(declaration);
         assertEquals(1, rules.size());
         assertEquals(List.of("codeRules"), rules.get(0).getRuleNames());
         assertEquals(rules, ValidateDefinition.load(declaration));
         assertEquals(rules.get(0).hashCode(), ValidateDefinition.load(declaration).get(0).hashCode());
 
-        assertEquals(List.of(), ValidateDefinition.load(PropertyDeclaration.ofField(OnField.class.getDeclaredField("other"))));
+        assertEquals(List.of(), ValidateDefinition.load(ValueDeclaration.ofField(OnField.class.getDeclaredField("other"))));
         assertEquals(List.of(), ValidateDefinition.load(OnField.class));
         assertEquals(1, ValidateDefinition.load(ClassOnly.class).size());
 
@@ -159,7 +159,7 @@ public class ValidateDefinitionTest {
         assertEquals(ValidateDefinition.load(ClassOnly.class).get(0), direct);
         assertNotEquals(direct, rules.get(0));
 
-        assertThrows(IllegalArgumentException.class, () -> ValidateDefinition.load((PropertyDeclaration) null));
+        assertThrows(IllegalArgumentException.class, () -> ValidateDefinition.load((ValueDeclaration) null));
         assertThrows(IllegalArgumentException.class, () -> ValidateDefinition.load((Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> ValidateDefinition.load(null, ClassOnly.class.getAnnotation(Validate.class)));
         assertThrows(IllegalArgumentException.class, () -> ValidateDefinition.load(new ClassConstraintSource(ClassOnly.class), null));
@@ -201,7 +201,7 @@ public class ValidateDefinitionTest {
         assertTrue(e.getMessage().contains(DuplicateAcrossDeclarations.class.getName() + ".name"));
         assertTrue(e.getMessage().contains(DuplicateAcrossDeclarations.class.getName() + ".getName()"));
         // The reported source is the later declaration.
-        assertEquals(Kind.GETTER, ((PropertyConstraintSource) e.getSource()).getDeclaration().getKind());
+        assertEquals(Kind.GETTER, ((DeclarationConstraintSource) e.getSource()).getDeclaration().getKind());
     }
 
     @Test
@@ -223,10 +223,9 @@ public class ValidateDefinitionTest {
 
     @Test
     public void nonGetterMethodFailsFast() {
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class,
+        IllegalExecutableConstraintException e = assertThrows(IllegalExecutableConstraintException.class,
                 () -> BeanDefinition.load(OnNonGetter.class, REGISTRY));
-        assertEquals("check", e.getMethod().getName());
-        assertInstanceOf(Validate.class, e.getAnnotation());
+        assertEquals("check", e.getExecutable().getName());
         assertTrue(e.getMessage().contains("@Validate"));
     }
 

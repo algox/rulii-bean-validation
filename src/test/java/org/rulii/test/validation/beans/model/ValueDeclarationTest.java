@@ -21,7 +21,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
@@ -32,22 +32,22 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for {@link PropertyDeclaration}.
+ * Tests for {@link ValueDeclaration}.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
-public class PropertyDeclarationTest {
+public class ValueDeclarationTest {
 
-    public PropertyDeclarationTest() {
+    public ValueDeclarationTest() {
         super();
     }
 
     @Test
     public void fieldSource() throws Exception {
         Field field = Bean.class.getDeclaredField("name");
-        PropertyDeclaration source = PropertyDeclaration.ofField(field);
-        assertEquals(PropertyDeclaration.Kind.FIELD, source.getKind());
+        ValueDeclaration source = ValueDeclaration.ofField(field);
+        assertEquals(ValueDeclaration.Kind.FIELD, source.getKind());
         assertEquals("name", source.getName());
         assertEquals(field, source.getMember());
         assertEquals(field, source.getDeclaration());
@@ -66,8 +66,8 @@ public class PropertyDeclarationTest {
     @Test
     public void getterSource() throws Exception {
         Method getter = Bean.class.getDeclaredMethod("getName");
-        PropertyDeclaration source = PropertyDeclaration.ofGetter(getter);
-        assertEquals(PropertyDeclaration.Kind.GETTER, source.getKind());
+        ValueDeclaration source = ValueDeclaration.ofGetter(getter);
+        assertEquals(ValueDeclaration.Kind.GETTER, source.getKind());
         assertEquals("name", source.getName());
         assertEquals(getter, source.getMember());
         assertEquals(getter, source.getDeclaration());
@@ -80,35 +80,35 @@ public class PropertyDeclarationTest {
 
     @Test
     public void getterNames() throws Exception {
-        assertEquals("name", PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("getName")));
-        assertEquals("active", PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("isActive")));
-        assertEquals("URL", PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("getURL")));
-        assertEquals("x", PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("getX")));
-        assertEquals("xRay", PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("getxRay")));
+        assertEquals("name", ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("getName")));
+        assertEquals("active", ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("isActive")));
+        assertEquals("URL", ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("getURL")));
+        assertEquals("x", ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("getX")));
+        assertEquals("xRay", ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("getxRay")));
     }
 
     @Test
     public void getterShapes() throws Exception {
-        assertTrue(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getName")));
-        assertTrue(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("isActive")));
-        assertTrue(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getURL")));
-        assertTrue(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getPrivately")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("isWrapped")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("get")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("is")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getNothing")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getStatic")));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("getWith", String.class)));
-        assertFalse(PropertyDeclaration.isGetter(Bean.class.getDeclaredMethod("compute")));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("compute")));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.propertyName(Bean.class.getDeclaredMethod("compute")));
+        assertTrue(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getName")));
+        assertTrue(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("isActive")));
+        assertTrue(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getURL")));
+        assertTrue(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getPrivately")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("isWrapped")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("get")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("is")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getNothing")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getStatic")));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("getWith", String.class)));
+        assertFalse(ValueDeclaration.isGetter(Bean.class.getDeclaredMethod("compute")));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("compute")));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.propertyName(Bean.class.getDeclaredMethod("compute")));
     }
 
     @Test
     public void recordComponentSource() throws Exception {
         RecordComponent component = Customer.class.getRecordComponents()[0];
-        PropertyDeclaration source = PropertyDeclaration.ofRecordComponent(component);
-        assertEquals(PropertyDeclaration.Kind.RECORD_COMPONENT, source.getKind());
+        ValueDeclaration source = ValueDeclaration.ofRecordComponent(component);
+        assertEquals(ValueDeclaration.Kind.RECORD_COMPONENT, source.getKind());
         assertEquals("name", source.getName());
         assertEquals(Customer.class.getDeclaredMethod("name"), source.getMember());
         assertEquals(component, source.getDeclaration());
@@ -125,11 +125,11 @@ public class PropertyDeclarationTest {
 
     @Test
     public void equality() throws Exception {
-        PropertyDeclaration a = PropertyDeclaration.ofField(Bean.class.getDeclaredField("name"));
-        PropertyDeclaration b = PropertyDeclaration.ofField(Bean.class.getDeclaredField("name"));
-        PropertyDeclaration c = PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("getName"));
-        PropertyDeclaration d = PropertyDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]);
-        PropertyDeclaration e = PropertyDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]);
+        ValueDeclaration a = ValueDeclaration.ofField(Bean.class.getDeclaredField("name"));
+        ValueDeclaration b = ValueDeclaration.ofField(Bean.class.getDeclaredField("name"));
+        ValueDeclaration c = ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getName"));
+        ValueDeclaration d = ValueDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]);
+        ValueDeclaration e = ValueDeclaration.ofRecordComponent(Customer.class.getRecordComponents()[0]);
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, c);
@@ -141,7 +141,7 @@ public class PropertyDeclarationTest {
     @Test
     public void genericTypesAreResolvedAgainstTheOwner() throws Exception {
         Field items = Wrapper.class.getDeclaredField("items");
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(items, Names.class);
+        ValueDeclaration declaration = ValueDeclaration.ofField(items, Names.class);
 
         assertEquals(Names.class, declaration.getOwner());
         assertEquals(Wrapper.class, declaration.getDeclaringClass());
@@ -150,16 +150,16 @@ public class PropertyDeclarationTest {
         assertEquals("java.util.List<T>", declaration.getDeclaredGenericType().getTypeName());
         assertEquals(items.getAnnotatedType(), declaration.getAnnotatedType(), "annotations stay on the declared tree");
 
-        assertEquals(String.class, PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("single"), Names.class).getType());
-        assertEquals(String[].class, PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("array"), Names.class).getType());
-        assertEquals(String.class, PropertyDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Names.class).getType());
+        assertEquals(String.class, ValueDeclaration.ofField(Wrapper.class.getDeclaredField("single"), Names.class).getType());
+        assertEquals(String[].class, ValueDeclaration.ofField(Wrapper.class.getDeclaredField("array"), Names.class).getType());
+        assertEquals(String.class, ValueDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Names.class).getType());
         assertEquals(String.class, declaration.resolve(Wrapper.class.getTypeParameters()[0]));
-        assertEquals(Integer.class, PropertyDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"), Leaf.class).getType());
+        assertEquals(Integer.class, ValueDeclaration.ofGetter(Identified.class.getDeclaredMethod("getId"), Leaf.class).getType());
     }
 
     @Test
     public void withoutAnOwnerTheDeclaringClassIsTheOwnerAndVariablesErase() throws Exception {
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(Wrapper.class.getDeclaredField("single"));
+        ValueDeclaration declaration = ValueDeclaration.ofField(Wrapper.class.getDeclaredField("single"));
         assertEquals(Wrapper.class, declaration.getOwner());
         assertEquals(Object.class, declaration.getType());
         assertTrue(declaration.getGenericType() instanceof java.lang.reflect.TypeVariable);
@@ -169,21 +169,21 @@ public class PropertyDeclarationTest {
     @Test
     public void ownerMattersForEqualityAndMustBeASubtype() throws Exception {
         Field single = Wrapper.class.getDeclaredField("single");
-        assertNotEquals(PropertyDeclaration.ofField(single), PropertyDeclaration.ofField(single, Names.class));
-        assertEquals(PropertyDeclaration.ofField(single, Names.class), PropertyDeclaration.ofField(single, Names.class));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single, Bean.class));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single, null));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Bean.class));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(single).resolve(null));
+        assertNotEquals(ValueDeclaration.ofField(single), ValueDeclaration.ofField(single, Names.class));
+        assertEquals(ValueDeclaration.ofField(single, Names.class), ValueDeclaration.ofField(single, Names.class));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofField(single, Bean.class));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofField(single, null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofGetter(Wrapper.class.getDeclaredMethod("getSingle"), Bean.class));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofField(single).resolve(null));
     }
 
     @Test
     public void nullArgumentsAreRejected() {
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofField(null));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofGetter(null));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.ofRecordComponent(null));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.isGetter(null));
-        assertThrows(IllegalArgumentException.class, () -> PropertyDeclaration.propertyName(null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofField(null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofGetter(null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.ofRecordComponent(null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.isGetter(null));
+        assertThrows(IllegalArgumentException.class, () -> ValueDeclaration.propertyName(null));
     }
 
     private static List<Class<?>> types(List<Annotation> annotations) {

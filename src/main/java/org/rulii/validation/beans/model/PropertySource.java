@@ -31,7 +31,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Where a bean property comes from: the {@link PropertyDeclaration declarations} it is read from
+ * Where a bean property comes from: the {@link ValueDeclaration declarations} it is read from
  * and, among them, the <em>primary</em> declaration whose value the property stands for.
  *
  * <p>A property may be declared several times across a class hierarchy: a field and its getter,
@@ -53,10 +53,10 @@ import java.util.List;
 public final class PropertySource {
 
     private final String name;
-    private final List<PropertyDeclaration> declarations;
-    private final PropertyDeclaration primary;
+    private final List<ValueDeclaration> declarations;
+    private final ValueDeclaration primary;
 
-    private PropertySource(String name, List<PropertyDeclaration> declarations, PropertyDeclaration primary) {
+    private PropertySource(String name, List<ValueDeclaration> declarations, ValueDeclaration primary) {
         super();
         this.name = name;
         this.declarations = declarations;
@@ -71,7 +71,7 @@ public final class PropertySource {
      */
     public static PropertySource ofField(Field field) {
         Assert.notNull(field, "field cannot be null.");
-        return of(List.of(PropertyDeclaration.ofField(field)));
+        return of(List.of(ValueDeclaration.ofField(field)));
     }
 
     /**
@@ -83,7 +83,7 @@ public final class PropertySource {
      */
     public static PropertySource ofGetter(Method getter) {
         Assert.notNull(getter, "getter cannot be null.");
-        return of(List.of(PropertyDeclaration.ofGetter(getter)));
+        return of(List.of(ValueDeclaration.ofGetter(getter)));
     }
 
     /**
@@ -94,7 +94,7 @@ public final class PropertySource {
      */
     public static PropertySource ofRecordComponent(RecordComponent component) {
         Assert.notNull(component, "component cannot be null.");
-        return of(List.of(PropertyDeclaration.ofRecordComponent(component)));
+        return of(List.of(ValueDeclaration.ofRecordComponent(component)));
     }
 
     /**
@@ -109,7 +109,7 @@ public final class PropertySource {
         Assert.notNull(field, "field cannot be null.");
         Assert.notNull(getter, "getter cannot be null.");
         Class<?> owner = mostDerived(field.getDeclaringClass(), getter.getDeclaringClass());
-        return of(List.of(PropertyDeclaration.ofField(field, owner), PropertyDeclaration.ofGetter(getter, owner)));
+        return of(List.of(ValueDeclaration.ofField(field, owner), ValueDeclaration.ofGetter(getter, owner)));
     }
 
     /**
@@ -123,20 +123,20 @@ public final class PropertySource {
      * @return the property source.
      * @throws IllegalArgumentException if the declarations do not describe one property.
      */
-    public static PropertySource of(List<PropertyDeclaration> declarations) {
+    public static PropertySource of(List<ValueDeclaration> declarations) {
         Assert.notEmpty(declarations, "declarations cannot be empty.");
         Assert.noNullElements(declarations, "declarations cannot contain null.");
 
-        List<PropertyDeclaration> ordered = new ArrayList<>(declarations);
-        ordered.sort(Comparator.comparingInt(d -> d.getKind() == PropertyDeclaration.Kind.GETTER ? 1 : 0));
+        List<ValueDeclaration> ordered = new ArrayList<>(declarations);
+        ordered.sort(Comparator.comparingInt(d -> d.getKind() == ValueDeclaration.Kind.GETTER ? 1 : 0));
         String name = ordered.get(0).getName();
         Class<?> owner = ordered.get(0).getOwner();
-        PropertyDeclaration component = null;
-        PropertyDeclaration field = null;
-        PropertyDeclaration getter = null;
+        ValueDeclaration component = null;
+        ValueDeclaration field = null;
+        ValueDeclaration getter = null;
 
         for (int i = 0; i < ordered.size(); i++) {
-            PropertyDeclaration declaration = ordered.get(i);
+            ValueDeclaration declaration = ordered.get(i);
             Assert.isTrue(name.equals(declaration.getName()), "declarations describe different properties: ["
                     + name + "] and [" + declaration.getName() + "] (" + declaration.describe() + ").");
             Assert.isTrue(owner == declaration.getOwner(), "declarations of property [" + name + "] have different owners: ["
@@ -158,7 +158,7 @@ public final class PropertySource {
         Assert.isTrue(component == null || field == null, "property [" + name
                 + "] is a record component; it cannot also be declared by a field (" + field + ").");
 
-        PropertyDeclaration primary = component != null ? component : getter != null ? getter : field;
+        ValueDeclaration primary = component != null ? component : getter != null ? getter : field;
         return new PropertySource(name, Collections.unmodifiableList(ordered), primary);
     }
 
@@ -177,7 +177,7 @@ public final class PropertySource {
      * The declaration whose declaring type is the subtype of the other's; the current one when
      * the two are unrelated or declared by the same type.
      */
-    private static PropertyDeclaration mostDerived(PropertyDeclaration current, PropertyDeclaration candidate) {
+    private static ValueDeclaration mostDerived(ValueDeclaration current, ValueDeclaration candidate) {
         if (current == null) return candidate;
         Class<?> currentType = current.getDeclaringClass();
         Class<?> candidateType = candidate.getDeclaringClass();
@@ -199,7 +199,7 @@ public final class PropertySource {
      *
      * @return the declarations, in that order.
      */
-    public List<PropertyDeclaration> getDeclarations() {
+    public List<ValueDeclaration> getDeclarations() {
         return declarations;
     }
 
@@ -209,11 +209,11 @@ public final class PropertySource {
      * @param kind the kind.
      * @return the declarations of that kind; empty if none.
      */
-    public List<PropertyDeclaration> getDeclarations(PropertyDeclaration.Kind kind) {
+    public List<ValueDeclaration> getDeclarations(ValueDeclaration.Kind kind) {
         Assert.notNull(kind, "kind cannot be null.");
-        List<PropertyDeclaration> result = new ArrayList<>();
+        List<ValueDeclaration> result = new ArrayList<>();
 
-        for (PropertyDeclaration declaration : declarations) {
+        for (ValueDeclaration declaration : declarations) {
             if (declaration.getKind() == kind) result.add(declaration);
         }
 
@@ -226,7 +226,7 @@ public final class PropertySource {
      *
      * @return the primary declaration.
      */
-    public PropertyDeclaration getPrimary() {
+    public ValueDeclaration getPrimary() {
         return primary;
     }
 

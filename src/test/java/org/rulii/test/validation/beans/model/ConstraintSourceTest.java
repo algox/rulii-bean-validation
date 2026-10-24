@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.rulii.validation.beans.model.ClassConstraintSource;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ConstraintSource;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -56,17 +56,17 @@ public class ConstraintSourceTest {
     @Test
     public void propertySourceOfAField() throws Exception {
         Field field = Bean.class.getDeclaredField("name");
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(field);
-        PropertyConstraintSource source = new PropertyConstraintSource(declaration);
+        ValueDeclaration declaration = ValueDeclaration.ofField(field);
+        DeclarationConstraintSource source = new DeclarationConstraintSource(declaration);
 
         assertEquals(declaration, source.getDeclaration());
         assertEquals(Bean.class, source.getDeclaringClass());
         assertEquals(field, source.getElement());
         assertEquals("name", source.getSourceDefinition().getFieldName());
         assertEquals(Bean.class.getName() + ".name", source.describe());
-        assertEquals(new PropertyConstraintSource(declaration), source);
-        assertEquals(new PropertyConstraintSource(declaration).hashCode(), source.hashCode());
-        assertNotEquals(source, new PropertyConstraintSource(PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("getName"))));
+        assertEquals(new DeclarationConstraintSource(declaration), source);
+        assertEquals(new DeclarationConstraintSource(declaration).hashCode(), source.hashCode());
+        assertNotEquals(source, new DeclarationConstraintSource(ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getName"))));
         assertNotEquals(source, new ClassConstraintSource(Bean.class));
         assertTrue(source.toString().contains("FIELD"));
     }
@@ -74,12 +74,12 @@ public class ConstraintSourceTest {
     @Test
     public void propertySourceOfAGetterAndARecordComponent() throws Exception {
         Method getter = Bean.class.getDeclaredMethod("getName");
-        ConstraintSource source = new PropertyConstraintSource(PropertyDeclaration.ofGetter(getter));
+        ConstraintSource source = new DeclarationConstraintSource(ValueDeclaration.ofGetter(getter));
         assertEquals(getter, source.getElement());
         assertEquals("getName", source.getSourceDefinition().getMethodName());
 
         RecordComponent component = Customer.class.getRecordComponents()[0];
-        source = new PropertyConstraintSource(PropertyDeclaration.ofRecordComponent(component));
+        source = new DeclarationConstraintSource(ValueDeclaration.ofRecordComponent(component));
         assertEquals(Customer.class, source.getDeclaringClass());
         assertEquals(component, source.getElement());
         assertEquals("name", source.getSourceDefinition().getMethodName());
@@ -101,7 +101,7 @@ public class ConstraintSourceTest {
 
     @Test
     public void nullArgumentsAreRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new PropertyConstraintSource(null));
+        assertThrows(IllegalArgumentException.class, () -> new DeclarationConstraintSource(null));
         assertThrows(IllegalArgumentException.class, () -> new ClassConstraintSource(null));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> ConstraintDefinition.load((ConstraintSource) null, Bean.class.getAnnotation(ValidBean.class)));
@@ -139,8 +139,8 @@ public class ConstraintSourceTest {
     @Test
     public void constraintDefinitionsOfDifferentSourcesAreNotEqual() throws Exception {
         Field field = Bean.class.getDeclaredField("name");
-        ConstraintDefinition onField = ConstraintDefinition.load(PropertyDeclaration.ofField(field)).get(0);
-        ConstraintDefinition onFieldAgain = ConstraintDefinition.load(new PropertyConstraintSource(PropertyDeclaration.ofField(field)),
+        ConstraintDefinition onField = ConstraintDefinition.load(ValueDeclaration.ofField(field)).get(0);
+        ConstraintDefinition onFieldAgain = ConstraintDefinition.load(new DeclarationConstraintSource(ValueDeclaration.ofField(field)),
                 field.getAnnotation(NotNull.class));
         assertEquals(onField, onFieldAgain);
         assertNotEquals(onField, ConstraintDefinition.load(Bean.class).get(0));

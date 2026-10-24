@@ -25,11 +25,13 @@ import jakarta.validation.metadata.PropertyDescriptor;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
 import java.lang.annotation.ElementType;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -38,8 +40,9 @@ import java.util.Set;
  * A {@link BeanDefinition} seen through the spec's {@link BeanDescriptor}: what
  * {@code Validator.getConstraintsForClass} returns. Class-level constraints are the element's own;
  * the constrained properties are those carrying a constraint, a cascade or a constrained container
- * element position, as the spec defines them ({@code @Validate} rules are not constraints). Executable
- * validation is not supported, so there are no method or constructor descriptors.
+ * element position, as the spec defines them ({@code @Validate} rules are not constraints). The
+ * constrained methods (getters and non-getters alike) and constructors are described through
+ * {@link ExecutableDefinitionDescriptor}.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -128,22 +131,41 @@ public final class BeanDefinitionDescriptor extends DefinitionElementDescriptor 
 
     @Override
     public MethodDescriptor getConstraintsForMethod(String methodName, Class<?>... parameterTypes) {
-        return null;
+        Assert.notNull(methodName, "methodName cannot be null.");
+        ExecutableDefinition method = definition.getMethod(methodName, parameterTypes);
+        return method != null ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), method) : null;
     }
 
     @Override
     public Set<MethodDescriptor> getConstrainedMethods(MethodType methodType, MethodType... methodTypes) {
-        return Set.of();
+        Assert.notNull(methodType, "methodType cannot be null.");
+        Set<MethodType> types = EnumSet.of(methodType, methodTypes);
+        Set<MethodDescriptor> result = new LinkedHashSet<>();
+
+        for (ExecutableDefinition method : definition.getMethods()) {
+            if (types.contains(method.isGetter() ? MethodType.GETTER : MethodType.NON_GETTER)) {
+                result.add(new ExecutableDefinitionDescriptor(definition.getBeanClass(), method));
+            }
+        }
+
+        return Collections.unmodifiableSet(result);
     }
 
     @Override
     public ConstructorDescriptor getConstraintsForConstructor(Class<?>... parameterTypes) {
-        return null;
+        ExecutableDefinition constructor = definition.getConstructor(parameterTypes);
+        return constructor != null ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor) : null;
     }
 
     @Override
     public Set<ConstructorDescriptor> getConstrainedConstructors() {
-        return Set.of();
+        Set<ConstructorDescriptor> result = new LinkedHashSet<>();
+
+        for (ExecutableDefinition constructor : definition.getConstructors()) {
+            result.add(new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor));
+        }
+
+        return Collections.unmodifiableSet(result);
     }
 
     @Override

@@ -19,7 +19,7 @@ package org.rulii.validation.beans.assembly;
 
 import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 /**
  * A property validation needs to read cannot be made accessible: the bean lives in a named module
@@ -33,7 +33,7 @@ public class InaccessiblePropertyException extends BeanValidationException {
 
     private static final long serialVersionUID = 0L;
 
-    private final PropertyDeclaration declaration;
+    private final ValueDeclaration declaration;
 
     /**
      * Creates the exception.
@@ -41,12 +41,12 @@ public class InaccessiblePropertyException extends BeanValidationException {
      * @param declaration the declaration that cannot be read.
      * @param cause what the JDK reported.
      */
-    public InaccessiblePropertyException(PropertyDeclaration declaration, Throwable cause) {
+    public InaccessiblePropertyException(ValueDeclaration declaration, Throwable cause) {
         super(message(declaration), cause);
         this.declaration = declaration;
     }
 
-    private static String message(PropertyDeclaration declaration) {
+    private static String message(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         String packageName = declaration.getDeclaringClass().getPackageName();
         return "property [" + declaration.describe() + "] cannot be read: it is not accessible to rulii bean validation. "
@@ -59,7 +59,7 @@ public class InaccessiblePropertyException extends BeanValidationException {
      *
      * @return the declaration.
      */
-    public PropertyDeclaration getDeclaration() {
+    public ValueDeclaration getDeclaration() {
         return declaration;
     }
 }

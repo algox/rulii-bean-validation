@@ -70,7 +70,7 @@ import java.util.Set;
  */
 public final class ContainerElementDefinition implements Definition {
 
-    private final PropertyDeclaration sourceDeclaration;
+    private final ValueDeclaration sourceDeclaration;
     private final Class<?> containerType;
     private final int typeArgumentIndex;
     private final AnnotatedType annotatedType;
@@ -81,7 +81,7 @@ public final class ContainerElementDefinition implements Definition {
     private final ValueExtractorDescriptor extractor;
     private final SourceDefinition source;
 
-    private ContainerElementDefinition(PropertyDeclaration sourceDeclaration, Class<?> containerType, int typeArgumentIndex,
+    private ContainerElementDefinition(ValueDeclaration sourceDeclaration, Class<?> containerType, int typeArgumentIndex,
                                        ValueExtractorDescriptor extractor, AnnotatedType annotatedType, Type type,
                                        List<ConstraintDefinition> constraints, boolean cascaded,
                                        List<ContainerElementDefinition> children) {
@@ -118,7 +118,7 @@ public final class ContainerElementDefinition implements Definition {
      * @throws NoValueExtractorException if a constrained or cascaded position has no extractor.
      * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared at a position.
      */
-    public static List<ContainerElementDefinition> load(PropertyDeclaration sourceDeclaration, ValueExtractorRegistry registry) {
+    public static List<ContainerElementDefinition> load(ValueDeclaration sourceDeclaration, ValueExtractorRegistry registry) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
         Assert.notNull(registry, "registry cannot be null.");
 
@@ -139,7 +139,7 @@ public final class ContainerElementDefinition implements Definition {
      * @param constraints the property constraints that apply to the unwrapped value.
      * @return the node.
      */
-    static ContainerElementDefinition unwrapped(PropertyDeclaration sourceDeclaration, ValueExtractorDescriptor descriptor,
+    static ContainerElementDefinition unwrapped(ValueDeclaration sourceDeclaration, ValueExtractorDescriptor descriptor,
                                                 AnnotatedType annotatedType, Type type, List<ConstraintDefinition> constraints) {
         if (type == null) type = descriptor.getExtractedType();
 
@@ -235,7 +235,7 @@ public final class ContainerElementDefinition implements Definition {
      * @param sourceDeclaration the property declaration.
      * @return true if group conversion is requested on it.
      */
-    static boolean declaresGroupConversion(PropertyDeclaration sourceDeclaration) {
+    static boolean declaresGroupConversion(ValueDeclaration sourceDeclaration) {
         return sourceDeclaration.isAnnotationPresent(ConvertGroup.class)
                 || sourceDeclaration.isAnnotationPresent(ConvertGroup.List.class);
     }
@@ -246,14 +246,14 @@ public final class ContainerElementDefinition implements Definition {
      */
     private static final class Collector implements AnnotatedTypeVisitor<ContainerElementDefinition> {
 
-        private final PropertyDeclaration sourceDeclaration;
+        private final ValueDeclaration sourceDeclaration;
         private final ValueExtractorRegistry registry;
         // Context of the position being visited: set by the parent before descending.
         private Class<?> containerType;
         private int typeArgumentIndex;
         private Set<Annotation> excluded = Collections.emptySet();
 
-        private Collector(PropertyDeclaration sourceDeclaration, ValueExtractorRegistry registry) {
+        private Collector(ValueDeclaration sourceDeclaration, ValueExtractorRegistry registry) {
             super();
             this.sourceDeclaration = sourceDeclaration;
             this.registry = registry;
@@ -407,7 +407,7 @@ public final class ContainerElementDefinition implements Definition {
      *
      * @return the source declaration.
      */
-    public PropertyDeclaration getSourceDeclaration() {
+    public ValueDeclaration getSourceDeclaration() {
         return sourceDeclaration;
     }
 

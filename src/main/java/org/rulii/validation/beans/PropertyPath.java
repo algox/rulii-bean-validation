@@ -23,6 +23,7 @@ import org.rulii.lib.spring.util.Assert;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
@@ -32,24 +33,33 @@ import java.util.Objects;
 /**
  * The property path of a violation: an immutable {@link jakarta.validation.Path} rendered in the
  * Bean Validation notation ({@code orders[2].customer.name}, {@code tags[2].<list element>},
- * {@code contacts[home].<map key>}), node for node what the reference implementation reports.
+ * {@code contacts[home].<map key>}, {@code placeOrder.arg0}, {@code placeOrder.<return value>}),
+ * node for node what the reference implementation reports.
  * <p>
  * A path is a parent-linked chain of nodes; the path object itself names the leaf. Appending a node
- * ({@link #property(String)}, {@link #element(String)}, {@link #bean()}) allocates one node and shares
+ * ({@link #property(String)}, {@link #element(String)}, {@link #bean()}, {@link #method}, {@link #constructor},
+ * {@link #parameter}, {@link #returnValue()}, {@link #crossParameter()}) allocates one node and shares
  * the chain, so the traversal pushes and pops by holding references. The subscript operations
  * ({@link #withIndex}, {@link #withKey}, {@link #inIterable}) describe how the <em>contents</em> of the
  * leaf are addressed and return a sibling copy of the leaf; the spec accessors on the following node
  * ({@code getIndex()}, {@code getKey()}, {@code isInIterable()}, {@code getContainerClass()},
  * {@code getTypeArgumentIndex()}) read that subscript off their parent, exactly as the reference
  * implementation does.
- * <p>
- * Only {@link ElementKind#PROPERTY}, {@link ElementKind#CONTAINER_ELEMENT} and {@link ElementKind#BEAN}
- * nodes are ever produced: executable validation is out of scope.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
 public final class PropertyPath implements Path {
+
+    /**
+     * Name of the node standing for the return value of an executable.
+     */
+    public static final String RETURN_VALUE_NODE = "<return value>";
+
+    /**
+     * Name of the node standing for the parameters of an executable as a whole.
+     */
+    public static final String CROSS_PARAMETER_NODE = "<cross-parameter>";
 
     private static final PropertyPath ROOT = new PropertyPath(null);
     private static final String SEPARATOR = ".";
@@ -78,7 +88,7 @@ public final class PropertyPath implements Path {
      */
     public PropertyPath property(String name) {
         Assert.hasText(name, "name cannot be null/empty.");
-        return new PropertyPath(new Node(leaf, ElementKind.PROPERTY, name, null));
+        return new PropertyPath(new Node(leaf, ElementKind.PROPERTY, name, null, null, null));
     }
 
     /**
@@ -90,7 +100,7 @@ public final class PropertyPath implements Path {
      */
     public PropertyPath element(String nodeName) {
         Assert.hasText(nodeName, "nodeName cannot be null/empty.");
-        return new PropertyPath(new Node(leaf, ElementKind.CONTAINER_ELEMENT, nodeName, null));
+        return new PropertyPath(new Node(leaf, ElementKind.CONTAINER_ELEMENT, nodeName, null, null, null));
     }
 
     /**
@@ -99,7 +109,65 @@ public final class PropertyPath implements Path {
      * @return the extended path.
      */
     public PropertyPath bean() {
-        return new PropertyPath(new Node(leaf, ElementKind.BEAN, null, null));
+        return new PropertyPath(new Node(leaf, ElementKind.BEAN, null, null, null, null));
+    }
+
+    /**
+     * Appends a method node: the first node of a path reported by executable validation of a method.
+     *
+     * @param name the method name.
+     * @param parameterTypes the method's parameter types.
+     * @return the extended path.
+     */
+    public PropertyPath method(String name, Class<?>... parameterTypes) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        Assert.notNull(parameterTypes, "parameterTypes cannot be null.");
+        return new PropertyPath(new Node(leaf, ElementKind.METHOD, name, null, List.of(parameterTypes), null));
+    }
+
+    /**
+     * Appends a constructor node: the first node of a path reported by executable validation of a
+     * constructor. Named after the class, as the specification names it.
+     *
+     * @param name the simple name of the constructed class.
+     * @param parameterTypes the constructor's parameter types.
+     * @return the extended path.
+     */
+    public PropertyPath constructor(String name, Class<?>... parameterTypes) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        Assert.notNull(parameterTypes, "parameterTypes cannot be null.");
+        return new PropertyPath(new Node(leaf, ElementKind.CONSTRUCTOR, name, null, List.of(parameterTypes), null));
+    }
+
+    /**
+     * Appends a parameter node.
+     *
+     * @param name the parameter name.
+     * @param index the parameter index.
+     * @return the extended path.
+     */
+    public PropertyPath parameter(String name, int index) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        Assert.isTrue(index >= 0, "index cannot be negative.");
+        return new PropertyPath(new Node(leaf, ElementKind.PARAMETER, name, null, null, index));
+    }
+
+    /**
+     * Appends the return value node, {@value #RETURN_VALUE_NODE}.
+     *
+     * @return the extended path.
+     */
+    public PropertyPath returnValue() {
+        return new PropertyPath(new Node(leaf, ElementKind.RETURN_VALUE, RETURN_VALUE_NODE, null, null, null));
+    }
+
+    /**
+     * Appends the cross-parameter node, {@value #CROSS_PARAMETER_NODE}.
+     *
+     * @return the extended path.
+     */
+    public PropertyPath crossParameter() {
+        return new PropertyPath(new Node(leaf, ElementKind.CROSS_PARAMETER, CROSS_PARAMETER_NODE, null, null, null));
     }
 
     /**
@@ -139,7 +207,7 @@ public final class PropertyPath implements Path {
 
     private PropertyPath withSubscript(Subscript subscript) {
         Assert.isTrue(leaf != null, "the root path cannot carry a subscript.");
-        return new PropertyPath(new Node(leaf.parent, leaf.kind, leaf.name, subscript));
+        return new PropertyPath(new Node(leaf.parent, leaf.kind, leaf.name, subscript, leaf.parameterTypes, leaf.parameterIndex));
     }
 
     /**
@@ -244,22 +312,27 @@ public final class PropertyPath implements Path {
     }
 
     /**
-     * A node of the path. One class serves all three kinds we produce; {@link #as(Class)} checks the
+     * A node of the path. One class serves every kind we produce; {@link #as(Class)} checks the
      * requested view against {@link #getKind()} per the spec.
      */
-    public static final class Node implements Path.PropertyNode, Path.ContainerElementNode, Path.BeanNode {
+    public static final class Node implements Path.PropertyNode, Path.ContainerElementNode, Path.BeanNode, Path.MethodNode,
+            Path.ConstructorNode, Path.ParameterNode, Path.ReturnValueNode, Path.CrossParameterNode {
 
         private final Node parent;
         private final ElementKind kind;
         private final String name;
         private final Subscript subscript;
+        private final List<Class<?>> parameterTypes;
+        private final Integer parameterIndex;
 
-        private Node(Node parent, ElementKind kind, String name, Subscript subscript) {
+        private Node(Node parent, ElementKind kind, String name, Subscript subscript, List<Class<?>> parameterTypes, Integer parameterIndex) {
             super();
             this.parent = parent;
             this.kind = kind;
             this.name = name;
             this.subscript = subscript;
+            this.parameterTypes = parameterTypes;
+            this.parameterIndex = parameterIndex;
         }
 
         @Override
@@ -301,6 +374,26 @@ public final class PropertyPath implements Path {
         }
 
         /**
+         * The parameter types of a method or constructor node.
+         *
+         * @return the types; null for the other kinds.
+         */
+        @Override
+        public List<Class<?>> getParameterTypes() {
+            return parameterTypes;
+        }
+
+        /**
+         * The index of a parameter node.
+         *
+         * @return the index; -1 for the other kinds.
+         */
+        @Override
+        public int getParameterIndex() {
+            return parameterIndex != null ? parameterIndex : -1;
+        }
+
+        /**
          * Whether this node's own contents carry a subscript (it is the container side of
          * {@code name[index]}).
          *
@@ -314,10 +407,15 @@ public final class PropertyPath implements Path {
         public <T extends Path.Node> T as(Class<T> nodeType) {
             Assert.notNull(nodeType, "nodeType cannot be null.");
             boolean compatible = nodeType == Path.Node.class
+                    || nodeType == Node.class
                     || (nodeType == Path.PropertyNode.class && kind == ElementKind.PROPERTY)
                     || (nodeType == Path.ContainerElementNode.class && kind == ElementKind.CONTAINER_ELEMENT)
                     || (nodeType == Path.BeanNode.class && kind == ElementKind.BEAN)
-                    || nodeType == Node.class;
+                    || (nodeType == Path.MethodNode.class && kind == ElementKind.METHOD)
+                    || (nodeType == Path.ConstructorNode.class && kind == ElementKind.CONSTRUCTOR)
+                    || (nodeType == Path.ParameterNode.class && kind == ElementKind.PARAMETER)
+                    || (nodeType == Path.ReturnValueNode.class && kind == ElementKind.RETURN_VALUE)
+                    || (nodeType == Path.CrossParameterNode.class && kind == ElementKind.CROSS_PARAMETER);
             if (!compatible) {
                 throw new ClassCastException("node [" + this + "] of kind [" + kind + "] cannot be viewed as ["
                         + nodeType.getName() + "]");
@@ -331,12 +429,13 @@ public final class PropertyPath implements Path {
             if (o == null || getClass() != o.getClass()) return false;
             Node that = (Node) o;
             return kind == that.kind && Objects.equals(name, that.name) && Objects.equals(subscript, that.subscript)
+                    && Objects.equals(parameterTypes, that.parameterTypes) && Objects.equals(parameterIndex, that.parameterIndex)
                     && Objects.equals(parent, that.parent);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(parent, kind, name, subscript);
+            return Objects.hash(parent, kind, name, subscript, parameterTypes, parameterIndex);
         }
 
         /**
@@ -347,5 +446,16 @@ public final class PropertyPath implements Path {
             String result = name != null ? name : "";
             return subscript != null ? result + subscript.render() : result;
         }
+    }
+
+    /**
+     * Compares two parameter type arrays, for callers matching nodes against executables.
+     *
+     * @param first the first array.
+     * @param second the second array.
+     * @return true if equal element for element.
+     */
+    public static boolean sameParameterTypes(Class<?>[] first, Class<?>[] second) {
+        return Arrays.equals(first, second);
     }
 }

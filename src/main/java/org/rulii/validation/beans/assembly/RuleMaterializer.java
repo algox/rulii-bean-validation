@@ -18,6 +18,7 @@
 package org.rulii.validation.beans.assembly;
 
 import jakarta.validation.ValidationException;
+import jakarta.validation.constraintvalidation.ValidationTarget;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
@@ -35,9 +36,12 @@ import org.rulii.validation.beans.message.MessageTemplates;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ExecutableDefinition;
+import org.rulii.validation.beans.model.ParameterDefinition;
+import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
+import org.rulii.validation.beans.model.ReturnValueDefinition;
 import org.rulii.validation.beans.util.reflect.Types;
 import org.rulii.validation.rules.Validators;
 
@@ -79,6 +83,16 @@ import java.util.Set;
  * @since 1.0
  */
 public final class RuleMaterializer {
+
+    /**
+     * The name return-value rules report the value under, and their rule-name prefix.
+     */
+    public static final String RETURN_VALUE_NAME = "returnValue";
+
+    /**
+     * The name cross-parameter rules report the arguments under.
+     */
+    public static final String PARAMETERS_VALUE = "parameters";
 
     private static final String MESSAGE_KEY_SUFFIX = ".message";
 
@@ -126,7 +140,7 @@ public final class RuleMaterializer {
 
         for (ConstraintDefinition constraint : bean.getClassConstraints()) {
             Site site = new Site(beanClass, null, BindingPlan.THIS, Validators.binding(BindingPlan.THIS), BindingPlan.THIS,
-                    beanClass, null, constraint.getConstraintSource().describe());
+                    beanClass, RulePlacement.bean(), constraint.getConstraintSource().describe(), ValidationTarget.ANNOTATED_ELEMENT);
             materialize(constraint, null, site, unique(className + "_" + decapitalize(constraint.getAnnotationType()), names), classRules);
         }
 
@@ -161,11 +175,12 @@ public final class RuleMaterializer {
         String binding = plan.getBindingName(property);
 
         for (ConstraintDefinition constraint : property.getConstraints()) {
-            PropertyDeclaration declaration = ((PropertyConstraintSource) constraint.getConstraintSource()).getDeclaration();
+            ValueDeclaration declaration = ((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration();
             Function<?> value = bindingOnly || plan.isPrimary(declaration)
                     ? Validators.binding(binding)
                     : reading(binding, plan.getAccessor(declaration));
-            Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), name, declaration.describe());
+            Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), RulePlacement.property(name),
+                    declaration.describe(), ValidationTarget.ANNOTATED_ELEMENT);
             materialize(constraint, null, site, unique(name + "_" + decapitalize(constraint.getAnnotationType()), names), propertyRules);
         }
 
@@ -195,32 +210,123 @@ public final class RuleMaterializer {
     }
 
     /**
+     * Materializes the rules of a method or constructor: parameter rules reading the parameter
+     * bindings, cross-parameter rules reading the arguments as a whole ({@link BindingPlan#PARAMETERS}),
+     * return-value rules reading {@link BindingPlan#RETURN_VALUE}, and the rules of the constrained
+     * container element positions within parameters and return value. Names:
+     * {@code <parameter>_<constraint>}, {@code <executable>_<constraint>} for cross-parameter rules,
+     * {@code returnValue_<constraint>}, element rules as for properties.
+     *
+     * @param executable the executable definition.
+     * @return the rules.
+     * @throws ConstraintMapperException if a mapper is missing, misbehaves or produces a rule name
+     *         already in use.
+     */
+    public ExecutableRules materialize(ExecutableDefinition executable) {
+        Assert.notNull(executable, "executable cannot be null.");
+
+        ExecutableBindingPlan plan = ExecutableBindingPlan.of(executable);
+        Class<?> beanClass = executable.getOwner();
+        List<MaterializedRule> parameterRules = new ArrayList<>();
+        List<MaterializedRule> crossParameterRules = new ArrayList<>();
+        List<MaterializedRule> returnValueRules = new ArrayList<>();
+        List<ExecutableRules.ElementRules> elementRules = new ArrayList<>();
+        Set<String> names = new HashSet<>();
+
+        for (ParameterDefinition parameter : executable.getParameters()) {
+            String name = parameter.getName();
+            String binding = plan.getBindingName(parameter);
+            RulePlacement placement = RulePlacement.parameter(name, parameter.getIndex());
+
+            for (ConstraintDefinition constraint : parameter.getConstraints()) {
+                ValueDeclaration declaration = ((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration();
+                Site site = new Site(beanClass, name, binding, Validators.binding(binding), name, declaration.getType(), placement,
+                        declaration.describe(), ValidationTarget.ANNOTATED_ELEMENT);
+                materialize(constraint, null, site, unique(name + "_" + decapitalize(constraint.getAnnotationType()), names), parameterRules);
+            }
+
+            for (ContainerElementDefinition node : parameter.getContainerElements()) {
+                executableElements(beanClass, name, node, name, names, elementRules);
+            }
+        }
+
+        for (ConstraintDefinition constraint : executable.getCrossParameterConstraints()) {
+            Site site = new Site(beanClass, null, BindingPlan.PARAMETERS, Validators.binding(BindingPlan.PARAMETERS), PARAMETERS_VALUE,
+                    Object[].class, RulePlacement.crossParameter(), constraint.getConstraintSource().describe(), ValidationTarget.PARAMETERS);
+            materialize(constraint, null, site, unique(executable.getName() + "_" + decapitalize(constraint.getAnnotationType()), names),
+                    crossParameterRules);
+        }
+
+        if (executable.getReturnValue() != null) {
+            ReturnValueDefinition returnValue = executable.getReturnValue();
+
+            for (ConstraintDefinition constraint : returnValue.getConstraints()) {
+                ValueDeclaration declaration = ((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration();
+                Site site = new Site(beanClass, RETURN_VALUE_NAME, BindingPlan.RETURN_VALUE, Validators.binding(BindingPlan.RETURN_VALUE),
+                        RETURN_VALUE_NAME, declaration.getType(), RulePlacement.returnValue(), declaration.describe(), ValidationTarget.ANNOTATED_ELEMENT);
+                materialize(constraint, null, site, unique(RETURN_VALUE_NAME + "_" + decapitalize(constraint.getAnnotationType()), names),
+                        returnValueRules);
+            }
+
+            for (ContainerElementDefinition node : returnValue.getContainerElements()) {
+                executableElements(beanClass, RETURN_VALUE_NAME, node, RETURN_VALUE_NAME, names, elementRules);
+            }
+        }
+
+        return new ExecutableRules(executable, plan, parameterRules, crossParameterRules, returnValueRules, elementRules);
+    }
+
+    /**
      * Where a constraint occurrence sits: what the materializer knows regardless of which mapper runs.
      */
     private record Site(Class<?> beanClass, String propertyName, String bindingName, Function<?> value, String valueName,
-                        Class<?> type, String leaf, String location) {}
+                        Class<?> type, RulePlacement placement, String location, ValidationTarget validationTarget) {}
 
     private void elements(Class<?> beanClass, PropertyDefinition property, ContainerElementDefinition node, String prefix,
                           List<BeanRules.ElementRules> out) {
         String name = prefix + "_" + segment(node);
+        List<MaterializedRule> rules = elementRules(beanClass, property.getName(), node, name, null);
 
-        if (!node.getConstraints().isEmpty()) {
-            List<MaterializedRule> rules = new ArrayList<>();
-            Class<?> type = node.getType() != null ? Types.erasure(node.getType()) : Object.class;
-            String binding = BindingPlan.elementBinding(node);
-            Site site = new Site(beanClass, property.getName(), binding, Validators.binding(binding), property.getName(), type,
-                    null, node.getSourceDeclaration().describe() + " " + node.getName());
-
-            for (ConstraintDefinition constraint : node.getConstraints()) {
-                materialize(constraint, null, site, name + "_" + decapitalize(constraint.getAnnotationType()), rules);
-            }
-
-            if (!rules.isEmpty()) out.add(new BeanRules.ElementRules(property, node, rules));
-        }
+        if (!rules.isEmpty()) out.add(new BeanRules.ElementRules(property, node, rules));
 
         for (ContainerElementDefinition child : node.getChildren()) {
             elements(beanClass, property, child, name, out);
         }
+    }
+
+    private void executableElements(Class<?> beanClass, String valueName, ContainerElementDefinition node, String prefix,
+                                    Set<String> names, List<ExecutableRules.ElementRules> out) {
+        String name = prefix + "_" + segment(node);
+        List<MaterializedRule> rules = elementRules(beanClass, valueName, node, name, names);
+
+        if (!rules.isEmpty()) out.add(new ExecutableRules.ElementRules(node, rules));
+
+        for (ContainerElementDefinition child : node.getChildren()) {
+            executableElements(beanClass, valueName, child, name, names, out);
+        }
+    }
+
+    /**
+     * The rules of one container element position, reading the element binding; the path is left to
+     * the container walk.
+     */
+    private List<MaterializedRule> elementRules(Class<?> beanClass, String valueName, ContainerElementDefinition node, String name,
+                                                Set<String> names) {
+        List<MaterializedRule> rules = new ArrayList<>();
+
+        if (node.getConstraints().isEmpty()) return rules;
+
+        Class<?> type = node.getType() != null ? Types.erasure(node.getType()) : Object.class;
+        String binding = BindingPlan.elementBinding(node);
+        Site site = new Site(beanClass, valueName, binding, Validators.binding(binding), valueName, type, RulePlacement.none(),
+                node.getSourceDeclaration().describe() + " " + node.getName(), ValidationTarget.ANNOTATED_ELEMENT);
+
+        for (ConstraintDefinition constraint : node.getConstraints()) {
+            String ruleName = name + "_" + decapitalize(constraint.getAnnotationType());
+            materialize(constraint, null, site, names != null ? unique(ruleName, names) : ruleName, rules);
+        }
+
+        return rules;
     }
 
     /**
@@ -245,7 +351,8 @@ public final class RuleMaterializer {
         Map<String, String> parameterNames = mapper != null ? mapper.getParameterNames() : Map.of();
         ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(),
                 site.valueName(), site.type(), ruleName, errorCode(type), constraint.getSeverity(),
-                message(type, constraint.getMessage(), parameterNames, site.valueName()), constraint.getSource(), site.value());
+                message(type, constraint.getMessage(), parameterNames, site.valueName()), constraint.getSource(), site.value(),
+                site.validationTarget());
         // Inside a @ReportAsSingleViolation constraint, every rule (its own and its composing ones) is hosted by it.
         ConstraintDefinition ownHost = constraint.isReportAsSingleViolation() ? constraint : host;
         List<MaterializedRule> own = new ArrayList<>();
@@ -267,7 +374,7 @@ public final class RuleMaterializer {
 
             for (Rule rule : rules) {
                 if (rule == null) throw new ConstraintMapperException(type, site.location(), "returned a null rule.");
-                own.add(new MaterializedRule(rule, constraint, ownHost, target, site.leaf()));
+                own.add(new MaterializedRule(rule, constraint, ownHost, target, site.placement()));
             }
         }
 
@@ -288,7 +395,7 @@ public final class RuleMaterializer {
 
         Rule wrapper = target.configure(ReportAsSingleViolationRule.builder(target.value(), hosted), true)
                 .parameters(attributes(constraint)).build();
-        out.add(new MaterializedRule(wrapper, constraint, host, target, site.leaf(), own));
+        out.add(new MaterializedRule(wrapper, constraint, host, target, site.placement(), own));
     }
 
     /**

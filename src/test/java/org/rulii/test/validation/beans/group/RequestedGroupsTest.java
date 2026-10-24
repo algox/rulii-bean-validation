@@ -26,7 +26,7 @@ import org.rulii.validation.beans.group.GroupSequenceRequestedException;
 import org.rulii.validation.beans.group.InvalidGroupException;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.model.ConstraintDefinition;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.util.Collection;
 import java.util.List;
@@ -182,7 +182,7 @@ public class RequestedGroupsTest {
     }
 
     private static ConstraintDefinition constraint(String field) throws Exception {
-        return ConstraintDefinition.load(PropertyDeclaration.ofField(Bean.class.getDeclaredField(field))).get(0);
+        return ConstraintDefinition.load(ValueDeclaration.ofField(Bean.class.getDeclaredField(field))).get(0);
     }
 
     // ---- fixtures ----

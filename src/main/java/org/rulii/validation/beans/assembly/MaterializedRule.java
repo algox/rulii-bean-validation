@@ -27,8 +27,8 @@ import java.util.List;
 
 /**
  * One rulii rule materialized from a constraint, with what the runtime needs to know about it: the
- * constraint it came from, the binding it reads, the property it reports at, the composition host it
- * belongs to, and the raw message template for render-time resolution.
+ * constraint it came from, the binding it reads, where it reports ({@link RulePlacement}), the
+ * composition host it belongs to, and the raw message template for render-time resolution.
  *
  * <p>A {@code @ReportAsSingleViolation} composition is one materialized rule whose
  * {@link #getHostedRules() hosted rules} are the rules of its composing constraints: the rule runs
@@ -43,7 +43,7 @@ public final class MaterializedRule {
     private final ConstraintDefinition definition;
     private final ConstraintDefinition host;
     private final ConstraintTarget target;
-    private final String leaf;
+    private final RulePlacement placement;
     private final List<MaterializedRule> hostedRules;
 
     /**
@@ -54,12 +54,11 @@ public final class MaterializedRule {
      * @param host the nearest enclosing {@code @ReportAsSingleViolation} composition host; null when
      *             the rule reports on its own.
      * @param target the target the rule was built for.
-     * @param leaf the property the violations report at; null for class-level and container element
-     *             rules, whose path is set by the traversal.
+     * @param placement where the violations report, relative to the path the rule runs at.
      */
     public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
-                            ConstraintTarget target, String leaf) {
-        this(rule, definition, host, target, leaf, List.of());
+                            ConstraintTarget target, RulePlacement placement) {
+        this(rule, definition, host, target, placement, List.of());
     }
 
     /**
@@ -70,22 +69,22 @@ public final class MaterializedRule {
      * @param host the nearest enclosing {@code @ReportAsSingleViolation} composition host; null when
      *             the rule reports on its own.
      * @param target the target the rule was built for.
-     * @param leaf the property the violations report at; null for class-level and container element
-     *             rules, whose path is set by the traversal.
+     * @param placement where the violations report, relative to the path the rule runs at.
      * @param hostedRules the rules this one runs and reports for; empty for an ordinary rule.
      */
     public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
-                            ConstraintTarget target, String leaf, List<MaterializedRule> hostedRules) {
+                            ConstraintTarget target, RulePlacement placement, List<MaterializedRule> hostedRules) {
         super();
         Assert.notNull(rule, "rule cannot be null.");
         Assert.notNull(definition, "definition cannot be null.");
         Assert.notNull(target, "target cannot be null.");
+        Assert.notNull(placement, "placement cannot be null.");
         Assert.notNull(hostedRules, "hostedRules cannot be null.");
         this.rule = rule;
         this.definition = definition;
         this.host = host;
         this.target = target;
-        this.leaf = leaf;
+        this.placement = placement;
         this.hostedRules = List.copyOf(hostedRules);
     }
 
@@ -113,7 +112,7 @@ public final class MaterializedRule {
     }
 
     /**
-     * Name of the rule, unique within the bean class.
+     * Name of the rule, unique within the bean class or executable.
      *
      * @return the rule name.
      */
@@ -164,12 +163,21 @@ public final class MaterializedRule {
     }
 
     /**
+     * Where the rule's violations report, relative to the path the rule runs at.
+     *
+     * @return the placement.
+     */
+    public RulePlacement getPlacement() {
+        return placement;
+    }
+
+    /**
      * The property the rule's violations report at.
      *
-     * @return the property name; null for class-level and container element rules.
+     * @return the property name; null for every rule but a property rule.
      */
     public String getLeaf() {
-        return leaf;
+        return placement.getPropertyName();
     }
 
     /**

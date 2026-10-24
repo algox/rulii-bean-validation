@@ -102,9 +102,11 @@ public class DescriptorTest {
         assertNotNull(bean.getConstraintsForProperty("name"));
         assertThrows(IllegalArgumentException.class, () -> bean.getConstraintsForProperty(null));
 
-        // Executable validation is not supported: nothing to describe.
+        // Executables: the constrained getter is the only constrained method; no constructor is constrained.
         assertNull(bean.getConstraintsForMethod("getName"));
-        assertTrue(bean.getConstrainedMethods(MethodType.GETTER, MethodType.NON_GETTER).isEmpty());
+        assertNotNull(bean.getConstraintsForMethod("getNick"));
+        assertEquals(1, bean.getConstrainedMethods(MethodType.GETTER, MethodType.NON_GETTER).size());
+        assertTrue(bean.getConstrainedMethods(MethodType.NON_GETTER).isEmpty());
         assertNull(bean.getConstraintsForConstructor());
         assertTrue(bean.getConstrainedConstructors().isEmpty());
 

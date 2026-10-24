@@ -21,12 +21,13 @@ import jakarta.validation.GroupSequence;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.groups.ConvertGroup;
 import jakarta.validation.groups.Default;
 import org.junit.jupiter.api.Test;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.BeanDefinitionLoader;
-import org.rulii.validation.beans.model.ConstraintOnNonGetterException;
+import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
 import org.rulii.validation.beans.model.GroupSequenceNotSupportedException;
 
 import java.util.ArrayList;
@@ -197,9 +198,9 @@ public class BeanDefinitionLoaderTest {
     @Test
     public void aPublishedPoisonFailsLaterRootsThatReachIt() {
         BeanDefinitionLoader loader = loader();
-        ConstraintOnNonGetterException e = assertThrows(ConstraintOnNonGetterException.class, () -> loader.load(BadMethod.class));
+        GroupConversionNotSupportedException e = assertThrows(GroupConversionNotSupportedException.class, () -> loader.load(BadMethod.class));
 
-        assertSame(e, assertThrows(ConstraintOnNonGetterException.class, () -> loader.load(ReachesBadMethod.class)));
+        assertSame(e, assertThrows(GroupConversionNotSupportedException.class, () -> loader.load(ReachesBadMethod.class)));
         assertTrue(loader.isPoisoned(ReachesBadMethod.class));
     }
 
@@ -284,7 +285,7 @@ public class BeanDefinitionLoaderTest {
     private static class RootWithBadTarget { @Valid private Address good; @Valid private MiddleWithBadTarget middle; }
 
     @SuppressWarnings("unused")
-    private static class BadMethod { @NotNull public Object compute() { return null; } }
+    private static class BadMethod { @Valid @ConvertGroup(from = Default.class, to = Default.class) private Object inner; }
     @SuppressWarnings("unused")
     private static class ReachesBadMethod { @Valid private BadMethod bad; }
     @SuppressWarnings("unused")

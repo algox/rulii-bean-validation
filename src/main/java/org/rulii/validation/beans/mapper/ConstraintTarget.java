@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans.mapper;
 
+import jakarta.validation.constraintvalidation.ValidationTarget;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.SourceDefinition;
 import org.rulii.model.function.Function;
@@ -44,6 +45,10 @@ import java.util.List;
  * rule name: the base name first, then {@code <base>_2}, {@code <base>_3}, so a mapper producing
  * several rules names them without further bookkeeping.</p>
  *
+ * <p>The {@link #getValidationTarget() validation target} says what the value is: the annotated
+ * element (a property, a parameter, a return value, a bean) or, for a cross-parameter constraint, the
+ * parameters of a method or constructor as a whole, an {@code Object[]}.</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
@@ -60,6 +65,7 @@ public final class ConstraintTarget {
     private final String message;
     private final SourceDefinition source;
     private final Function<?> valueFunction;
+    private final ValidationTarget validationTarget;
     private final List<String> ruleNames = new ArrayList<>(1);
 
     /**
@@ -100,6 +106,30 @@ public final class ConstraintTarget {
     public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
                             String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
                             Function<?> valueFunction) {
+        this(beanClass, propertyName, bindingName, valueName, type, ruleName, errorCode, severity, message, source, valueFunction,
+                ValidationTarget.ANNOTATED_ELEMENT);
+    }
+
+    /**
+     * Creates a target for a validation target other than the annotated element: the parameters of an
+     * executable as a whole for a cross-parameter constraint.
+     *
+     * @param beanClass the bean class being materialized.
+     * @param propertyName the constrained property or parameter; null for a class-level or cross-parameter constraint.
+     * @param bindingName the binding the rules read the value from.
+     * @param valueName the name the rules report the value under.
+     * @param type the static type of the value; {@code Object[]} for the parameters.
+     * @param ruleName the base rule name.
+     * @param errorCode the error code of the violations.
+     * @param severity the severity of the violations.
+     * @param message the translated message template; null to use the rule's resolved default.
+     * @param source where the constraint is declared.
+     * @param valueFunction the function reading the value; null to read the binding.
+     * @param validationTarget what the value is.
+     */
+    public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
+                            String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
+                            Function<?> valueFunction, ValidationTarget validationTarget) {
         super();
         Assert.notNull(beanClass, "beanClass cannot be null.");
         Assert.hasText(bindingName, "bindingName cannot be empty/null.");
@@ -110,6 +140,7 @@ public final class ConstraintTarget {
         Assert.hasText(errorCode, "errorCode cannot be empty/null.");
         Assert.notNull(severity, "severity cannot be null.");
         Assert.notNull(source, "source cannot be null.");
+        Assert.notNull(validationTarget, "validationTarget cannot be null.");
         this.beanClass = beanClass;
         this.propertyName = propertyName;
         this.bindingName = bindingName;
@@ -121,6 +152,7 @@ public final class ConstraintTarget {
         this.message = message;
         this.source = source;
         this.valueFunction = valueFunction != null ? valueFunction : Validators.binding(bindingName);
+        this.validationTarget = validationTarget;
     }
 
     /**
@@ -191,14 +223,20 @@ public final class ConstraintTarget {
     }
 
     /**
-     * The constrained property.
+     * The constrained property or parameter.
      *
-     * @return the property name; null for a class-level constraint.
+     * @return the name; null for a class-level or cross-parameter constraint.
      */
     public String getPropertyName() {
         return propertyName;
     }
 
+    /**
+     * Whether the constraint is declared on the bean class itself, or validates the parameters of an
+     * executable as a whole: neither reports at a property.
+     *
+     * @return true for a class-level or cross-parameter constraint.
+     */
     public boolean isClassLevel() {
         return propertyName == null;
     }
@@ -213,7 +251,8 @@ public final class ConstraintTarget {
 
     /**
      * The static type of the constrained value: the property's resolved type, the container element
-     * type at a position within it, or the bean class for a class-level constraint.
+     * type at a position within it, the bean class for a class-level constraint, {@code Object[]} for a
+     * cross-parameter constraint.
      *
      * @return the type.
      */
@@ -246,9 +285,22 @@ public final class ConstraintTarget {
         return source;
     }
 
+    /**
+     * What the value is: the annotated element, or the parameters of an executable as a whole.
+     *
+     * @return the validation target.
+     */
+    public ValidationTarget getValidationTarget() {
+        return validationTarget;
+    }
+
+    public boolean isCrossParameter() {
+        return validationTarget == ValidationTarget.PARAMETERS;
+    }
+
     @Override
     public String toString() {
         return "ConstraintTarget{" + ruleName + " on " + bindingName + " (" + type.getSimpleName() + "), code=" + errorCode
-                + ", severity=" + severity + '}';
+                + ", severity=" + severity + (isCrossParameter() ? ", cross-parameter" : "") + '}';
     }
 }

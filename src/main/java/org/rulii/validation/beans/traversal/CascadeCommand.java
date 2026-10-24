@@ -26,7 +26,7 @@ import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 
 /**
@@ -72,7 +72,7 @@ final class CascadeCommand implements RuleFlowCommand {
                 walker.walk(plan.read(ruleContext.getBindings(), bean, property, node.getSourceDeclaration()), node, path);
             }
 
-            for (PropertyDeclaration declaration : property.getCascadedDeclarations()) {
+            for (ValueDeclaration declaration : property.getCascadedDeclarations()) {
                 walker.cascade(plan.read(ruleContext.getBindings(), bean, property, declaration), declaration.getGenericType(), path);
             }
         }

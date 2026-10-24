@@ -44,8 +44,8 @@ import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.GroupConversionNotSupportedException;
-import org.rulii.validation.beans.model.PropertyDeclaration;
-import org.rulii.validation.beans.model.PropertyConstraintSource;
+import org.rulii.validation.beans.model.ValueDeclaration;
+import org.rulii.validation.beans.model.DeclarationConstraintSource;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.PropertyDiscovery;
 import org.rulii.validation.beans.model.PropertySource;
@@ -85,7 +85,7 @@ public class PropertyDefinitionTest {
         PropertyDefinition property = load("name");
         assertEquals("name", property.getName());
         assertEquals(PropertySource.ofField(field("name")), property.getPropertySource());
-        assertEquals(List.of(PropertyDeclaration.ofField(field("name"))), property.getPropertySource().getDeclarations());
+        assertEquals(List.of(ValueDeclaration.ofField(field("name"))), property.getPropertySource().getDeclarations());
         assertEquals(field("name"), property.getPropertySource().getMember());
         assertFalse(property.getPropertySource().hasMultipleDeclarations());
         assertEquals(String.class, property.getType());
@@ -111,7 +111,7 @@ public class PropertyDefinitionTest {
     @Test
     public void declarationAndTypeUseReadsAreMerged() throws Exception {
         // Jakarta constraints target FIELD and TYPE_USE: Java mirrors each onto both places.
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(field("name"));
+        ValueDeclaration declaration = ValueDeclaration.ofField(field("name"));
         assertEquals(2, ConstraintDefinition.load(declaration).size());
         assertEquals(2, ConstraintDefinition.load(declaration, declaration.getAnnotatedType()).size());
         assertEquals(2, load("name").getConstraints().size());
@@ -124,7 +124,7 @@ public class PropertyDefinitionTest {
 
     @Test
     public void typeUseOnlyConstraintIsAFieldConstraint() throws Exception {
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(field("typeUseOnly"));
+        ValueDeclaration declaration = ValueDeclaration.ofField(field("typeUseOnly"));
         // The declaration read cannot see a TYPE_USE-only annotation; the type-use read adds it.
         assertEquals(List.of(NotNull.class), types(ConstraintDefinition.load(declaration)));
         assertEquals(List.of(NotNull.class, TypeUseOnly.class), types(load("typeUseOnly").getConstraints()));
@@ -308,13 +308,13 @@ public class PropertyDefinitionTest {
         PropertyDefinition property = PropertyDefinition.load(getter("getEmail"), REGISTRY);
         assertEquals("email", property.getName());
         assertEquals(1, property.getPropertySource().getDeclarations().size());
-        assertEquals(PropertyDeclaration.Kind.GETTER, property.getPropertySource().getPrimary().getKind());
+        assertEquals(ValueDeclaration.Kind.GETTER, property.getPropertySource().getPrimary().getKind());
         assertEquals(getter("getEmail"), property.getPropertySource().getMember());
         assertEquals(String.class, property.getType());
         assertEquals(Bean.class.getName(), property.getSource().getClassName());
         assertEquals("getEmail", property.getSource().getMethodName());
         assertEquals(List.of(NotBlank.class, Email.class), types(property.getConstraints()));
-        assertEquals(PropertyDeclaration.Kind.GETTER, ((PropertyConstraintSource) property.getConstraints().get(0).getConstraintSource()).getDeclaration().getKind());
+        assertEquals(ValueDeclaration.Kind.GETTER, ((DeclarationConstraintSource) property.getConstraints().get(0).getConstraintSource()).getDeclaration().getKind());
         assertTrue(property.getContainerElements().isEmpty());
         assertFalse(property.isCascaded());
         assertTrue(property.toString().contains("getEmail()"));
@@ -382,7 +382,7 @@ public class PropertyDefinitionTest {
         assertEquals("name", property.getName());
         assertEquals(PropertySource.of(field, getter), property.getPropertySource());
         assertTrue(property.getPropertySource().hasMultipleDeclarations());
-        assertEquals(PropertyDeclaration.ofGetter(getter), property.getPropertySource().getPrimary());
+        assertEquals(ValueDeclaration.ofGetter(getter), property.getPropertySource().getPrimary());
         assertEquals("getName", property.getSource().getMethodName());
         assertEquals(String.class, property.getType());
 
@@ -463,7 +463,7 @@ public class PropertyDefinitionTest {
         PropertyDefinition property = PropertyDefinition.load(component("name"), REGISTRY);
         assertEquals("name", property.getName());
         assertEquals(1, property.getPropertySource().getDeclarations().size());
-        assertEquals(PropertyDeclaration.Kind.RECORD_COMPONENT, property.getPropertySource().getPrimary().getKind());
+        assertEquals(ValueDeclaration.Kind.RECORD_COMPONENT, property.getPropertySource().getPrimary().getKind());
         assertEquals(Customer.class.getDeclaredMethod("name"), property.getPropertySource().getMember());
         assertEquals("name", property.getSource().getMethodName());
         assertEquals(String.class, property.getType());
@@ -527,8 +527,8 @@ public class PropertyDefinitionTest {
         assertEquals(List.of(NotNull.class, Size.class, Size.class, Email.class, NotBlank.class), types(property.getConstraints()));
         assertEquals(List.of(Parent.class, Parent.class, Child.class, Child.class, Labelled.class),
                 property.getConstraints().stream().<Class<?>>map(c -> c.getConstraintSource().getDeclaringClass()).toList());
-        assertEquals(PropertyDeclaration.Kind.FIELD, ((PropertyConstraintSource) property.getConstraints().get(2).getConstraintSource()).getDeclaration().getKind());
-        assertEquals(PropertyDeclaration.Kind.GETTER, ((PropertyConstraintSource) property.getConstraints().get(3).getConstraintSource()).getDeclaration().getKind());
+        assertEquals(ValueDeclaration.Kind.FIELD, ((DeclarationConstraintSource) property.getConstraints().get(2).getConstraintSource()).getDeclaration().getKind());
+        assertEquals(ValueDeclaration.Kind.GETTER, ((DeclarationConstraintSource) property.getConstraints().get(3).getConstraintSource()).getDeclaration().getKind());
         assertFalse(property.isCascaded());
     }
 

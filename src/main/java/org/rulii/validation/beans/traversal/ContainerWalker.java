@@ -26,8 +26,8 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
-import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
+import org.rulii.validation.beans.assembly.MaterializedRules;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.util.reflect.Types;
@@ -60,7 +60,7 @@ import java.util.Map;
 public final class ContainerWalker {
 
     private final RuleContext ruleContext;
-    private final BeanRules rules;
+    private final MaterializedRules rules;
     private final boolean cascading;
     private final Traversal traversal;
     private final BeanRuleViolations collector;
@@ -71,10 +71,10 @@ public final class ContainerWalker {
      * {@link BeanRuleViolations} bound.
      *
      * @param ruleContext the context of the run.
-     * @param rules the rules of the class in scope.
+     * @param rules the rules of the class or executable in scope.
      * @param cascading whether cascaded elements descend; false validates the elements' own constraints only.
      */
-    public ContainerWalker(RuleContext ruleContext, BeanRules rules, boolean cascading) {
+    public ContainerWalker(RuleContext ruleContext, MaterializedRules rules, boolean cascading) {
         super();
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
         Assert.notNull(rules, "rules cannot be null.");
@@ -124,7 +124,7 @@ public final class ContainerWalker {
                 scope.getBindings().bind(Binding.builder().with(BindingPlan.KEY, Object.class).value(key).build());
             }
 
-            if (rules.getElementRules(node) != null) {
+            if (rules.hasElementRules(node)) {
                 try (BeanRuleViolations.Frame ignored = collector.enter(elementPath, rules, bean)) {
                     traversal.elementRuleSet(rules, node).run(ruleContext);
                 }

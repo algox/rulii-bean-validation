@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.assembly.InaccessiblePropertyException;
 import org.rulii.validation.beans.assembly.PropertyAccessor;
-import org.rulii.validation.beans.model.PropertyDeclaration;
+import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.io.IOException;
 
@@ -44,30 +44,30 @@ public class PropertyAccessorTest {
         Bean bean = new Bean();
         bean.secret = "s";
 
-        PropertyAccessor field = PropertyAccessor.of(PropertyDeclaration.ofField(Bean.class.getDeclaredField("secret")));
+        PropertyAccessor field = PropertyAccessor.of(ValueDeclaration.ofField(Bean.class.getDeclaredField("secret")));
         assertEquals("s", field.read(bean));
-        assertEquals(PropertyDeclaration.Kind.FIELD, field.getDeclaration().getKind());
+        assertEquals(ValueDeclaration.Kind.FIELD, field.getDeclaration().getKind());
         assertTrue(field.toString().contains("secret"));
 
-        PropertyAccessor getter = PropertyAccessor.of(PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("getSecret")));
+        PropertyAccessor getter = PropertyAccessor.of(ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getSecret")));
         assertEquals("S", getter.read(bean));
 
-        PropertyAccessor primitive = PropertyAccessor.of(PropertyDeclaration.ofField(Bean.class.getDeclaredField("count")));
+        PropertyAccessor primitive = PropertyAccessor.of(ValueDeclaration.ofField(Bean.class.getDeclaredField("count")));
         assertEquals(7, primitive.read(bean));
 
-        PropertyAccessor component = PropertyAccessor.of(PropertyDeclaration.ofRecordComponent(Pair.class.getRecordComponents()[0]));
+        PropertyAccessor component = PropertyAccessor.of(ValueDeclaration.ofRecordComponent(Pair.class.getRecordComponents()[0]));
         assertEquals("a", component.read(new Pair("a", 1)));
 
-        PropertyAccessor inherited = PropertyAccessor.of(PropertyDeclaration.ofField(Bean.class.getSuperclass().getDeclaredField("base"), Bean.class));
+        PropertyAccessor inherited = PropertyAccessor.of(ValueDeclaration.ofField(Bean.class.getSuperclass().getDeclaredField("base"), Bean.class));
         assertEquals("b", inherited.read(bean));
     }
 
     @Test
     public void getterExceptionsPropagateOrWrap() throws Exception {
-        PropertyAccessor unchecked = PropertyAccessor.of(PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("getBoom")));
+        PropertyAccessor unchecked = PropertyAccessor.of(ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getBoom")));
         assertThrows(IllegalStateException.class, () -> unchecked.read(new Bean()));
 
-        PropertyAccessor checked = PropertyAccessor.of(PropertyDeclaration.ofGetter(Bean.class.getDeclaredMethod("getChecked")));
+        PropertyAccessor checked = PropertyAccessor.of(ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getChecked")));
         UnrulyException e = assertThrows(UnrulyException.class, () -> checked.read(new Bean()));
         assertInstanceOf(IOException.class, e.getCause());
 
@@ -78,7 +78,7 @@ public class PropertyAccessorTest {
     @Test
     public void inaccessibleMembersFailWithTheOpensDirective() throws Exception {
         // A JDK internal field: java.base does not open java.lang to us.
-        PropertyDeclaration declaration = PropertyDeclaration.ofField(String.class.getDeclaredField("hash"));
+        ValueDeclaration declaration = ValueDeclaration.ofField(String.class.getDeclaredField("hash"));
         InaccessiblePropertyException e = assertThrows(InaccessiblePropertyException.class, () -> PropertyAccessor.of(declaration));
         assertSame(declaration, e.getDeclaration());
         assertTrue(e.getMessage().contains("opens java.lang to org.rulii.validation.beans"));
@@ -87,7 +87,7 @@ public class PropertyAccessorTest {
 
     @Test
     public void lazyAccessorsResolveOnFirstRead() throws Exception {
-        PropertyDeclaration inaccessible = PropertyDeclaration.ofField(String.class.getDeclaredField("hash"));
+        ValueDeclaration inaccessible = ValueDeclaration.ofField(String.class.getDeclaredField("hash"));
         PropertyAccessor lazy = PropertyAccessor.lazy(inaccessible);
         assertFalse(lazy.isResolved(), "nothing is touched until a read");
         assertTrue(lazy.toString().contains("unresolved"));
@@ -95,12 +95,12 @@ public class PropertyAccessorTest {
 
         Bean bean = new Bean();
         bean.secret = "s";
-        PropertyAccessor field = PropertyAccessor.lazy(PropertyDeclaration.ofField(Bean.class.getDeclaredField("secret")));
+        PropertyAccessor field = PropertyAccessor.lazy(ValueDeclaration.ofField(Bean.class.getDeclaredField("secret")));
         assertFalse(field.isResolved());
         assertEquals("s", field.read(bean));
         assertTrue(field.isResolved());
         assertEquals("s", field.read(bean));
-        assertTrue(PropertyAccessor.of(PropertyDeclaration.ofField(Bean.class.getDeclaredField("secret"))).isResolved());
+        assertTrue(PropertyAccessor.of(ValueDeclaration.ofField(Bean.class.getDeclaredField("secret"))).isResolved());
         assertThrows(IllegalArgumentException.class, () -> PropertyAccessor.lazy(null));
     }
 
