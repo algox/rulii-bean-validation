@@ -41,6 +41,8 @@
         <junit.version>6.1.1</junit.version>
         <rulii.version>2.2.0-SNAPSHOT</rulii.version>
         <jakarta.validation.api.version>3.1.1</jakarta.validation.api.version>
+        <jakarta.el.api.version>5.0.1</jakarta.el.api.version>
+        <expressly.version>5.0.0</expressly.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
@@ -81,6 +83,22 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jakarta Expression Language, for the tests of message expressions only: at runtime the
+             application brings an EL implementation, as it does for Hibernate Validator. -->
+        <dependency>
+            <groupId>jakarta.el</groupId>
+            <artifactId>jakarta.el-api</artifactId>
+            <version>${jakarta.el.api.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.glassfish.expressly</groupId>
+            <artifactId>expressly</artifactId>
+            <version>${expressly.version}</version>
             <scope>test</scope>
         </dependency>
 

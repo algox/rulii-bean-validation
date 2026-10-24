@@ -177,7 +177,7 @@ public class BeanValidationMessagesTest {
         assertEquals("must be between 2 and 5 characters", messages.get("d"), "a bundle text with attributes");
         assertEquals("nested custom text", messages.get("e"), "keys expand recursively");
         assertTrue(messages.get("f").startsWith("loop "), "a cyclic key terminates: " + messages.get("f"));
-        assertEquals("bad ${validatedValue.length() > 3 ? 'long' : 'short'}", messages.get("g"), "EL is unsupported and emerges verbatim");
+        assertEquals("bad short", messages.get("g"), "EL is evaluated through the el scripting language");
         assertEquals("{no.such.key}", messages.get("h"), "an unknown key stays as Bean Validation leaves it");
         assertEquals("it's 2", messages.get("i"), "quotes in bundle text survive formatting");
         assertEquals("plain text", messages.get("j"));
@@ -271,7 +271,7 @@ public class BeanValidationMessagesTest {
 
         BeanValidationMessageFormatter formatter = new BeanValidationMessageFormatter(org.rulii.text.MessageFormatter.builder().build(), resolver);
         org.rulii.text.ParameterInfo min = new org.rulii.text.ParameterInfo(0, "min", 2);
-        assertEquals("min 2, ${a > b}, {nope}, custom text", formatter.format(Locale.ENGLISH, "min ${min}, ${a > b}, ${nope}, ${my.key}", min));
+        assertEquals("min 2, ${a > b}, {nope}, custom text", formatter.format(Locale.ENGLISH, "min ${min}, ${a > b}, ${nope}, ${#my.key}", min));
         assertEquals("plain", formatter.format(Locale.ENGLISH, "plain", min));
         assertEquals("x 2", formatter.format(Locale.ENGLISH, "x {0}", 2));
         assertNotNull(formatter.getDelegate());

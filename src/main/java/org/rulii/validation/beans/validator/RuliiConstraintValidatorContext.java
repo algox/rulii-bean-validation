@@ -43,7 +43,9 @@ import java.util.function.UnaryOperator;
  * The subscript of a node that is "in an iterable" renders on the node before it, as the reference
  * implementation renders {@code address[0].street}; on a bare root path it is dropped.
  * {@code inContainer} alone records nothing, since a subscript here always renders brackets.
- * {@code addParameterNode} belongs to executable validation and throws.</p>
+ * {@code addParameterNode} belongs to executable validation and throws. The message expressions of a
+ * template built here are not evaluated unless its builder's {@link ViolationBuilder#enableExpressionLanguage()}
+ * was called.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -135,13 +137,14 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
     }
 
     /**
-     * A custom violation: its message template and how the rule's path extends to where it occurred
-     * (the identity when no node was added).
+     * A custom violation: its message template, how the rule's path extends to where it occurred
+     * (the identity when no node was added), and whether its message expressions may be evaluated.
      *
      * @param messageTemplate the template, as given to the builder.
      * @param pathExtension the path extension.
+     * @param expressionLanguageEnabled whether {@code ${...}} expressions of the template are evaluated.
      */
-    public record Violation(String messageTemplate, UnaryOperator<PropertyPath> pathExtension) {}
+    public record Violation(String messageTemplate, UnaryOperator<PropertyPath> pathExtension, boolean expressionLanguageEnabled) {}
 
     /**
      * A pending node of a custom violation's path.
@@ -204,10 +207,24 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
         private final String messageTemplate;
         private final List<Node> nodes = new ArrayList<>();
         private boolean added;
+        private boolean expressionLanguageEnabled;
 
         private ViolationBuilder(String messageTemplate) {
             super();
             this.messageTemplate = messageTemplate;
+        }
+
+        /**
+         * Lets the message expressions ({@code ${...}}) of this template be evaluated. Off by default,
+         * as the specification has it since 3.0: a template built at run time may carry user input,
+         * which an expression could execute. A validator building its template from constants may turn
+         * it on, the way the reference implementation's own builder offers it.
+         *
+         * @return this builder.
+         */
+        public ViolationBuilder enableExpressionLanguage() {
+            this.expressionLanguageEnabled = true;
+            return this;
         }
 
         /**
@@ -291,7 +308,7 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
                     result = node.appendTo(result);
                 }
                 return result;
-            }));
+            }, expressionLanguageEnabled));
             return RuliiConstraintValidatorContext.this;
         }
 

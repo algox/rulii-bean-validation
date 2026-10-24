@@ -370,7 +370,7 @@ public class ConstraintValidatorAdapterTest {
 
         assertEquals(List.of("postcode.code:postcode_validPostcode:code is required",
                         "postcode:postcode_validPostcode:the whole thing",
-                        "tags[1].<list element>:tags_cleanTags:[ok, bad] is dirty",
+                        "tags[1].<list element>:tags_cleanTags:${validatedValue} is dirty",
                         "tags[bad]:tags_cleanTags:keyed",
                         "tags[]:tags_cleanTags:somewhere"),
                 report(validator.validate(parcel)));
@@ -382,7 +382,7 @@ public class ConstraintValidatorAdapterTest {
         Templated templated = new Templated();
         templated.value = "v";
 
-        assertEquals(List.of("value:value_templates:custom text", "value:value_templates:v is below 3",
+        assertEquals(List.of("value:value_templates:custom text", "value:value_templates:${validatedValue} is below 3",
                 "value:value_templates:must be templated"), report(validator.validate(templated)));
     }
 

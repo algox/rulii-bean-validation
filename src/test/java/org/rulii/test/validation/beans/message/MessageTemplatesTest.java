@@ -97,7 +97,7 @@ public class MessageTemplatesTest {
 
     @Test
     public void bundleKeysInsideAMessageAreQuotedVerbatim() {
-        assertEquals("${my.key} and ${min}", MessageTemplates.translate("{my.key} and {min}", NONE, "name"));
+        assertEquals("${#my.key} and ${min}", MessageTemplates.translate("{my.key} and {min}", NONE, "name"));
         assertEquals("'{'some text'}'", MessageTemplates.translate("{some text}", NONE, "name"));
         assertEquals("'{'it''s'}'", MessageTemplates.translate("{it's}", NONE, "name"));
     }
@@ -107,7 +107,7 @@ public class MessageTemplatesTest {
         // What rulii does after placeholder substitution: ${x} -> {0}, then MessageFormat. The key placeholder
         // is expanded by the render-time formatter before that; a second argument stands in for it here.
         String translated = MessageTemplates.translate("don't exceed {max} \\{chars\\}: {my.key}", NONE, "name");
-        String formatted = new MessageFormat(translated.replace("${max}", "{0}").replace("${my.key}", "{1}")).format(new Object[]{5, "custom"});
+        String formatted = new MessageFormat(translated.replace("${max}", "{0}").replace("${#my.key}", "{1}")).format(new Object[]{5, "custom"});
         assertEquals("don't exceed 5 {chars}: custom", formatted);
     }
 

@@ -40,12 +40,12 @@ import java.util.regex.Pattern;
  *     given mapping when the rule reports the attribute under a different name ({@code {regexp}} to
  *     {@code ${pattern}}), else the attribute name itself;</li>
  *     <li>{@code {some.key}}, a message parameter that is not an identifier, is a bundle reference: it
- *     becomes the placeholder {@code ${some.key}}, which the render-time formatter expands against the
+ *     becomes the placeholder {@code ${#some.key}} (the mark tells it from an EL expression), which the render-time formatter expands against the
  *     bundles ({@link BeanValidationMessageFormatter});</li>
  *     <li>{@code ${validatedValue}} becomes {@code ${<value name>}}, the parameter rulii rules report the
  *     offending value under; any other bare identifier in {@code ${...}} is treated as a parameter;</li>
- *     <li>every other {@code ${...}} is an EL expression: unsupported, left verbatim for the render-time
- *     formatter to shield;</li>
+ *     <li>every other {@code ${...}} is an EL expression: left as written for the render-time formatter to
+ *     evaluate ({@link MessageExpressions}), or to shield when it cannot;</li>
  *     <li>escaped characters and literal text are MessageFormat-quoted where needed.</li>
  * </ul>
  *
@@ -60,6 +60,12 @@ public final class MessageTemplates {
      * The EL variable Bean Validation exposes the validated value under.
      */
     public static final String VALIDATED_VALUE = "validatedValue";
+
+    /**
+     * The mark a translated bundle-key placeholder starts with ({@code ${#my.key}}), telling it from an
+     * EL expression, which can never start with it.
+     */
+    public static final String KEY_MARK = "#";
 
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
     private static final Pattern KEY = Pattern.compile("[A-Za-z_][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+)+");
@@ -148,7 +154,7 @@ public final class MessageTemplates {
                 } else if (IDENTIFIER.matcher(content).matches()) {
                     placeholder(result, parameterNames.getOrDefault(content, content));
                 } else {
-                    // EL expression: unsupported, left verbatim for the render-time formatter.
+                    // EL expression: left as written for the render-time formatter to evaluate.
                     result.append(template, i, end + 1);
                 }
 
@@ -169,8 +175,8 @@ public final class MessageTemplates {
                 } else if (IDENTIFIER.matcher(content).matches()) {
                     placeholder(result, parameterNames.getOrDefault(content, content));
                 } else if (isKey(content)) {
-                    // Bundle key: a placeholder the render-time formatter expands against the bundles.
-                    placeholder(result, content);
+                    // Bundle key: a marked placeholder the render-time formatter expands against the bundles.
+                    placeholder(result, KEY_MARK + content);
                 } else {
                     // Arbitrary text: keep verbatim, quoted for MessageFormat.
                     literal(result, '{');

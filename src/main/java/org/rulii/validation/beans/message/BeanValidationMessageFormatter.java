@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,15 +38,17 @@ import java.util.regex.Pattern;
  *     <li>a placeholder naming one of the parameters is left to the formatter it wraps;</li>
  *     <li>{@code ${validatedValue}} with no parameter of that name stands for the first parameter,
  *     which is the validated value of every rulii value validation rule;</li>
- *     <li>the one conditional form {@code ${param == true ? 'a' : 'b'}} (or {@code == false}) is
- *     decided against the parameter, which is how a message tells an inclusive bound from an exclusive
- *     one;</li>
- *     <li>a placeholder naming a message key ({@code ${my.key}}, which is how a {@code {my.key}} in a
- *     literal message arrives) is expanded through the resolver, recursively, at the locale in hand;</li>
  *     <li>a placeholder naming nothing known renders as {@code {name}}, as Bean Validation leaves an
  *     unknown reference, instead of a parser complaint;</li>
- *     <li>anything else is an EL expression: unsupported, shielded from the placeholder parser and
- *     emitted verbatim.</li>
+ *     <li>a placeholder marked as a message key ({@code ${#my.key}}, which is how a {@code {my.key}} in a
+ *     literal message arrives from {@link MessageTemplates#translate}) is expanded through the resolver,
+ *     recursively, at the locale in hand; an unknown key renders as {@code {my.key}};</li>
+ *     <li>anything else is a message expression, evaluated by the {@link MessageExpressions} with the
+ *     specification's scope: the parameters, {@code validatedValue} and {@code formatter}. Without the
+ *     expression language, the one conditional form {@code ${param == true ? 'a' : 'b'}} (or
+ *     {@code == false}) is still decided against the parameter, which is how the default messages tell
+ *     an inclusive bound from an exclusive one, and every other expression is shielded from the
+ *     placeholder parser and emitted verbatim.</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -56,23 +59,48 @@ public final class BeanValidationMessageFormatter implements MessageFormatter {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{(.*?)}");
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
     private static final Pattern CONDITIONAL = Pattern.compile("([A-Za-z_$][A-Za-z0-9_$]*)\\s*==\\s*(true|false)\\s*\\?\\s*'([^']*)'\\s*:\\s*'([^']*)'");
+    private static final Set<String> EL_LITERALS = Set.of("null", "true", "false");
     private static final char MARK = '⁣';
     private static final int MAX_DEPTH = 8;
 
     private final MessageFormatter delegate;
     private final MessageResolver resolver;
+    private final MessageExpressions expressions;
+
+    /**
+     * Creates the formatter, evaluating expressions when the expression language is available.
+     *
+     * @param delegate the formatter doing the formatting.
+     * @param resolver the resolver message keys expand through; null to leave keys unexpanded.
+     */
+    public BeanValidationMessageFormatter(MessageFormatter delegate, MessageResolver resolver) {
+        this(delegate, resolver, MessageExpressions.standard());
+    }
 
     /**
      * Creates the formatter.
      *
      * @param delegate the formatter doing the formatting.
      * @param resolver the resolver message keys expand through; null to leave keys unexpanded.
+     * @param expressions the evaluator of message expressions; {@link MessageExpressions#NONE} leaves
+     *                    them as written.
      */
-    public BeanValidationMessageFormatter(MessageFormatter delegate, MessageResolver resolver) {
+    public BeanValidationMessageFormatter(MessageFormatter delegate, MessageResolver resolver, MessageExpressions expressions) {
         super();
         Assert.notNull(delegate, "delegate cannot be null.");
+        Assert.notNull(expressions, "expressions cannot be null.");
         this.delegate = delegate;
         this.resolver = resolver;
+        this.expressions = expressions;
+    }
+
+    /**
+     * The evaluator of message expressions.
+     *
+     * @return the expressions.
+     */
+    public MessageExpressions getExpressions() {
+        return expressions;
     }
 
     /**
@@ -135,13 +163,10 @@ public final class BeanValidationMessageFormatter implements MessageFormatter {
                 result.append(matcher.group());
             } else if (name.equals(MessageTemplates.VALIDATED_VALUE) && first != null) {
                 result.append("${").append(first).append(options).append('}');
-            } else if (conditional.matches() && values.containsKey(conditional.group(1))) {
-                boolean holds = String.valueOf(values.get(conditional.group(1))).equals(conditional.group(2));
-                result.append(quote(holds ? conditional.group(3) : conditional.group(4)));
-            } else if (IDENTIFIER.matcher(content).matches()) {
+            } else if (IDENTIFIER.matcher(content).matches() && !EL_LITERALS.contains(content)) {
                 result.append(shield(shielded, "{" + content + "}"));
             } else {
-                String key = MessageTemplates.isKey(content) ? content : null;
+                String key = content.startsWith(MessageTemplates.KEY_MARK) ? content.substring(MessageTemplates.KEY_MARK.length()) : null;
                 String text = key != null && resolver != null && depth < MAX_DEPTH ? resolver.resolve(locale, key, null) : null;
 
                 if (text != null) {
@@ -150,7 +175,16 @@ public final class BeanValidationMessageFormatter implements MessageFormatter {
                 } else if (key != null) {
                     result.append(shield(shielded, "{" + key + "}"));
                 } else {
-                    result.append(shield(shielded, matcher.group()));
+                    String evaluated = expressions.evaluate(matcher.group(), values, first != null ? values.get(first) : null, locale);
+
+                    if (evaluated != null) {
+                        result.append(quote(evaluated));
+                    } else if (conditional.matches() && values.containsKey(conditional.group(1))) {
+                        boolean holds = String.valueOf(values.get(conditional.group(1))).equals(conditional.group(2));
+                        result.append(quote(holds ? conditional.group(3) : conditional.group(4)));
+                    } else {
+                        result.append(shield(shielded, matcher.group()));
+                    }
                 }
             }
 

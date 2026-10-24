@@ -33,6 +33,7 @@ import org.rulii.validation.Severity;
 import org.rulii.validation.ValueValidationRule;
 import org.rulii.validation.beans.CustomPathRuleViolation;
 import org.rulii.validation.beans.assembly.RuleMaterializer;
+import org.rulii.validation.beans.message.MessageExpressions;
 
 import java.lang.annotation.Annotation;
 import java.util.Collections;
@@ -186,8 +187,10 @@ public class ConstraintValidatorRule extends ValueValidationRule {
         if (context == null) return;
 
         for (RuliiConstraintValidatorContext.Violation custom : context.getViolations()) {
+            // A template built at run time keeps its expressions as written unless the validator enabled them.
+            String template = custom.expressionLanguageEnabled() ? custom.messageTemplate() : MessageExpressions.escape(custom.messageTemplate());
             RuleViolationBuilder builder = violation(value)
-                    .errorMessage(RuleMaterializer.message(annotationType, custom.messageTemplate(), Map.of(), getValueName()));
+                    .errorMessage(RuleMaterializer.message(annotationType, template, Map.of(), getValueName()));
             ruleViolations.add(new CustomPathRuleViolation(builder.build(ruleContext), custom.pathExtension()));
         }
     }
