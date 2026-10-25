@@ -259,10 +259,9 @@ public final class ConstraintValidatorMapper<A extends Annotation> implements Co
         String message = String.valueOf(attributes.get("message"));
         attributes.keySet().removeAll(COMMON_ATTRIBUTES);
 
-        return List.of(target.configure(ConstraintValidatorRule.builder(target.value(), validator, annotationType), true)
+        return List.of(target.configure(ConstraintValidatorRule.builder(target.value(), validator, annotationType))
                 .defaultMessageTemplate(message)
                 .parameters(attributes)
-                .supportedTypes(List.of(validatedType(validatorClass)))
                 .build());
     }
 

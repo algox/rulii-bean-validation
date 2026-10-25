@@ -24,6 +24,7 @@ import org.rulii.model.function.Function;
 import org.rulii.util.RuleUtils;
 import org.rulii.validation.Severity;
 import org.rulii.validation.ValueValidationRuleBuilder;
+import org.rulii.validation.beans.validator.ConstraintValidatorRuleBuilder;
 import org.rulii.validation.rules.Validators;
 
 import java.util.ArrayList;
@@ -193,6 +194,25 @@ public final class ConstraintTarget {
                 .severity(severity)
                 .valueName(valueName)
                 .failOnNull(failOnNull)
+                .source(source);
+        if (message != null) builder.message(message);
+        return builder;
+    }
+
+    /**
+     * Applies the common configuration to the builder of a validator-backed rule and assigns the next rule
+     * name. The rule always runs on null (the validator decides what null means), so there is no
+     * {@code failOnNull} to set.
+     *
+     * @param builder the builder.
+     * @return the same builder.
+     */
+    public ConstraintValidatorRuleBuilder configure(ConstraintValidatorRuleBuilder builder) {
+        Assert.notNull(builder, "builder cannot be null.");
+        builder.name(nextRuleName())
+                .errorCode(errorCode)
+                .severity(severity)
+                .valueName(valueName)
                 .source(source);
         if (message != null) builder.message(message);
         return builder;

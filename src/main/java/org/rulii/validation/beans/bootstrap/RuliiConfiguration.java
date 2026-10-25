@@ -39,6 +39,7 @@ import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
 import org.rulii.validation.beans.message.RuliiMessageInterpolator;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -80,6 +81,7 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     private final List<ConstraintMapper<?>> mappers = new ArrayList<>();
     private RuleContextOptions options;
     private MessageInterpolator defaultMessageInterpolator;
+    private ConstraintValidatorFactory defaultConstraintValidatorFactory;
 
     /**
      * Creates a configuration.
@@ -229,9 +231,16 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
         return Defaults.TRAVERSABLE_RESOLVER;
     }
 
+    /**
+     * The factory creating validators through the object factory of this configuration's options.
+     */
     @Override
     public ConstraintValidatorFactory getDefaultConstraintValidatorFactory() {
-        return Defaults.CONSTRAINT_VALIDATOR_FACTORY;
+        if (defaultConstraintValidatorFactory == null) {
+            defaultConstraintValidatorFactory = new DefaultConstraintValidatorFactory(
+                    (options != null ? options : StandardRuleContextOptions.build()).getObjectFactory());
+        }
+        return defaultConstraintValidatorFactory;
     }
 
     @Override

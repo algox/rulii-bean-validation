@@ -44,6 +44,7 @@
         <jakarta.el.api.version>5.0.1</jakarta.el.api.version>
         <expressly.version>5.0.0</expressly.version>
         <jakarta.persistence.api.version>3.1.0</jakarta.persistence.api.version>
+        <jakarta.annotation.api.version>3.0.0</jakarta.annotation.api.version>
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
@@ -109,6 +110,14 @@
             <groupId>jakarta.persistence</groupId>
             <artifactId>jakarta.persistence-api</artifactId>
             <version>${jakarta.persistence.api.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Test only: a @PostConstruct on a ConstraintValidator, honoured by the object factory. -->
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+            <version>${jakarta.annotation.api.version}</version>
             <scope>test</scope>
         </dependency>
 

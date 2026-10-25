@@ -19,35 +19,65 @@ package org.rulii.validation.beans.validator;
 
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorFactory;
-import jakarta.validation.ValidationException;
 import org.rulii.lib.spring.util.Assert;
-
-import java.lang.reflect.Constructor;
+import org.rulii.util.reflect.ObjectFactory;
 
 /**
- * The {@link ConstraintValidatorFactory} used when none is configured: instantiates a validator through
- * its no-argument constructor, made accessible if need be, and has nothing to release. A framework
- * that wants its validators injected configures its own factory on the bootstrap or on the
- * {@link org.rulii.validation.beans.BeanValidatorBuilder}.
+ * The {@link ConstraintValidatorFactory} used when none is configured: creates validators through a
+ * rulii {@link ObjectFactory}, by default the one of the validator's
+ * {@link org.rulii.context.RuleContextOptions}. The default object factory instantiates through the
+ * no-argument constructor (made accessible if need be) and invokes a {@code @PostConstruct} method;
+ * a container-backed one (rulii-spring's {@code SpringObjectFactory}) creates the validator as a bean
+ * of the container, dependencies injected. Validators are never taken from the object factory's cache:
+ * one instance exists per constraint occurrence and is initialized with that occurrence's annotation.
+ * Nothing is released.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
 public final class DefaultConstraintValidatorFactory implements ConstraintValidatorFactory {
 
+    private final ObjectFactory objectFactory;
+
+    /**
+     * Creates the factory over a standard object factory (no-argument constructor plus post-construct).
+     */
     public DefaultConstraintValidatorFactory() {
-        super();
+        this(ObjectFactory.builder().build());
     }
 
+    /**
+     * Creates the factory over an object factory.
+     *
+     * @param objectFactory the object factory validators are created through.
+     */
+    public DefaultConstraintValidatorFactory(ObjectFactory objectFactory) {
+        super();
+        Assert.notNull(objectFactory, "objectFactory cannot be null.");
+        this.objectFactory = objectFactory;
+    }
+
+    /**
+     * The object factory validators are created through.
+     *
+     * @return the object factory.
+     */
+    public ObjectFactory getObjectFactory() {
+        return objectFactory;
+    }
+
+    /**
+     * Creates a validator through the object factory, bypassing its cache.
+     *
+     * @throws ConstraintValidatorException if the object factory cannot create it.
+     */
     @Override
     public <T extends ConstraintValidator<?, ?>> T getInstance(Class<T> key) {
         Assert.notNull(key, "key cannot be null.");
         try {
-            Constructor<T> constructor = key.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            return constructor.newInstance();
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            throw new ValidationException("cannot instantiate constraint validator [" + key.getName() + "]", e);
+            return objectFactory.create(key, false);
+        } catch (RuntimeException e) {
+            throw new ConstraintValidatorException(key, "could not be instantiated by [" + objectFactory + "]", e);
         }
     }
 
@@ -58,6 +88,6 @@ public final class DefaultConstraintValidatorFactory implements ConstraintValida
 
     @Override
     public String toString() {
-        return "DefaultConstraintValidatorFactory{}";
+        return "DefaultConstraintValidatorFactory{" + objectFactory + '}';
     }
 }

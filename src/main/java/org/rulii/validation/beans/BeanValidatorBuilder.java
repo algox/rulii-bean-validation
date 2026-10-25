@@ -23,6 +23,7 @@ import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.TraversableResolver;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
+import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
@@ -32,6 +33,7 @@ import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
 import org.rulii.validation.beans.traversal.TraversableResolvers;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 /**
  * Builds a {@link BeanValidator}. Everything is fixed at build time:
@@ -63,6 +65,7 @@ public final class BeanValidatorBuilder {
     private ParameterNameProvider parameterNameProvider;
     private MessageInterpolator messageInterpolator;
     private TraversableResolver traversableResolver;
+    private ConstraintValidatorFactory constraintValidatorFactory;
     private final ConstraintMapperRegistryBuilder mappers = ConstraintMapperRegistryBuilder.standard();
     private ConstraintMapperRegistry mapperRegistry;
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
@@ -100,9 +103,11 @@ public final class BeanValidatorBuilder {
     }
 
     /**
-     * The factory the validators of validator-backed constraints are created through: the
-     * {@link org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory} (no-argument
-     * constructor) when not set.
+     * The factory the validators of validator-backed constraints are created through. When not set, a
+     * {@link org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory} over the
+     * {@link org.rulii.util.reflect.ObjectFactory} of the {@link #options(RuleContextOptions) options}:
+     * no-argument constructor plus post-construct by default, container-created (injected) when the
+     * options carry a container-backed object factory.
      *
      * @param factory the factory.
      * @return this builder.
@@ -112,7 +117,7 @@ public final class BeanValidatorBuilder {
     public BeanValidatorBuilder constraintValidatorFactory(ConstraintValidatorFactory factory) {
         Assert.notNull(factory, "factory cannot be null.");
         Assert.isTrue(mapperRegistry == null, "constraintValidatorFactory() cannot be combined with mappers(); give the factory to that registry instead.");
-        mappers.constraintValidatorFactory(factory);
+        this.constraintValidatorFactory = factory;
         return this;
     }
 
@@ -220,10 +225,17 @@ public final class BeanValidatorBuilder {
      * @return the validator.
      */
     public BeanValidator build() {
+        RuleContextOptions effective = options != null ? options : StandardRuleContextOptions.build();
+
+        if (mapperRegistry == null) {
+            mappers.constraintValidatorFactory(constraintValidatorFactory != null ? constraintValidatorFactory
+                    : new DefaultConstraintValidatorFactory(effective.getObjectFactory()));
+        }
+
         return new BeanValidator(registry != null ? registry : (options != null ? options.getRuleRegistry() : null),
                 extractorRegistry != null ? extractorRegistry : extractors.build(),
                 mapperRegistry != null ? mapperRegistry : mappers.build(),
-                options,
+                effective,
                 parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider(),
                 messageInterpolator,
                 traversableResolver != null ? traversableResolver : TraversableResolvers.getDefault());

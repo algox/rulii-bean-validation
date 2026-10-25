@@ -18,22 +18,21 @@
 package org.rulii.validation.beans.bootstrap;
 
 import jakarta.validation.ClockProvider;
-import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.ParameterNameProvider;
 import jakarta.validation.TraversableResolver;
 import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.traversal.TraversableResolvers;
-import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.time.Clock;
 
 /**
  * The default spec services a {@link RuliiConfiguration} reports when none is configured. They are
- * plain: the traversable resolver is the runtime default ({@link TraversableResolvers#getDefault()}), the constraint validator
- * factory is the {@link DefaultConstraintValidatorFactory} (no-argument constructor), the parameter
+ * plain: the traversable resolver is the runtime default ({@link TraversableResolvers#getDefault()}), the parameter
  * name provider is the {@link DefaultParameterNameProvider} (the compiled parameter names), the clock is
  * the system clock. The default message interpolator is the {@link org.rulii.validation.beans.message.RuliiMessageInterpolator},
- * built per configuration.
+ * built per configuration, as is the default constraint validator factory (a
+ * {@link org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory} over the object factory of
+ * the configured options).
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -41,7 +40,6 @@ import java.time.Clock;
 final class Defaults {
 
     static final TraversableResolver TRAVERSABLE_RESOLVER = TraversableResolvers.getDefault();
-    static final ConstraintValidatorFactory CONSTRAINT_VALIDATOR_FACTORY = new DefaultConstraintValidatorFactory();
     static final ParameterNameProvider PARAMETER_NAME_PROVIDER = new DefaultParameterNameProvider();
     static final ClockProvider CLOCK_PROVIDER = Clock::systemDefaultZone;
 

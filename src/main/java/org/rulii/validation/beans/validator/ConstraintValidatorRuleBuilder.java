@@ -19,44 +19,103 @@ package org.rulii.validation.beans.validator;
 
 import jakarta.validation.ConstraintValidator;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.model.SourceDefinition;
 import org.rulii.model.function.Function;
 import org.rulii.validation.Severity;
-import org.rulii.validation.ValueValidationRuleBuilder;
 
 import java.lang.annotation.Annotation;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Builder for {@link ConstraintValidatorRule}.
+ * Builder for {@link ConstraintValidatorRule}. The rule is atomic and does not go through the class-based
+ * rule builder, so this builder assembles it directly; the configuration surface mirrors what
+ * {@link org.rulii.validation.beans.mapper.ConstraintTarget#configure} applies to a core rule builder.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
-public class ConstraintValidatorRuleBuilder extends ValueValidationRuleBuilder<ConstraintValidatorRuleBuilder, ConstraintValidatorRule> {
+public final class ConstraintValidatorRuleBuilder {
 
+    public static final String DEFAULT_VALUE_NAME = "value";
+
+    private final Function<?> valueFunction;
     private final ConstraintValidator<?, ?> validator;
     private final Class<? extends Annotation> annotationType;
     private final Map<String, Object> parameters = new LinkedHashMap<>();
-    private final List<Class<?>> supportedTypes = new ArrayList<>();
+    private String name;
+    private String description;
+    private SourceDefinition source;
+    private String valueName = DEFAULT_VALUE_NAME;
+    private String errorCode = ConstraintValidatorRule.ERROR_CODE;
+    private Severity severity = Severity.ERROR;
+    private String errorMessage;
     private String defaultMessageTemplate = "";
 
     public ConstraintValidatorRuleBuilder(Function<?> valueFunction, ConstraintValidator<?, ?> validator,
                                           Class<? extends Annotation> annotationType) {
-        super(valueFunction);
+        super();
+        Assert.notNull(valueFunction, "valueFunction cannot be null.");
         Assert.notNull(validator, "validator cannot be null.");
         Assert.notNull(annotationType, "annotationType cannot be null.");
+        this.valueFunction = valueFunction;
         this.validator = validator;
         this.annotationType = annotationType;
-        errorCode(ConstraintValidatorRule.ERROR_CODE);
-        severity(Severity.ERROR);
-        supportedTypes.add(Object.class);
+    }
+
+    public ConstraintValidatorRuleBuilder name(String name) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        this.name = name;
+        return this;
+    }
+
+    public ConstraintValidatorRuleBuilder description(String description) {
+        this.description = description;
+        return this;
     }
 
     /**
-     * The constraint's message template as declared, what the validator sees as the default template.
+     * Where the constraint was declared; the caller is recorded when none is given.
+     *
+     * @param source the source.
+     * @return this builder.
+     */
+    public ConstraintValidatorRuleBuilder source(SourceDefinition source) {
+        this.source = source;
+        return this;
+    }
+
+    public ConstraintValidatorRuleBuilder valueName(String valueName) {
+        Assert.hasText(valueName, "valueName cannot be null/empty.");
+        this.valueName = valueName;
+        return this;
+    }
+
+    public ConstraintValidatorRuleBuilder errorCode(String errorCode) {
+        Assert.hasText(errorCode, "errorCode cannot be null/empty.");
+        this.errorCode = errorCode;
+        return this;
+    }
+
+    public ConstraintValidatorRuleBuilder severity(Severity severity) {
+        Assert.notNull(severity, "severity cannot be null.");
+        this.severity = severity;
+        return this;
+    }
+
+    /**
+     * The declared message; null leaves the message to the resolver.
+     *
+     * @param errorMessage the message.
+     * @return this builder.
+     */
+    public ConstraintValidatorRuleBuilder message(String errorMessage) {
+        this.errorMessage = errorMessage;
+        return this;
+    }
+
+    /**
+     * The constraint's message template as declared: what the validator's context reports as the default template.
      *
      * @param defaultMessageTemplate the template.
      * @return this builder.
@@ -68,9 +127,9 @@ public class ConstraintValidatorRuleBuilder extends ValueValidationRuleBuilder<C
     }
 
     /**
-     * Parameters the violations report beside the value, typically the constraint's attributes.
+     * The parameters the violations report beside the value: the constraint's attributes.
      *
-     * @param parameters the parameters by name.
+     * @param parameters the parameters.
      * @return this builder.
      */
     public ConstraintValidatorRuleBuilder parameters(Map<String, Object> parameters) {
@@ -79,30 +138,8 @@ public class ConstraintValidatorRuleBuilder extends ValueValidationRuleBuilder<C
         return this;
     }
 
-    /**
-     * The value types the validator validates; values of other types are skipped. {@code Object} when
-     * not set.
-     *
-     * @param supportedTypes the types.
-     * @return this builder.
-     */
-    public ConstraintValidatorRuleBuilder supportedTypes(List<Class<?>> supportedTypes) {
-        Assert.notNull(supportedTypes, "supportedTypes cannot be null.");
-        Assert.isTrue(!supportedTypes.isEmpty(), "supportedTypes cannot be empty.");
-        this.supportedTypes.clear();
-        this.supportedTypes.addAll(supportedTypes);
-        return this;
-    }
-
-    @Override
-    public ConstraintValidatorRuleBuilder failOnNull(boolean failOnNull) {
-        Assert.isTrue(failOnNull, "failOnNull(false) is not allowed on [constraintValidatorRule]; the validator decides what null means.");
-        return super.failOnNull(failOnNull);
-    }
-
-    @Override
-    protected ConstraintValidatorRule createValueValidationRule() {
-        return new ConstraintValidatorRule(getValueFunction(), getErrorCode(), getSeverity(), getErrorMessage(), getValueName(),
-                validator, annotationType, defaultMessageTemplate, parameters, supportedTypes);
+    public ConstraintValidatorRule build() {
+        return new ConstraintValidatorRule(name, description, source, valueFunction, valueName, errorCode, severity, errorMessage,
+                validator, annotationType, defaultMessageTemplate, parameters);
     }
 }

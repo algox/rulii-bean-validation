@@ -314,7 +314,7 @@ public class RuleMaterializerTest {
         BeanRules rules = new RuleMaterializer(mappers()).materialize(BeanDefinition.load(WithValidator.class, EXTRACTORS));
 
         assertEquals(List.of("code_validatedCode", "code_validatedCode_notNull"), rules.getPropertyRules().stream().map(MaterializedRule::getName).toList());
-        assertInstanceOf(ConstraintValidatorRule.class, rules.getRule("code_validatedCode").getRule().getTarget());
+        assertInstanceOf(ConstraintValidatorRule.class, rules.getRule("code_validatedCode").getRule());
     }
 
     @Test

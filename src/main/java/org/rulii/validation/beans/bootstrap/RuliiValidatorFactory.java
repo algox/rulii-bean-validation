@@ -35,6 +35,7 @@ import org.rulii.validation.beans.BeanValidatorBuilder;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.message.RuliiMessageInterpolator;
+import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -86,13 +87,14 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.messageInterpolator = state.getMessageInterpolator() != null ? state.getMessageInterpolator()
                 : new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build());
         this.traversableResolver = state.getTraversableResolver() != null ? state.getTraversableResolver() : Defaults.TRAVERSABLE_RESOLVER;
-        this.constraintValidatorFactory = state.getConstraintValidatorFactory() != null ? state.getConstraintValidatorFactory() : Defaults.CONSTRAINT_VALIDATOR_FACTORY;
         this.parameterNameProvider = state.getParameterNameProvider() != null ? state.getParameterNameProvider() : Defaults.PARAMETER_NAME_PROVIDER;
         this.clockProvider = state.getClockProvider() != null ? state.getClockProvider() : Defaults.CLOCK_PROVIDER;
         this.properties = state.getProperties() != null ? Map.copyOf(state.getProperties()) : Map.of();
         this.registry = ours != null ? ours.getRuleRegistry() : null;
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
+        this.constraintValidatorFactory = state.getConstraintValidatorFactory() != null ? state.getConstraintValidatorFactory()
+                : new DefaultConstraintValidatorFactory((options != null ? options : StandardRuleContextOptions.build()).getObjectFactory());
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
         this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider, messageInterpolator, traversableResolver);
     }
