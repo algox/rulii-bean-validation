@@ -33,7 +33,8 @@ import java.util.List;
  * Runs the return-value rules of the executable, filtered for the groups being processed, at the
  * return-value node under the frame the executable step opened. A class-level redefinition of Default
  * runs them member by member with the rules of the value's container element positions, as
- * {@link RunParameterRulesCommand} does for the arguments.
+ * {@link RunParameterRulesCommand} does for the arguments. The {@code @Validate} rules attached to the
+ * return value run after the constraint rules of each step ({@link ValidateRules}).
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -70,6 +71,7 @@ final class RunReturnValueRulesCommand implements RuleFlowCommand {
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
             rules.returnValueRuleSet(groups).run(ruleContext);
             if (redefined) ValidateExecutableCommand.walkReturnValueElements(returnValue, value, path, new ContainerWalker(ruleContext, rules, false));
+            ValidateRules.runReturnValue(ruleContext, collector, traversal, rules, ValidateExecutableCommand.bean(ruleContext), value, groups);
         });
     }
 

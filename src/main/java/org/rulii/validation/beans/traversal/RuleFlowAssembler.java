@@ -109,7 +109,6 @@ public final class RuleFlowAssembler {
                 .command(new ValidateBeanCommand(rules, List.of(
                         new BindPropertiesCommand(rules),
                         new RunRulesCommand(rules),
-                        new ValidateRulesCommand(rules),
                         new CascadeCommand(rules))))
                 .build();
     }

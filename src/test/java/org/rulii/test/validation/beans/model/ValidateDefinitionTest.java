@@ -17,12 +17,15 @@
  */
 package org.rulii.test.validation.beans.model;
 
+import jakarta.validation.ConstraintTarget;
 import jakarta.validation.constraints.NotNull;
 import org.junit.jupiter.api.Test;
 import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ClassConstraintSource;
+import org.rulii.validation.beans.model.CrossParameterConstraintSource;
+import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
 import org.rulii.validation.beans.model.DeclarationConstraintSource;
 import org.rulii.validation.beans.model.ValueDeclaration;
@@ -32,6 +35,7 @@ import org.rulii.validation.beans.model.ValidateDeclarationException;
 import org.rulii.validation.beans.model.ValidateDefinition;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -223,10 +227,75 @@ public class ValidateDefinitionTest {
 
     @Test
     public void nonGetterMethodFailsFast() {
+        // A void method without parameters has nothing a @Validate could attach to.
         IllegalExecutableConstraintException e = assertThrows(IllegalExecutableConstraintException.class,
                 () -> BeanDefinition.load(OnNonGetter.class, REGISTRY));
         assertEquals("check", e.getExecutable().getName());
         assertTrue(e.getMessage().contains("@Validate"));
+        assertTrue(e.getMessage().contains("neither parameters nor a return value"));
+    }
+
+    @Test
+    public void executableValidate() {
+        BeanDefinition bean = BeanDefinition.load(Desk.class, REGISTRY);
+
+        // Parameters by default when there are any: a cross-parameter source, counted as a parameter constraint.
+        ExecutableDefinition book = bean.getMethod("book", String.class, String.class);
+        assertEquals(List.of(List.of("datesInOrder")), names(book.getValidateRules()));
+        assertInstanceOf(CrossParameterConstraintSource.class, book.getValidateRules().get(0).getDeclarationSource());
+        assertEquals(Set.of(), book.getValidateRules().get(0).getGroups());
+        assertEquals(ConstraintTarget.IMPLICIT, book.getValidateRules().get(0).getApplyTo());
+        assertTrue(book.hasConstrainedParameters());
+        assertFalse(book.hasReturnValue());
+        assertTrue(book.toString().contains("validateRules=1"));
+        assertThrows(UnsupportedOperationException.class, () -> book.getValidateRules().clear());
+
+        // The return value when there are no parameters.
+        ExecutableDefinition label = bean.getMethod("label");
+        assertEquals(List.of(), label.getValidateRules());
+        assertEquals(List.of(List.of("labelRules")), names(label.getReturnValue().getValidateRules()));
+        assertTrue(label.hasConstrainedReturnValue());
+        assertFalse(label.hasConstrainedParameters());
+        assertTrue(label.getReturnValue().toString().contains("validateRules=1"));
+
+        // Both parameters and a return value: the arguments unless RETURN_VALUE is declared; groups read.
+        assertEquals(List.of(List.of("echoRules")), names(bean.getMethod("echo", String.class).getValidateRules()));
+        ExecutableDefinition convert = bean.getMethod("convert", String.class);
+        assertEquals(List.of(), convert.getValidateRules());
+        assertEquals(List.of(List.of("outputRules")), names(convert.getReturnValue().getValidateRules()));
+        assertEquals(Set.of(Strict.class), convert.getReturnValue().getValidateRules().get(0).getGroups());
+        assertEquals(ConstraintTarget.RETURN_VALUE, convert.getReturnValue().getValidateRules().get(0).getApplyTo());
+        assertTrue(convert.getReturnValue().getValidateRules().get(0).toString().contains("Strict"));
+
+        // Constructors: the arguments by default, the created object when declared.
+        assertEquals(List.of(List.of("idRules")), names(bean.getConstructor(String.class).getValidateRules()));
+        ExecutableDefinition created = bean.getConstructor(String.class, String.class);
+        assertEquals(List.of(), created.getValidateRules());
+        assertEquals(List.of(List.of("createdRules")), names(created.getReturnValue().getValidateRules()));
+    }
+
+    private static List<List<String>> names(List<ValidateDefinition> definitions) {
+        return definitions.stream().map(ValidateDefinition::getRuleNames).toList();
+    }
+
+    @Test
+    public void executableValidateTargetsFailFast() {
+        assertTrue(assertThrows(IllegalExecutableConstraintException.class, () -> BeanDefinition.load(ParametersWithoutParameters.class, REGISTRY))
+                .getMessage().contains("no parameters"));
+        assertTrue(assertThrows(IllegalExecutableConstraintException.class, () -> BeanDefinition.load(ReturnValueOnVoid.class, REGISTRY))
+                .getMessage().contains("returns void"));
+        assertTrue(assertThrows(ValidateDeclarationException.class, () -> BeanDefinition.load(ApplyToOnField.class, REGISTRY))
+                .getMessage().contains("applyTo"));
+        assertTrue(assertThrows(ValidateDeclarationException.class, () -> BeanDefinition.load(ApplyToOnClass.class, REGISTRY))
+                .getMessage().contains("applyTo"));
+        assertTrue(assertThrows(ValidateDeclarationException.class, () -> BeanDefinition.load(ClassGroup.class, REGISTRY))
+                .getMessage().contains("not an interface"));
+        // The inheritance rule of parameter constraints: an override may not add rules for the arguments.
+        assertTrue(assertThrows(IllegalExecutableConstraintException.class, () -> BeanDefinition.load(AddsValidateInOverride.class, REGISTRY))
+                .getMessage().contains("must not declare parameter or cross-parameter constraints"));
+        // Return-value rules accumulate over the chain.
+        assertEquals(List.of(List.of("childResult"), List.of("baseResult")),
+                names(BeanDefinition.load(AddsValidateOnReturn.class, REGISTRY).getMethod("compute").getReturnValue().getValidateRules()));
     }
 
     @Test
@@ -325,5 +394,77 @@ public class ValidateDefinitionTest {
 
         @Validate("staticMethod")
         public static String getConstant() { return constant; }
+    }
+
+    public interface Strict {}
+
+    public static class Desk {
+        private String id;
+
+        @Validate("idRules")
+        public Desk(String id) {
+            super();
+            this.id = id;
+        }
+
+        @Validate(value = "createdRules", applyTo = ConstraintTarget.RETURN_VALUE)
+        public Desk(String id, String name) {
+            super();
+            this.id = id + name;
+        }
+
+        @Validate("datesInOrder")
+        public void book(String start, String end) {}
+
+        @Validate("labelRules")
+        public String label() { return id; }
+
+        @Validate(value = "outputRules", applyTo = ConstraintTarget.RETURN_VALUE, groups = Strict.class)
+        public String convert(String value) { return value; }
+
+        @Validate("echoRules")
+        public String echo(String value) { return value; }
+    }
+
+    public static class ParametersWithoutParameters {
+        @Validate(value = "x", applyTo = ConstraintTarget.PARAMETERS)
+        public String run() { return ""; }
+    }
+
+    public static class ReturnValueOnVoid {
+        @Validate(value = "x", applyTo = ConstraintTarget.RETURN_VALUE)
+        public void run(String value) {}
+    }
+
+    public static class ApplyToOnField {
+        @Validate(value = "x", applyTo = ConstraintTarget.PARAMETERS)
+        private String value;
+    }
+
+    @Validate(value = "x", applyTo = ConstraintTarget.RETURN_VALUE)
+    public static class ApplyToOnClass {}
+
+    public static class ClassGroup {
+        @Validate(value = "x", groups = String.class)
+        private String value;
+    }
+
+    public static class BaseRun {
+        public void run(String value) {}
+
+        @Validate("baseResult")
+        public String compute() { return ""; }
+    }
+
+    public static class AddsValidateInOverride extends BaseRun {
+        @Override
+        @Validate("extra")
+        public void run(String value) {}
+    }
+
+    public static class AddsValidateOnReturn extends BaseRun {
+        @Override
+        @Validate("childResult")
+        public String compute() { return ""; }
     }
 }

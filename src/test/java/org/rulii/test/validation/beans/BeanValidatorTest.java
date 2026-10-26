@@ -20,6 +20,7 @@ package org.rulii.test.validation.beans;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ElementKind;
+import jakarta.validation.GroupSequence;
 import jakarta.validation.Payload;
 import jakarta.validation.Valid;
 import jakarta.validation.ValidationException;
@@ -170,9 +171,9 @@ public class BeanValidatorTest {
         order.code = "ok";
 
         assertEquals(List.of(":customerRequired"), report(validator.validate(order)), "class-level @Validate through the configured registry");
-        // @Validate is group-agnostic (R9.6): it runs whatever the requested groups.
-        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, OnCreate.class)));
-        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, Extended.class)), "groups expand along superinterfaces");
+        // @Validate has a constraint's groups (R9.6): none means Default, so it stays out of an OnCreate request.
+        assertEquals(List.of("reference:reference_notNull"), report(validator.validate(order, OnCreate.class)));
+        assertEquals(List.of("reference:reference_notNull"), report(validator.validate(order, Extended.class)), "groups expand along superinterfaces");
         assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(validator.validate(order, Default.class, OnCreate.class)));
         order.customer = new Customer();
         order.customer.name = "ok";
@@ -202,11 +203,11 @@ public class BeanValidatorTest {
         assertEquals(List.of("code:code_size", ":customerRequired"), report(plain.getViolations().stream().map(v -> (BeanRuleViolation) v).toList()));
         assertNull(bindings.getBinding(BindingPlan.THIS), "the run's scope is gone");
 
-        // No collector: a path-aware one is bound for the run and returned. The validator's registry served @Validate.
+        // No collector: a path-aware one is bound for the run and returned; the ungrouped @Validate stays out of OnCreate.
         RuleContext bare = RuleContext.builder().with(Bindings.builder().scoped()).build();
         RuleViolations own = validator.validateIn(bare, order, OnCreate.class);
         assertInstanceOf(BeanRuleViolations.class, own);
-        assertEquals(List.of("reference:reference_notNull", ":customerRequired"), report(((BeanRuleViolations) own).getBeanViolations()));
+        assertEquals(List.of("reference:reference_notNull"), report(((BeanRuleViolations) own).getBeanViolations()));
 
         // A validator built without a registry resolves @Validate through the context's registry.
         RuleRegistry other = RuleRegistry.builder()
@@ -244,6 +245,21 @@ public class BeanValidatorTest {
 
         // The expanded groups of the step being processed: the requested ones and the interfaces they extend.
         assertEquals(List.of(Set.of(Default.class), Set.of(OnCreate.class), Set.of(Extended.class, OnCreate.class)), seen);
+    }
+
+    @Test
+    public void validateGroupsSelectTheRulesAndJoinSequences() {
+        BeanValidator validator = validator();
+        Staged staged = new Staged();
+
+        assertEquals(List.of("code:code_notNull"), report(validator.validate(staged)), "OnCreate not requested: the @Validate stays out");
+        assertEquals(List.of(":customerRequired"), report(validator.validate(staged, OnCreate.class)));
+        assertEquals(List.of(":customerRequired"), report(validator.validate(staged, Extended.class)), "a group extending OnCreate activates it");
+        // A requested sequence stops on a @Validate violation as on a constraint, and runs it once.
+        assertEquals(List.of(":customerRequired"), report(validator.validate(staged, CreateThenDefault.class)));
+        staged.customer = new Customer();
+        staged.customer.name = "ok";
+        assertEquals(List.of("code:code_notNull"), report(validator.validate(staged, CreateThenDefault.class)), "OnCreate passed, Default ran");
     }
 
     @Test
@@ -415,9 +431,20 @@ public class BeanValidatorTest {
         String name;
     }
 
-    @Validate("groupsSpy")
+    @Validate(value = "groupsSpy", groups = {Default.class, OnCreate.class})
     public static class Audited {
         String note;
+    }
+
+    @GroupSequence({OnCreate.class, Default.class})
+    public interface CreateThenDefault {}
+
+    @Validate(value = "customerRequired", groups = OnCreate.class)
+    public static class Staged {
+        @NotNull
+        String code;
+
+        Customer customer;
     }
 
     public static class Account {

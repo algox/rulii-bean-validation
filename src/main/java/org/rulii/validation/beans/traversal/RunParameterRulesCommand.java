@@ -35,7 +35,8 @@ import java.util.List;
  * <p>When the class redefines its Default group with {@code @GroupSequence} and Default is being
  * processed, the rules run member by member ({@link Traversal#forDefaultSequence}), and the rules of
  * the arguments' container element positions run with them, as the bean step does for properties;
- * the cascade step then walks the containers for cascades only.</p>
+ * the cascade step then walks the containers for cascades only. The {@code @Validate} rules attached
+ * to the parameters run after the constraint rules of each step ({@link ValidateRules}).</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -71,6 +72,7 @@ final class RunParameterRulesCommand implements RuleFlowCommand {
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
             rules.parameterRuleSet(groups).run(ruleContext);
             if (redefined) ValidateExecutableCommand.walkParameterElements(rules, values, base, new ContainerWalker(ruleContext, rules, false));
+            ValidateRules.runParameters(ruleContext, collector, traversal, rules, ValidateExecutableCommand.bean(ruleContext), groups);
         });
     }
 

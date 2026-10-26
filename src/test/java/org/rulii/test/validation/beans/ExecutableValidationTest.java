@@ -67,6 +67,7 @@ import org.rulii.validation.beans.model.AmbiguousConstraintTargetException;
 import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
+import org.rulii.validation.rules.Validators;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -571,6 +572,39 @@ public class ExecutableValidationTest {
         assertEquals(List.of(service, service, shipment), roots);
     }
 
+    @Test
+    public void validateRulesOnExecutables() throws Exception {
+        RuleRegistry registry = RuleRegistry.builder()
+                .register(Validators.notNull(Validators.binding("p0")).name("startRequired").build())
+                .register(Validators.notNull(Validators.binding(BindingPlan.VALUE)).name("resultRequired").build())
+                .build();
+        BeanValidator validator = BeanValidator.builder().parameterNameProvider(POSITIONAL).registry(registry).build();
+        ExecutableBeanValidator executables = validator.forExecutables();
+        Desk desk = new Desk("d1");
+        Method book = method(Desk.class, "book", LocalDate.class, LocalDate.class);
+        Method label = method(Desk.class, "label");
+        Method archive = method(Desk.class, "archive", LocalDate.class);
+
+        // The arguments are in scope by name; violations report at the cross-parameter node.
+        assertEquals(List.of("book.<cross-parameter>:startRequired"),
+                report(executables.validateParameters(desk, book, new Object[] {null, LocalDate.of(2026, 1, 1)})));
+        assertTrue(executables.validateParameters(desk, book, new Object[] {LocalDate.of(2026, 1, 1), null}).isEmpty());
+        // The return value is $value; violations report at the return-value node.
+        assertEquals(List.of("label.<return value>:resultRequired"), report(executables.validateReturnValue(desk, label, null)));
+        assertTrue(executables.validateReturnValue(desk, label, "x").isEmpty());
+        // Groups select the rules as they select constraints.
+        assertTrue(executables.validateParameters(desk, archive, new Object[] {null}).isEmpty());
+        assertEquals(List.of("archive.<cross-parameter>:startRequired"),
+                report(executables.validateParameters(desk, archive, new Object[] {null}, Admin.class)));
+        // A constructor's arguments.
+        assertEquals(List.of("Desk.<cross-parameter>:startRequired"),
+                report(executables.validateConstructorParameters(Desk.class.getConstructor(LocalDate.class), new Object[] {null})));
+        // The rules alone make the executable constrained: its flows exist.
+        assertNotNull(validator.getParametersRuleFlow(Desk.class, book));
+        assertNotNull(validator.getReturnValueRuleFlow(Desk.class, label));
+        assertNull(validator.getReturnValueRuleFlow(Desk.class, book));
+    }
+
     // --- fixtures: constraints -----------------------------------------------------------------------
 
     public interface Admin {}
@@ -651,6 +685,34 @@ public class ExecutableValidationTest {
 
     public static class Shipment {
         @Validate("rootSpy") String id = "x";
+    }
+
+    public static class Desk {
+        String id;
+
+        public Desk(String id) {
+            super();
+            this.id = id;
+        }
+
+        @Validate("startRequired")
+        public Desk(LocalDate opening) {
+            super();
+            this.id = String.valueOf(opening);
+        }
+
+        @Validate("startRequired")
+        public void book(LocalDate start, LocalDate end) {
+        }
+
+        @Validate("resultRequired")
+        public String label() {
+            return id;
+        }
+
+        @Validate(value = "startRequired", groups = Admin.class)
+        public void archive(LocalDate when) {
+        }
     }
 
     public static class OrderService implements Service {

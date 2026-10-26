@@ -34,12 +34,14 @@ import java.util.List;
 /**
  * Runs the property and class rules of the object bound as {@code $this}, filtered for the groups
  * being processed, inside a collector frame at the current path so the violations are stamped with
- * their property paths and provenance.
+ * their property paths and provenance; then the {@code @Validate} rules active for the same groups
+ * ({@link ValidateRules}).
  *
  * <p>When the class redefines its Default group with {@code @GroupSequence} and Default is being
  * processed, the rules run member by member ({@link Traversal#forDefaultSequence}), and the rules of
- * the container element positions run here with them, since element constraints are constraints of the
- * bean and take part in the sequence; the cascade step then walks the containers for cascades only.</p>
+ * the container element positions and the {@code @Validate} rules run here with them, since they are
+ * constraints of the bean and take part in the sequence; the cascade step then walks the containers
+ * for cascades only.</p>
  *
  * <p>With a traversable resolver in the traversal, the rules of a property it puts out of reach do not
  * run, and the property's value is never read.</p>
@@ -75,6 +77,7 @@ final class RunRulesCommand implements RuleFlowCommand {
                         : rules.ruleSet(groups);
                 ruleSet.run(ruleContext);
                 if (redefined) elementRules(ruleContext, collector, traversal, bean);
+                ValidateRules.runBean(ruleContext, collector, traversal, rules, bean, groups);
             });
         }
     }

@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans.model;
 
+import jakarta.validation.ConstraintTarget;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
@@ -32,13 +33,16 @@ import java.util.Set;
 
 /**
  * Definition of one {@link Validate @Validate} occurrence: the registry names of the runnables it
- * attaches, in declaration order, and where it is declared (a property declaration or a class).
- * The runnables are resolved at validation time; nothing here consults a registry.
+ * attaches, in declaration order, the groups it belongs to, and where it is declared (a property
+ * declaration, a class, the return value of an executable, or the parameters of an executable as a
+ * whole). The runnables are resolved at validation time; nothing here consults a registry.
  *
- * <p>A property or a bean class may carry several occurrences across its declarations and hierarchy
- * levels; each keeps its own source so diagnostics can name the exact member. A rule name may not
- * be blank and may not repeat, within one occurrence or across the occurrences of the same property
- * or class.</p>
+ * <p>A property, a bean class or an executable may carry several occurrences across its declarations
+ * and hierarchy levels; each keeps its own source so diagnostics can name the exact member. A rule
+ * name may not be blank and may not repeat, within one occurrence or across the occurrences of the
+ * same property, class or executable. Groups must be interfaces; empty groups mean {@code Default}.
+ * {@code applyTo} is read by {@link ExecutableDefinition}; declared anywhere but on a method or
+ * constructor it must be {@code IMPLICIT}.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -48,13 +52,15 @@ public final class ValidateDefinition implements Definition {
     private final ConstraintSource declarationSource;
     private final Validate annotation;
     private final List<String> ruleNames;
+    private final Set<Class<?>> groups;
     private final SourceDefinition source;
 
-    private ValidateDefinition(ConstraintSource declarationSource, Validate annotation, List<String> ruleNames) {
+    private ValidateDefinition(ConstraintSource declarationSource, Validate annotation, List<String> ruleNames, Set<Class<?>> groups) {
         super();
         this.declarationSource = declarationSource;
         this.annotation = annotation;
         this.ruleNames = ruleNames;
+        this.groups = groups;
         this.source = declarationSource.getSourceDefinition();
     }
 
@@ -68,7 +74,23 @@ public final class ValidateDefinition implements Definition {
      */
     public static List<ValidateDefinition> load(ValueDeclaration sourceDeclaration) {
         Assert.notNull(sourceDeclaration, "sourceDeclaration cannot be null.");
-        return load(new DeclarationConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
+        List<ValidateDefinition> result = load(new DeclarationConstraintSource(sourceDeclaration), sourceDeclaration.getDeclaredAnnotations());
+
+        for (ValidateDefinition definition : result) {
+            ConstraintTarget applyTo = definition.getApplyTo();
+            ValueDeclaration.Kind kind = sourceDeclaration.getKind();
+            // The executable definition resolves applyTo for a return value; a getter has no parameters.
+            boolean allowed = kind == ValueDeclaration.Kind.RETURN_VALUE
+                    || applyTo == ConstraintTarget.IMPLICIT
+                    || (kind == ValueDeclaration.Kind.GETTER && applyTo == ConstraintTarget.RETURN_VALUE);
+
+            if (!allowed) {
+                throw new ValidateDeclarationException("@Validate on [" + definition.declarationSource.describe() + "] declares applyTo = "
+                        + applyTo + ", which is for methods and constructors.", definition.declarationSource, null);
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -82,7 +104,16 @@ public final class ValidateDefinition implements Definition {
      */
     public static List<ValidateDefinition> load(Class<?> type) {
         Assert.notNull(type, "type cannot be null.");
-        return load(new ClassConstraintSource(type), Arrays.asList(type.getDeclaredAnnotations()));
+        List<ValidateDefinition> result = load(new ClassConstraintSource(type), Arrays.asList(type.getDeclaredAnnotations()));
+
+        for (ValidateDefinition definition : result) {
+            if (definition.getApplyTo() != ConstraintTarget.IMPLICIT) {
+                throw new ValidateDeclarationException("@Validate on [" + definition.declarationSource.describe() + "] declares applyTo = "
+                        + definition.getApplyTo() + ", which is for methods and constructors.", definition.declarationSource, null);
+            }
+        }
+
+        return result;
     }
 
     private static List<ValidateDefinition> load(ConstraintSource declarationSource, List<Annotation> annotations) {
@@ -129,12 +160,23 @@ public final class ValidateDefinition implements Definition {
             }
         }
 
-        return new ValidateDefinition(declarationSource, annotation, List.copyOf(seen));
+        Set<Class<?>> groups = new LinkedHashSet<>();
+
+        for (Class<?> group : annotation.groups()) {
+            if (group == null || !group.isInterface()) {
+                throw new ValidateDeclarationException("@Validate on [" + declarationSource.describe() + "] declares the group ["
+                        + (group == null ? null : group.getName()) + "], which is not an interface.", declarationSource, null);
+            }
+
+            groups.add(group);
+        }
+
+        return new ValidateDefinition(declarationSource, annotation, List.copyOf(seen), Collections.unmodifiableSet(groups));
     }
 
     /**
      * Checks that no rule name repeats across the given occurrences, which all belong to one
-     * property or one bean class.
+     * property, one bean class, or one side of one executable.
      *
      * @param definitions the occurrences, in declaration order.
      * @param owner what they belong to, for the message (e.g. {@code property [name]}).
@@ -205,6 +247,26 @@ public final class ValidateDefinition implements Definition {
         return ruleNames;
     }
 
+    /**
+     * The groups declared, in declaration order; empty means {@code Default}. Activation follows a
+     * constraint's: {@link org.rulii.validation.beans.group.RequestedGroups#activates(java.util.Collection)}.
+     *
+     * @return the declared groups; unmodifiable.
+     */
+    public Set<Class<?>> getGroups() {
+        return groups;
+    }
+
+    /**
+     * What the rules of an executable validate, as declared; {@code IMPLICIT} resolves to the
+     * arguments when the executable has parameters and to the return value otherwise.
+     *
+     * @return the declared target.
+     */
+    public ConstraintTarget getApplyTo() {
+        return annotation.applyTo();
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -220,6 +282,6 @@ public final class ValidateDefinition implements Definition {
 
     @Override
     public String toString() {
-        return "@Validate" + ruleNames + " on " + declarationSource.describe();
+        return "@Validate" + ruleNames + (groups.isEmpty() ? "" : " groups=" + groups) + " on " + declarationSource.describe();
     }
 }
