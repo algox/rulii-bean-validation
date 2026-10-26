@@ -22,6 +22,7 @@ import org.rulii.bind.Bindings;
 import org.rulii.bind.ReservedBindings;
 import org.rulii.bind.load.BindingLoader;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.util.TypeReference;
 import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
@@ -79,12 +80,16 @@ public final class BindingPlan implements BindingLoader<Object> {
     public static final String VALUE = "$value";
     /** The traversal of the current validation call. */
     public static final String TRAVERSAL = "$traversal";
+    /** The groups being processed, a live {@code Set<Class<?>>} view that follows sequences and conversions. */
+    public static final String GROUPS = "$groups";
     /** The arguments of the executable being validated, as a whole. */
     public static final String PARAMETERS = "$parameters";
     /** The return value of the executable being validated. */
     public static final String RETURN_VALUE = "$returnValue";
     /** The violations collector. */
     public static final String RULE_VIOLATIONS = "ruleViolations";
+    /** The type of the {@link #GROUPS} binding. */
+    public static final Type GROUPS_TYPE = new TypeReference<Set<Class<?>>>() {}.getType();
 
     /**
      * Names a property or parameter cannot be bound under: the engine's reserved names and this
@@ -94,7 +99,7 @@ public final class BindingPlan implements BindingLoader<Object> {
 
     static {
         Set<String> reserved = new HashSet<>(ReservedBindings.reservedBindingNames());
-        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, TRAVERSAL, PARAMETERS, RETURN_VALUE, RULE_VIOLATIONS));
+        reserved.addAll(List.of(THIS, ROOT, PARENT, ELEMENT, KEY, VALUE, TRAVERSAL, GROUPS, PARAMETERS, RETURN_VALUE, RULE_VIOLATIONS));
         RESERVED_NAMES = Collections.unmodifiableSet(reserved);
     }
 

@@ -17,14 +17,10 @@
  */
 package org.rulii.validation.beans.traversal;
 
-import org.rulii.bind.Binding;
-import org.rulii.bind.NamedScope;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.ruleflow.RuleFlowExecutionContext;
-import org.rulii.ruleflow.command.ContainerCommand;
 import org.rulii.ruleflow.command.RuleFlowCommand;
-import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
@@ -36,25 +32,20 @@ import java.util.List;
  * {@code $this}: bind its properties, run its rules, run its {@code @Validate} rules, cascade.
  *
  * <p>Around the body it does what must happen once per object and once per call: the object is
- * recorded in the traversal and skipped if this call validated it already; and when the caller
- * bound a plain {@link RuleViolations} (an embedded run), a path-aware collector is bound for the
- * whole body, nested flows included, and everything it gathered is handed to the plain one at the
- * end, paths stamped. A nested flow finds the path-aware collector already bound and runs its body
- * directly.</p>
+ * recorded in the traversal and skipped if this call validated it already; and, as every
+ * {@link CollectingCommand}, it binds a path-aware collector for an embedded run.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
  */
-final class ValidateBeanCommand extends ContainerCommand {
+final class ValidateBeanCommand extends CollectingCommand {
 
     private final BeanRules rules;
 
     ValidateBeanCommand(BeanRules rules, List<RuleFlowCommand> body) {
-        super();
+        super(body);
         Assert.notNull(rules, "rules cannot be null.");
-        Assert.notNull(body, "body cannot be null.");
         this.rules = rules;
-        setBody(body);
     }
 
     @Override
@@ -65,30 +56,12 @@ final class ValidateBeanCommand extends ContainerCommand {
 
         if (!Traversal.of(ruleContext).markValidated(bean)) return;
 
-        if (Traversal.collector(ruleContext) != null) {
-            run(ctx);
-            return;
-        }
-
-        RuleViolations plain = Traversal.anyCollector(ruleContext);
-        BeanRuleViolations temporary = new BeanRuleViolations(ruleContext.getBindings().getValue(BindingPlan.ROOT));
-        NamedScope scope = ruleContext.getBindings().addScope();
-
-        try {
-            scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
-                    .value(temporary).primary(true).build());
-            run(ctx);
-        } finally {
-            ruleContext.getBindings().removeScope(scope);
-        }
-
-        if (plain != null) plain.addAll(temporary.getViolations());
+        super.execute(ctx);
     }
 
-    private void run(RuleFlowExecutionContext ctx) {
-        for (RuleFlowCommand command : getBody()) {
-            command.execute(ctx);
-        }
+    @Override
+    protected BeanRuleViolations collector(RuleContext ruleContext) {
+        return new BeanRuleViolations(ruleContext.getBindings().getValue(BindingPlan.ROOT));
     }
 
     @Override

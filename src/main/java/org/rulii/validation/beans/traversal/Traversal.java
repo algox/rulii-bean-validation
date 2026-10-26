@@ -45,11 +45,14 @@ import org.rulii.validation.beans.model.GroupConversions;
 import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.annotation.ElementType;
+import java.util.AbstractSet;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,6 +93,7 @@ public final class Traversal {
     private final TraversableResolver resolver;
     private final Map<Object, Set<RequestedGroups>> validated = new IdentityHashMap<>();
     private final Map<Object, Map<String, Boolean>> resolutions = new IdentityHashMap<>();
+    private final Set<Class<?>> currentGroups = new CurrentGroups();
 
     /**
      * Creates the traversal of a call whose {@code @Validate} names resolve through the context's registry.
@@ -259,6 +263,17 @@ public final class Traversal {
      */
     public RequestedGroups getGroups() {
         return groups.peek();
+    }
+
+    /**
+     * The groups being processed, as a live, read-only view: it follows the traversal through default
+     * group sequences and group conversions. Bound as {@code $groups} for rules that branch on the
+     * groups requested.
+     *
+     * @return the current groups.
+     */
+    public Set<Class<?>> getCurrentGroups() {
+        return currentGroups;
     }
 
     /**
@@ -507,5 +522,26 @@ public final class Traversal {
     @Override
     public String toString() {
         return "Traversal{groups=" + getGroups() + ", validated=" + validated.size() + '}';
+    }
+
+    /**
+     * The live view behind {@link #getCurrentGroups()}.
+     */
+    private final class CurrentGroups extends AbstractSet<Class<?>> {
+
+        @Override
+        public Iterator<Class<?>> iterator() {
+            return Collections.unmodifiableSet(getGroups().getGroups()).iterator();
+        }
+
+        @Override
+        public int size() {
+            return getGroups().getGroups().size();
+        }
+
+        @Override
+        public boolean contains(Object o) {
+            return getGroups().getGroups().contains(o);
+        }
     }
 }

@@ -42,10 +42,25 @@ import jakarta.validation.metadata.MethodDescriptor;
 import jakarta.validation.metadata.MethodType;
 import org.junit.jupiter.api.Test;
 import org.rulii.annotation.Param;
+import org.rulii.bind.Bindings;
+import org.rulii.bind.NamedScope;
+import org.rulii.bind.ScopedBindings;
+import org.rulii.context.RuleContext;
+import org.rulii.model.InputParameter;
+import org.rulii.registry.RuleRegistry;
+import org.rulii.rule.Rule;
+import org.rulii.ruleflow.RuleFlow;
+import org.rulii.ruleflow.RuleFlowListener;
+import org.rulii.ruleflow.command.RuleFlowCommand;
 import org.rulii.validation.RuleViolation;
+import org.rulii.validation.RuleViolations;
+import org.rulii.validation.beans.BeanRuleViolation;
+import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.BeanValidationResult;
 import org.rulii.validation.beans.BeanValidator;
 import org.rulii.validation.beans.ExecutableBeanValidator;
+import org.rulii.validation.beans.Validate;
+import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.bootstrap.RuliiValidationProvider;
 import org.rulii.validation.beans.bootstrap.RuliiValidatorFactory;
 import org.rulii.validation.beans.model.AmbiguousConstraintTargetException;
@@ -65,11 +80,13 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.rulii.model.action.Actions.action;
 
 /**
  * Executable validation end to end: parameters, return values, cross-parameter constraints,
  * constructors, cascades and container elements of arguments, the inheritance rules, descriptors,
- * parameter names and the bootstrap wiring. Paths are asserted as the reference implementation renders them.
+ * parameter names, the bootstrap wiring, and the flows it runs as. Paths are asserted as the reference
+ * implementation renders them.
  */
 public class ExecutableValidationTest {
 
@@ -446,6 +463,114 @@ public class ExecutableValidationTest {
         assertFalse(validator.getBeanDefinition(OrderService.class).getMethods().isEmpty());
     }
 
+    // --- flows -------------------------------------------------------------------------------------
+
+    @Test
+    public void executableFlowsAreAssembledPerExecutable() throws Exception {
+        BeanValidator validator = validator();
+        Method place = method(OrderService.class, "place", Order.class, int.class);
+        RuleFlow<?> parameters = validator.getParametersRuleFlow(OrderService.class, place);
+        RuleFlow<?> returnValue = validator.getReturnValueRuleFlow(OrderService.class, place);
+
+        assertNotNull(parameters);
+        assertSame(parameters, validator.getParametersRuleFlow(OrderService.class, place), "assembled once");
+        assertEquals("orderService_placeParametersFlow", parameters.getName());
+        assertEquals("orderService_placeReturnValueFlow", returnValue.getName());
+        // One required input per parameter, by name; the rest as the bean flow has them.
+        assertEquals(List.of("p0", "p1", BindingPlan.THIS, BindingPlan.ROOT, BindingPlan.PARAMETERS, BindingPlan.RULE_VIOLATIONS,
+                BindingPlan.TRAVERSAL, BindingPlan.GROUPS), inputs(parameters, false));
+        assertEquals(List.of("p0", "p1"), inputs(parameters, true));
+        assertEquals(List.of(BindingPlan.RETURN_VALUE, BindingPlan.THIS, BindingPlan.ROOT, BindingPlan.RULE_VIOLATIONS,
+                BindingPlan.TRAVERSAL, BindingPlan.GROUPS), inputs(returnValue, false));
+        assertEquals(List.of(BindingPlan.RETURN_VALUE), inputs(returnValue, true));
+
+        // No flow where there is nothing to validate.
+        assertNull(validator.getReturnValueRuleFlow(OrderService.class, method(OrderService.class, "tag", List.class)), "void method");
+        assertNull(validator.getParametersRuleFlow(OrderService.class, method(OrderService.class, "names")), "no parameters");
+        assertNull(validator.getParametersRuleFlow(OrderService.class, method(OrderService.class, "plain", String.class)), "unconstrained");
+        assertNull(validator.getReturnValueRuleFlow(OrderService.class, method(OrderService.class, "plain", String.class)), "unconstrained");
+
+        // Overloaded constructors carry their parameter types in the name.
+        assertEquals("orderService_OrderService_StringParametersFlow",
+                validator.getParametersRuleFlow(OrderService.class, OrderService.class.getConstructor(String.class)).getName());
+        assertEquals("orderService_OrderService_OrderReturnValueFlow",
+                validator.getReturnValueRuleFlow(OrderService.class, OrderService.class.getConstructor(Order.class)).getName());
+        assertNull(validator.getParametersRuleFlow(OrderService.class, OrderService.class.getConstructor(Order.class)), "parameter unconstrained");
+    }
+
+    private static List<String> inputs(RuleFlow<?> flow, boolean requiredOnly) {
+        List<String> result = new ArrayList<>();
+        for (InputParameter<?> input : flow.getInputParameters()) {
+            if (!requiredOnly || input.required()) result.add(input.name());
+        }
+        return result;
+    }
+
+    @Test
+    public void methodValidationRunsAsAFlowInAnExistingContext() throws Exception {
+        BeanValidator validator = validator();
+        OrderService service = new OrderService();
+        Method place = method(OrderService.class, "place", Order.class, int.class);
+        List<String> events = new ArrayList<>();
+        ScopedBindings bindings = Bindings.builder().scoped();
+        RuleContext context = RuleContext.builder().with(bindings).build();
+        context.getTracer().addListener(new RuleFlowListener() {
+            @Override
+            public void onRuleFlowStart(RuleFlow<?> ruleFlow, NamedScope ruleFlowScope) {
+                events.add("start " + ruleFlow.getName());
+            }
+
+            @Override
+            public void onRuleFlowCommandExecuted(RuleFlow<?> ruleFlow, RuleFlowCommand command) {
+                events.add(command.toString());
+            }
+        });
+
+        // No collector bound: a path-aware one is bound for the run and returned; the tracer saw the flow and its step.
+        RuleViolations own = validator.forExecutables().validateParametersIn(context, service, place, new Object[] {null, 0});
+        assertInstanceOf(BeanRuleViolations.class, own);
+        assertEquals(List.of("place.p0:p0_notNull", "place.p1:p1_min"), report(((BeanRuleViolations) own).getBeanViolations()));
+        assertArrayEquals(new Object[] {null, 0}, ((BeanRuleViolations) own).getExecutableParameters());
+        assertEquals(List.of("start orderService_placeParametersFlow", "validate arguments of place"), events);
+        assertNull(bindings.getBinding("p0"), "the run's scope is gone");
+        assertNull(bindings.getBinding(BindingPlan.PARAMETERS));
+
+        // A plain collector bound by the caller receives the stamped violations and is returned.
+        RuleViolations plain = new RuleViolations();
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, plain);
+        assertSame(plain, validator.forExecutables().validateReturnValueIn(context, service, place, null));
+        assertEquals(List.of("place.<return value>:returnValue_notNull"),
+                report(plain.getViolations().stream().map(v -> (BeanRuleViolation) v).toList()));
+        assertEquals("start orderService_placeReturnValueFlow", events.get(2));
+
+        // Nothing to validate: the collector comes back untouched.
+        Method plainMethod = method(OrderService.class, "plain", String.class);
+        assertSame(plain, validator.forExecutables().validateParametersIn(context, service, plainMethod, new Object[] {null}));
+        assertEquals(1, plain.size());
+        assertThrows(IllegalArgumentException.class, () -> validator.forExecutables().validateParametersIn(null, service, place, new Object[] {null, 0}));
+        assertThrows(IllegalArgumentException.class, () -> validator.forExecutables().validateParametersIn(context, service, place, new Object[] {null}));
+    }
+
+    @Test
+    public void rootIsTheObjectTheMethodIsCalledOn() throws Exception {
+        List<Object> roots = new ArrayList<>();
+        RuleRegistry registry = RuleRegistry.builder()
+                .register(Rule.builder().name("rootSpy")
+                        .then(action((RuleContext ruleContext) -> roots.add(ruleContext.getBindings().getValue(BindingPlan.ROOT))))
+                        .build())
+                .build();
+        BeanValidator validator = BeanValidator.builder().parameterNameProvider(POSITIONAL).registry(registry).build();
+        OrderService service = new OrderService();
+        Shipment shipment = new Shipment();
+        Method ship = method(OrderService.class, "ship", Shipment.class);
+
+        validator.forExecutables().validateParameters(service, ship, new Object[] {shipment});
+        validator.forExecutables().validateReturnValue(service, ship, shipment);
+        validator.validate(shipment);
+
+        assertEquals(List.of(service, service, shipment), roots);
+    }
+
     // --- fixtures: constraints -----------------------------------------------------------------------
 
     public interface Admin {}
@@ -524,6 +649,10 @@ public class ExecutableValidationTest {
         @NotNull @Size(min = 2) String code;
     }
 
+    public static class Shipment {
+        @Validate("rootSpy") String id = "x";
+    }
+
     public static class OrderService implements Service {
 
         @NotNull String owner;
@@ -550,6 +679,10 @@ public class ExecutableValidationTest {
         }
 
         public void tag(@NotNull List<@NotBlank String> tags) {
+        }
+
+        public @Valid Shipment ship(@Valid Shipment shipment) {
+            return shipment;
         }
 
         public @NotEmpty List<@NotBlank String> names() {

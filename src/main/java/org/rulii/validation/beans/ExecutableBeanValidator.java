@@ -20,24 +20,21 @@ package org.rulii.validation.beans;
 import jakarta.validation.executable.ExecutableValidator;
 import org.rulii.bind.Binding;
 import org.rulii.bind.Bindings;
+import org.rulii.bind.NamedScope;
 import org.rulii.bind.ScopedBindings;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.ruleflow.RuleFlow;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.BindingPlan;
-import org.rulii.validation.beans.assembly.ExecutableRules;
 import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.group.RequestedGroups;
-import org.rulii.validation.beans.model.ContainerElementDefinition;
-import org.rulii.validation.beans.model.ParameterDefinition;
-import org.rulii.validation.beans.model.ReturnValueDefinition;
-import org.rulii.validation.beans.traversal.ContainerWalker;
 import org.rulii.validation.beans.traversal.Traversal;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
-import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * The spec's {@link ExecutableValidator} of a {@link BeanValidator}: validates the arguments or the
@@ -47,15 +44,22 @@ import java.util.List;
  * that intercept method calls ({@code @Validated} services, for instance) drive it through
  * {@link BeanValidator#forExecutables()}.
  * <p>
- * The executable is looked up by signature on the runtime class of the object (the declaring class
- * for a constructor), so a method handed over from an interface or a superclass finds the definition
- * of the overriding chain. An executable with no constraints yields an empty result. Groups are
- * processed as for a bean ({@link GroupPlan}): requested sequences member by member, and the class's
- * redefined Default group, if any, applies to its executables too. Paths start at the method or
- * constructor node and continue with the parameter, return-value or cross-parameter node, as the
- * reference implementation renders them ({@code placeOrder.arg0}, {@code placeOrder.<return value>},
+ * Each call runs the executable's flow ({@link BeanValidator#getParametersRuleFlow} or
+ * {@link BeanValidator#getReturnValueRuleFlow}) once per group step, with the arguments bound by
+ * parameter name, so the tracer sees method validation as it sees bean validation. The executable is
+ * looked up by signature on the runtime class of the object (the declaring class for a constructor),
+ * so a method handed over from an interface or a superclass finds the definition of the overriding
+ * chain. An executable with nothing to validate yields an empty result. Groups are processed as for a
+ * bean ({@link GroupPlan}): requested sequences member by member, and the class's redefined Default
+ * group, if any, applies to its executables too. Paths start at the method or constructor node and
+ * continue with the parameter, return-value or cross-parameter node, as the reference implementation
+ * renders them ({@code placeOrder.arg0}, {@code placeOrder.<return value>},
  * {@code placeOrder.<cross-parameter>}, {@code OrderService.arg0}). Results are
  * {@link BeanValidationResult}s whose violations expose the arguments or the return value validated.
+ * <p>
+ * For rulii-native use, {@link #validateParametersIn} and {@link #validateReturnValueIn} run a
+ * method's validation inside an existing {@link RuleContext}, as {@link BeanValidator#validateIn}
+ * does for an object.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -97,11 +101,11 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         Assert.notNull(object, "object cannot be null.");
         Assert.notNull(method, "method cannot be null.");
         BeanRuleViolations violations = validator.violations(object, object.getClass(), parameterValues, null);
-        ExecutableRules rules = rules(object.getClass(), method, parameterValues);
+        BeanValidator.ExecutableEntry entry = parameters(object.getClass(), method, parameterValues);
 
-        if (rules != null) {
-            parameters(rules, object, parameterValues, PropertyPath.root().method(method.getName(), method.getParameterTypes()),
-                    violations, GroupPlan.of(groups));
+        if (entry != null) {
+            run(entry.parametersFlow, object, violations, GroupPlan.of(groups),
+                    bindings -> entry.rules.getBindingPlan().load(bindings, parameterValues));
         }
 
         return new BeanValidationResult<>(object, violations);
@@ -124,11 +128,10 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         Assert.notNull(object, "object cannot be null.");
         Assert.notNull(method, "method cannot be null.");
         BeanRuleViolations violations = validator.violations(object, object.getClass(), null, returnValue);
-        ExecutableRules rules = validator.getExecutableRules(object.getClass(), method);
+        BeanValidator.ExecutableEntry entry = returnValue(object.getClass(), method);
 
-        if (rules != null && rules.getDefinition().getReturnValue() != null) {
-            returnValue(rules, object, returnValue, PropertyPath.root().method(method.getName(), method.getParameterTypes()),
-                    violations, GroupPlan.of(groups));
+        if (entry != null) {
+            run(entry.returnValueFlow, object, violations, GroupPlan.of(groups), bindings -> bindReturnValue(bindings, returnValue));
         }
 
         return new BeanValidationResult<>(object, violations);
@@ -151,10 +154,11 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
                                                                      Class<?>... groups) {
         Assert.notNull(constructor, "constructor cannot be null.");
         BeanRuleViolations violations = validator.violations(null, constructor.getDeclaringClass(), parameterValues, null);
-        ExecutableRules rules = rules(constructor.getDeclaringClass(), constructor, parameterValues);
+        BeanValidator.ExecutableEntry entry = parameters(constructor.getDeclaringClass(), constructor, parameterValues);
 
-        if (rules != null) {
-            parameters(rules, null, parameterValues, constructorPath(constructor), violations, GroupPlan.of(groups));
+        if (entry != null) {
+            run(entry.parametersFlow, null, violations, GroupPlan.of(groups),
+                    bindings -> entry.rules.getBindingPlan().load(bindings, parameterValues));
         }
 
         return new BeanValidationResult<>(null, violations);
@@ -177,108 +181,127 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         Assert.notNull(constructor, "constructor cannot be null.");
         Assert.notNull(createdObject, "createdObject cannot be null.");
         BeanRuleViolations violations = validator.violations(createdObject, constructor.getDeclaringClass(), null, createdObject);
-        ExecutableRules rules = validator.getExecutableRules(constructor.getDeclaringClass(), constructor);
+        BeanValidator.ExecutableEntry entry = returnValue(constructor.getDeclaringClass(), constructor);
 
-        if (rules != null) {
-            returnValue(rules, createdObject, createdObject, constructorPath(constructor), violations, GroupPlan.of(groups));
+        if (entry != null) {
+            run(entry.returnValueFlow, createdObject, violations, GroupPlan.of(groups), bindings -> bindReturnValue(bindings, createdObject));
         }
 
         return new BeanValidationResult<>(createdObject, violations);
     }
 
-    private ExecutableRules rules(Class<?> beanClass, Executable executable, Object[] parameterValues) {
+    /**
+     * Validates the arguments of a method call inside an existing context, the way
+     * {@link BeanValidator#validateIn} validates an object: the parameters flow runs in a scope of its
+     * own over the context's bindings, so the rules see the arguments by parameter name alongside
+     * whatever else is bound, and the violations go to the {@link RuleViolations} bound in the context
+     * when there is one (path-stamped either way); otherwise a {@link BeanRuleViolations} is bound for
+     * the run and returned.
+     *
+     * @param context the context to run in.
+     * @param object the object the method is called on.
+     * @param method the method.
+     * @param parameterValues the arguments, one per parameter.
+     * @param groups the requested groups.
+     * @return the collector the violations went to.
+     * @throws IllegalArgumentException if the context, the object, the method or the arguments are null,
+     *         the argument count does not match, or a group is not an interface.
+     */
+    public RuleViolations validateParametersIn(RuleContext context, Object object, Method method, Object[] parameterValues,
+                                               Class<?>... groups) {
+        Assert.notNull(context, "context cannot be null.");
+        Assert.notNull(object, "object cannot be null.");
+        Assert.notNull(method, "method cannot be null.");
+        BeanValidator.ExecutableEntry entry = parameters(object.getClass(), method, parameterValues);
+        return runIn(context, object, entry != null ? entry.parametersFlow : null, RequestedGroups.of(groups), parameterValues, null,
+                bindings -> entry.rules.getBindingPlan().load(bindings, parameterValues));
+    }
+
+    /**
+     * Validates the return value of a method call inside an existing context, as
+     * {@link #validateParametersIn} does for the arguments.
+     *
+     * @param context the context to run in.
+     * @param object the object the method was called on.
+     * @param method the method.
+     * @param returnValue the value returned.
+     * @param groups the requested groups.
+     * @return the collector the violations went to.
+     * @throws IllegalArgumentException if the context, the object or the method is null, or a group is
+     *         not an interface.
+     */
+    public RuleViolations validateReturnValueIn(RuleContext context, Object object, Method method, Object returnValue, Class<?>... groups) {
+        Assert.notNull(context, "context cannot be null.");
+        Assert.notNull(object, "object cannot be null.");
+        Assert.notNull(method, "method cannot be null.");
+        BeanValidator.ExecutableEntry entry = returnValue(object.getClass(), method);
+        return runIn(context, object, entry != null ? entry.returnValueFlow : null, RequestedGroups.of(groups), null, returnValue,
+                bindings -> bindReturnValue(bindings, returnValue));
+    }
+
+    /**
+     * The entry of an executable whose arguments are validated; null when there is nothing to validate.
+     */
+    private BeanValidator.ExecutableEntry parameters(Class<?> beanClass, Executable executable, Object[] parameterValues) {
         Assert.notNull(parameterValues, "parameterValues cannot be null.");
         Assert.isTrue(parameterValues.length == executable.getParameterCount(), "[" + executable + "] takes "
                 + executable.getParameterCount() + " arguments, " + parameterValues.length + " given.");
-        return validator.getExecutableRules(beanClass, executable);
+        BeanValidator.ExecutableEntry entry = validator.executable(beanClass, executable);
+        return entry != null && entry.parametersFlow != null ? entry : null;
     }
 
-    private static PropertyPath constructorPath(Constructor<?> constructor) {
-        return PropertyPath.root().constructor(constructor.getDeclaringClass().getSimpleName(), constructor.getParameterTypes());
+    /**
+     * The entry of an executable whose return value is validated; null when there is nothing to validate.
+     */
+    private BeanValidator.ExecutableEntry returnValue(Class<?> beanClass, Executable executable) {
+        BeanValidator.ExecutableEntry entry = validator.executable(beanClass, executable);
+        return entry != null && entry.returnValueFlow != null ? entry : null;
     }
 
-    private void parameters(ExecutableRules rules, Object object, Object[] values, PropertyPath base, BeanRuleViolations violations,
-                            GroupPlan plan) {
-        List<Class<?>> sequence = validator.getBeanDefinition(rules.getBeanClass()).getDefaultGroupSequence();
+    private static void bindReturnValue(Bindings bindings, Object returnValue) {
+        bindings.bind(Binding.builder().with(BindingPlan.RETURN_VALUE, Object.class).value(returnValue).editable(false).build());
+    }
 
+    /**
+     * Runs a flow once per step of the plan, each step in fresh bindings: the object, the traversal and
+     * its groups, the collector, then the inputs of the flow.
+     */
+    private void run(RuleFlow<?> flow, Object object, BeanRuleViolations violations, GroupPlan plan, Consumer<Bindings> inputs) {
         BeanValidator.run(plan, violations, step -> {
-            Traversal traversal = validator.traversal(step);
-            ScopedBindings bindings = bindings(object, violations, traversal);
-            rules.getBindingPlan().load(bindings, values);
-            RuleContext context = validator.context(bindings);
-            boolean redefined = traversal.appliesDefaultSequence(sequence);
-
-            try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
-                traversal.forDefaultSequence(context, sequence, groups -> {
-                    rules.parameterRuleSet(groups).run(context);
-                    if (redefined) parameterElements(rules, values, base, new ContainerWalker(context, rules, false));
-                });
-
-                ContainerWalker walker = new ContainerWalker(context, rules, true, !redefined);
-
-                if (!redefined) parameterElements(rules, values, base, walker);
-
-                for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
-                    if (!parameter.isCascaded()) continue;
-                    walker.cascade(values[parameter.getIndex()], parameter.getGenericType(),
-                            base.parameter(parameter.getName(), parameter.getIndex()), parameter.getGroupConversions());
-                }
-            }
+            ScopedBindings bindings = Bindings.builder().scoped();
+            BeanValidator.bind(bindings, object, validator.traversal(step));
+            bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
+            inputs.accept(bindings);
+            flow.run(validator.context(bindings));
         });
     }
 
-    private static void parameterElements(ExecutableRules rules, Object[] values, PropertyPath base, ContainerWalker walker) {
-        for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
-            PropertyPath path = base.parameter(parameter.getName(), parameter.getIndex());
+    /**
+     * Runs a flow in an existing context, in a scope of its own; a null flow validates nothing.
+     */
+    private RuleViolations runIn(RuleContext context, Object object, RuleFlow<?> flow, RequestedGroups requested, Object[] parameterValues,
+                                 Object returnValue, Consumer<Bindings> inputs) {
+        ScopedBindings bindings = context.getBindings();
+        RuleViolations existing = Traversal.anyCollector(context);
+        BeanRuleViolations own = existing == null ? validator.violations(object, object.getClass(), parameterValues, returnValue) : null;
 
-            for (ContainerElementDefinition node : parameter.getContainerElements()) {
-                walker.walk(values[parameter.getIndex()], node, path);
+        if (flow == null) return existing != null ? existing : own;
+
+        NamedScope scope = bindings.addScope();
+
+        try {
+            BeanValidator.bind(scope.getBindings(), object, validator.traversal(requested));
+            if (own != null) {
+                scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
+                        .value(own).primary(true).build());
             }
+            inputs.accept(scope.getBindings());
+            flow.run(context);
+        } finally {
+            bindings.removeScope(scope);
         }
-    }
 
-    private void returnValue(ExecutableRules rules, Object object, Object value, PropertyPath base, BeanRuleViolations violations,
-                             GroupPlan plan) {
-        ReturnValueDefinition returnValue = rules.getDefinition().getReturnValue();
-        List<Class<?>> sequence = validator.getBeanDefinition(rules.getBeanClass()).getDefaultGroupSequence();
-        PropertyPath path = base.returnValue();
-
-        BeanValidator.run(plan, violations, step -> {
-            Traversal traversal = validator.traversal(step);
-            ScopedBindings bindings = bindings(object, violations, traversal);
-            bindings.bind(Binding.builder().with(BindingPlan.RETURN_VALUE, Object.class).value(value).editable(false).build());
-            RuleContext context = validator.context(bindings);
-            boolean redefined = traversal.appliesDefaultSequence(sequence);
-
-            try (BeanRuleViolations.Frame ignored = violations.enter(base, rules, object)) {
-                traversal.forDefaultSequence(context, sequence, groups -> {
-                    rules.returnValueRuleSet(groups).run(context);
-                    if (redefined) returnValueElements(returnValue, value, path, new ContainerWalker(context, rules, false));
-                });
-
-                if (returnValue.getContainerElements().isEmpty() && !returnValue.isCascaded()) return;
-
-                ContainerWalker walker = new ContainerWalker(context, rules, true, !redefined);
-
-                if (!redefined) returnValueElements(returnValue, value, path, walker);
-
-                if (returnValue.isCascaded()) walker.cascade(value, returnValue.getGenericType(), path, returnValue.getGroupConversions());
-            }
-        });
-    }
-
-    private static void returnValueElements(ReturnValueDefinition returnValue, Object value, PropertyPath path, ContainerWalker walker) {
-        for (ContainerElementDefinition node : returnValue.getContainerElements()) {
-            walker.walk(value, node, path);
-        }
-    }
-
-    private static ScopedBindings bindings(Object object, BeanRuleViolations violations, Traversal traversal) {
-        ScopedBindings bindings = Bindings.builder().scoped();
-        bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
-        bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
-        return bindings;
+        return existing != null ? existing : own;
     }
 
     @Override

@@ -76,7 +76,9 @@ import java.util.concurrent.ConcurrentMap;
  * <p>
  * rulii-native use: {@link #validateIn} runs a validation inside an existing {@link RuleContext} so
  * annotation rules, hand-written rules and the trace share one execution; {@link #getRuleFlow} hands out
- * the per-class {@link RuleFlow} to embed in a flow of your own.
+ * the per-class {@link RuleFlow} to embed in a flow of your own, {@link #getParametersRuleFlow} and
+ * {@link #getReturnValueRuleFlow} the flows of a method or constructor. Every flow binds the groups being
+ * processed as {@code $groups}, for rules that branch on them.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -143,9 +145,8 @@ public final class BeanValidator implements Validator {
 
         run(plan, violations, step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
-            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
+            bind(bindings, object, traversal(step));
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(step)).build());
             getRuleFlow(object.getClass()).run(context(bindings));
         });
 
@@ -195,9 +196,8 @@ public final class BeanValidator implements Validator {
         run(plan, violations, step -> {
             Traversal traversal = traversal(step);
             ScopedBindings bindings = Bindings.builder().scoped();
-            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
+            bind(bindings, object, traversal);
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
             rules.getBindingPlan().load(bindings, object);
             RuleContext context = context(bindings);
 
@@ -250,10 +250,9 @@ public final class BeanValidator implements Validator {
         run(plan, violations, step -> {
             Traversal traversal = traversal(step);
             ScopedBindings bindings = Bindings.builder().scoped();
-            bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value((Object) null).build());
+            bind(bindings, null, traversal);
             bindings.bind(Binding.builder().with(rules.getBindingPlan().getBindingName(property), Object.class).value(value).build());
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
-            bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
             RuleContext context = context(bindings);
 
             try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, null)) {
@@ -340,8 +339,7 @@ public final class BeanValidator implements Validator {
         NamedScope scope = bindings.addScope();
 
         try {
-            scope.getBindings().bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
-            scope.getBindings().bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal(requested)).build());
+            bind(scope.getBindings(), object, traversal(requested));
             if (own != null) {
                 scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
                         .value(own).primary(true).build());
@@ -388,20 +386,70 @@ public final class BeanValidator implements Validator {
     /**
      * The rules materialized for a method or constructor, as defined on the given class: the method
      * is matched by signature, so the method of an interface or a superclass finds the definition of
-     * the overriding chain on the class. Read on first request.
+     * the overriding chain on the class. Read on first request, along with the executable's flows.
      *
      * @param beanClass the class the executable is called on, or the class a constructor constructs.
      * @param executable the method or constructor.
      * @return its rules; null when the executable is not constrained on the class.
      */
     public ExecutableRules getExecutableRules(Class<?> beanClass, Executable executable) {
+        ExecutableEntry entry = executable(beanClass, executable);
+        return entry != null ? entry.rules : null;
+    }
+
+    /**
+     * The flow validating the arguments of a method or constructor, assembled on first request: run it
+     * with the arguments bound by parameter name (and {@code $this} bound to the object, for a method)
+     * to embed the validation in a flow of your own.
+     *
+     * @param beanClass the class the executable is called on, or the class a constructor constructs.
+     * @param executable the method or constructor.
+     * @return its parameters flow; null when no parameter is constrained or cascaded and no
+     *         cross-parameter constraint is declared.
+     * @see RuleFlowAssembler#assembleParameters
+     */
+    public RuleFlow<?> getParametersRuleFlow(Class<?> beanClass, Executable executable) {
+        ExecutableEntry entry = executable(beanClass, executable);
+        return entry != null ? entry.parametersFlow : null;
+    }
+
+    /**
+     * The flow validating the return value of a method or constructor, assembled on first request: run
+     * it with {@code $returnValue} bound (and {@code $this}, for a method).
+     *
+     * @param beanClass the class the executable is called on, or the class a constructor constructs.
+     * @param executable the method or constructor.
+     * @return its return-value flow; null when the return value is neither constrained nor cascaded.
+     * @see RuleFlowAssembler#assembleReturnValue
+     */
+    public RuleFlow<?> getReturnValueRuleFlow(Class<?> beanClass, Executable executable) {
+        ExecutableEntry entry = executable(beanClass, executable);
+        return entry != null ? entry.returnValueFlow : null;
+    }
+
+    /**
+     * What the validator keeps for an executable, materialized and assembled on first request.
+     *
+     * @param beanClass the class the executable is called on, or the class a constructor constructs.
+     * @param executable the method or constructor.
+     * @return the entry; null when the executable is not constrained on the class.
+     */
+    ExecutableEntry executable(Class<?> beanClass, Executable executable) {
         Assert.notNull(executable, "executable cannot be null.");
         Entry entry = entry(beanClass);
         BeanDefinition definition = entry.rules.getDefinition();
         ExecutableDefinition found = executable instanceof Constructor<?>
                 ? definition.getConstructor(executable.getParameterTypes())
                 : definition.getMethod(executable.getName(), executable.getParameterTypes());
-        return found != null ? entry.executableRules.computeIfAbsent(found, materializer::materialize) : null;
+
+        if (found == null) return null;
+
+        return entry.executables.computeIfAbsent(found, def -> {
+            ExecutableRules rules = materializer.materialize(def);
+            return new ExecutableEntry(rules,
+                    def.hasConstrainedParameters() ? assembler.assembleParameters(entry.rules, rules) : null,
+                    def.hasConstrainedReturnValue() ? assembler.assembleReturnValue(entry.rules, rules) : null);
+        });
     }
 
     /**
@@ -487,6 +535,21 @@ public final class BeanValidator implements Validator {
     }
 
     /**
+     * Binds what every run starts from: the object as {@code $this} (null for a value, or for the
+     * arguments of a constructor), the traversal, and its current groups as {@code $groups}.
+     *
+     * @param bindings the bindings of the run.
+     * @param object the object; may be null.
+     * @param traversal the traversal of the run.
+     */
+    static void bind(Bindings bindings, Object object, Traversal traversal) {
+        bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
+        bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
+        bindings.bind(Binding.builder().with(BindingPlan.GROUPS, BindingPlan.GROUPS_TYPE).value(traversal.getCurrentGroups())
+                .editable(false).build());
+    }
+
+    /**
      * The traversable resolver asked before a property is validated or cascaded into: the one given
      * to the builder, else the runtime's default ({@link org.rulii.validation.beans.traversal.TraversableResolvers#getDefault()}:
      * the Jakarta Persistence one when the persistence API is present, otherwise one that reaches everything).
@@ -517,12 +580,30 @@ public final class BeanValidator implements Validator {
         private final BeanRules rules;
         private final RuleFlow<?> flow;
         private final ConcurrentMap<String, BeanRules> valueRules = new ConcurrentHashMap<>();
-        private final ConcurrentMap<ExecutableDefinition, ExecutableRules> executableRules = new ConcurrentHashMap<>();
+        private final ConcurrentMap<ExecutableDefinition, ExecutableEntry> executables = new ConcurrentHashMap<>();
 
         private Entry(BeanRules rules, RuleFlow<?> flow) {
             super();
             this.rules = rules;
             this.flow = flow;
+        }
+    }
+
+    /**
+     * What the validator keeps per constrained executable: its rules and its flows, a flow null when
+     * that side of the executable has nothing to validate.
+     */
+    static final class ExecutableEntry {
+
+        final ExecutableRules rules;
+        final RuleFlow<?> parametersFlow;
+        final RuleFlow<?> returnValueFlow;
+
+        private ExecutableEntry(ExecutableRules rules, RuleFlow<?> parametersFlow, RuleFlow<?> returnValueFlow) {
+            super();
+            this.rules = rules;
+            this.parametersFlow = parametersFlow;
+            this.returnValueFlow = returnValueFlow;
         }
     }
 }

@@ -39,6 +39,7 @@ import org.rulii.bind.ScopedBindings;
 import org.rulii.context.RuleContext;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.registry.RuleRegistry;
+import org.rulii.rule.Rule;
 import org.rulii.validation.RuleViolation;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.BeanRuleViolation;
@@ -67,6 +68,7 @@ import java.util.Set;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.rulii.model.action.Actions.action;
 
 /**
  * The entry point as a {@code jakarta.validation.Validator} and as a rulii validator.
@@ -220,6 +222,28 @@ public class BeanValidatorTest {
 
         assertThrows(IllegalArgumentException.class, () -> validator.validateIn(null, order));
         assertThrows(IllegalArgumentException.class, () -> validator.validateIn(bare, null));
+    }
+
+    @Test
+    public void groupsBeingProcessedAreBoundForRules() {
+        List<Set<Class<?>>> seen = new ArrayList<>();
+        RuleRegistry registry = RuleRegistry.builder()
+                .register(Rule.builder().name("groupsSpy")
+                        .then(action((RuleContext ruleContext) -> {
+                            Set<Class<?>> groups = ruleContext.getBindings().getValue(BindingPlan.GROUPS);
+                            seen.add(Set.copyOf(groups));
+                        }))
+                        .build())
+                .build();
+        BeanValidator validator = BeanValidator.builder().registry(registry).build();
+        Audited audited = new Audited();
+
+        validator.validate(audited);
+        validator.validate(audited, OnCreate.class);
+        validator.validate(audited, Extended.class);
+
+        // The expanded groups of the step being processed: the requested ones and the interfaces they extend.
+        assertEquals(List.of(Set.of(Default.class), Set.of(OnCreate.class), Set.of(Extended.class, OnCreate.class)), seen);
     }
 
     @Test
@@ -389,6 +413,11 @@ public class BeanValidatorTest {
     public static class Customer {
         @NotBlank
         String name;
+    }
+
+    @Validate("groupsSpy")
+    public static class Audited {
+        String note;
     }
 
     public static class Account {
