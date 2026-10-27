@@ -84,7 +84,7 @@ import java.util.Objects;
  * @author Max Arulananthan
  * @since 1.0
  */
-public final class ConstraintDefinition implements Definition {
+public final class ConstraintDefinition implements RuleDeclaration {
 
     private static final int DIRECT_CONSTRAINT_INDEX = -1;
 
@@ -456,6 +456,7 @@ public final class ConstraintDefinition implements Definition {
      *
      * @return the constraint source.
      */
+    @Override
     public ConstraintSource getConstraintSource() {
         return constraintSource;
     }
@@ -471,14 +472,17 @@ public final class ConstraintDefinition implements Definition {
         return annotation;
     }
 
+    @Override
     public Class<? extends Annotation> getAnnotationType() {
         return annotation.annotationType();
     }
 
+    @Override
     public String getMessage() {
         return message;
     }
 
+    @Override
     public List<Class<?>> getGroups() {
         return groups;
     }
@@ -494,6 +498,7 @@ public final class ConstraintDefinition implements Definition {
      *
      * @return the severity; never null.
      */
+    @Override
     public Severity getSeverity() {
         return severity;
     }

@@ -50,6 +50,12 @@ import java.util.List;
  * element (a property, a parameter, a return value, a bean) or, for a cross-parameter constraint, the
  * parameters of a method or constructor as a whole, an {@code Object[]}.</p>
  *
+ * <p>The target also carries what the rules say about themselves to tools that list them: a
+ * {@link #getDescription() description} naming the declaration and where it is, the
+ * {@link #getCategory() category} (the bean class) and the {@link #getTags() tags} (the kind of
+ * declaration, the annotation, the groups). {@code configure} sets them on every rule it configures;
+ * a target created without them leaves the rules as the builders make them.</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
@@ -67,6 +73,9 @@ public final class ConstraintTarget {
     private final SourceDefinition source;
     private final Function<?> valueFunction;
     private final ValidationTarget validationTarget;
+    private final String description;
+    private final String category;
+    private final List<String> tags;
     private final List<String> ruleNames = new ArrayList<>(1);
 
     /**
@@ -131,6 +140,33 @@ public final class ConstraintTarget {
     public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
                             String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
                             Function<?> valueFunction, ValidationTarget validationTarget) {
+        this(beanClass, propertyName, bindingName, valueName, type, ruleName, errorCode, severity, message, source, valueFunction,
+                validationTarget, null, null, null);
+    }
+
+    /**
+     * Creates a target with what its rules say about themselves.
+     *
+     * @param beanClass the bean class being materialized.
+     * @param propertyName the constrained property; null for a class-level constraint.
+     * @param bindingName the binding the rules read the value from.
+     * @param valueName the name the rules report the value under.
+     * @param type the static type of the value.
+     * @param ruleName the base rule name.
+     * @param errorCode the error code of the violations.
+     * @param severity the severity of the violations.
+     * @param message the translated message template; null to use the rule's resolved default.
+     * @param source where the constraint is declared.
+     * @param valueFunction the function reading the value; null to read the binding.
+     * @param validationTarget what the value is.
+     * @param description the rules' description; null for none.
+     * @param category the rules' category; null for none.
+     * @param tags the rules' tags; null or empty for none.
+     */
+    public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
+                            String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
+                            Function<?> valueFunction, ValidationTarget validationTarget, String description, String category,
+                            List<String> tags) {
         super();
         Assert.notNull(beanClass, "beanClass cannot be null.");
         Assert.hasText(bindingName, "bindingName cannot be empty/null.");
@@ -154,6 +190,9 @@ public final class ConstraintTarget {
         this.source = source;
         this.valueFunction = valueFunction != null ? valueFunction : Validators.binding(bindingName);
         this.validationTarget = validationTarget;
+        this.description = description;
+        this.category = category;
+        this.tags = tags != null ? List.copyOf(tags) : List.of();
     }
 
     /**
@@ -196,6 +235,9 @@ public final class ConstraintTarget {
                 .failOnNull(failOnNull)
                 .source(source);
         if (message != null) builder.message(message);
+        if (description != null) builder.description(description);
+        if (category != null) builder.category(category);
+        if (!tags.isEmpty()) builder.tags(tags.toArray(new String[0]));
         return builder;
     }
 
@@ -215,7 +257,37 @@ public final class ConstraintTarget {
                 .valueName(valueName)
                 .source(source);
         if (message != null) builder.message(message);
+        if (description != null) builder.description(description);
+        if (category != null) builder.category(category);
+        if (!tags.isEmpty()) builder.tags(tags);
         return builder;
+    }
+
+    /**
+     * What the rules say they are: the declaration and where it is declared.
+     *
+     * @return the description; null when the target carries none.
+     */
+    public String getDescription() {
+        return description;
+    }
+
+    /**
+     * Where the rules belong: the bean class.
+     *
+     * @return the category; null when the target carries none.
+     */
+    public String getCategory() {
+        return category;
+    }
+
+    /**
+     * What the rules are about: the kind of declaration, the annotation, the groups.
+     *
+     * @return the tags; never null, empty when the target carries none.
+     */
+    public List<String> getTags() {
+        return tags;
     }
 
     /**

@@ -60,10 +60,29 @@ import java.util.function.Function;
  * return-value flow requires {@code $returnValue} and takes {@code $this} the same way. Both take
  * {@code ruleViolations}, {@code $traversal} and {@code $groups} as the bean flow does.</p>
  *
+ * <p>Every flow is categorised under the bean class's name and tagged {@link #BEAN_TAG},
+ * {@link #PARAMETERS_TAG} or {@link #RETURN_VALUE_TAG}, so a registry lists a class's flows by
+ * category and tells them apart by tag.</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
 public final class RuleFlowAssembler {
+
+    /**
+     * The tag of a bean flow.
+     */
+    public static final String BEAN_TAG = "bean";
+
+    /**
+     * The tag of a parameters flow.
+     */
+    public static final String PARAMETERS_TAG = "parameters";
+
+    /**
+     * The tag of a return-value flow.
+     */
+    public static final String RETURN_VALUE_TAG = "returnValue";
 
     private static final String FLOW_SUFFIX = "ValidationFlow";
     private static final String PARAMETERS_SUFFIX = "ParametersFlow";
@@ -99,6 +118,8 @@ public final class RuleFlowAssembler {
         DefaultRuleFlowBuilder builder = RuleFlow.builder()
                 .name(flowName(rules.getBeanClass()))
                 .description("Validates a " + rules.getBeanClass().getName())
+                .category(rules.getBeanClass().getName())
+                .tags(BEAN_TAG)
                 .param(BindingPlan.THIS, Object.class, true)
                 .param(BindingPlan.ROOT, Object.class, Functions.function((RuleContext ruleContext) ->
                         ruleContext.getBindings().getValue(BindingPlan.THIS)))
@@ -133,7 +154,9 @@ public final class RuleFlowAssembler {
                 new CascadeParametersCommand(rules, sequence)));
         DefaultRuleFlowBuilder builder = RuleFlow.builder()
                 .name(parametersFlowName(owner.getDefinition(), definition))
-                .description("Validates the arguments of " + definition.getExecutable());
+                .description("Validates the arguments of " + definition.getExecutable())
+                .category(owner.getBeanClass().getName())
+                .tags(PARAMETERS_TAG);
 
         for (ParameterDefinition parameter : definition.getParameters()) {
             builder.param(plan.getBindingName(parameter), parameter.getType(), true);
@@ -170,6 +193,8 @@ public final class RuleFlowAssembler {
         DefaultRuleFlowBuilder builder = RuleFlow.builder()
                 .name(returnValueFlowName(owner.getDefinition(), definition))
                 .description("Validates the return value of " + definition.getExecutable())
+                .category(owner.getBeanClass().getName())
+                .tags(RETURN_VALUE_TAG)
                 .param(BindingPlan.RETURN_VALUE, Object.class, true)
                 .param(BindingPlan.THIS, Object.class, false)
                 .param(BindingPlan.ROOT, Object.class, Functions.function(ValidateExecutableCommand::bean))

@@ -37,7 +37,7 @@ import java.util.List;
 /**
  * What one {@link ValueDeclaration} contributes to the value it declares: the constraints on the value
  * itself, the constrained positions within its type, whether it is cascaded and with which group
- * conversions, and its {@code @Validate} rules. Shared by properties, parameters and return values,
+ * conversions, and its {@code @Validate} and {@code @Expr} rules. Shared by properties, parameters and return values,
  * which differ only in how declarations are grouped.
  *
  * <p>Constraints are read from the declaration annotations and from the annotations on the type use;
@@ -52,11 +52,12 @@ import java.util.List;
  * @param cascaded whether the value is cascaded ({@code @Valid}).
  * @param groupConversions the {@code @ConvertGroup} conversions of the cascade.
  * @param validateRules the {@code @Validate} rules attached to the declaration.
+ * @param exprRules the {@code @Expr} conditions attached to the declaration.
  * @author Max Arulananthan
  * @since 1.0
  */
 record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerElementDefinition> elements, boolean cascaded,
-                         GroupConversions groupConversions, List<ValidateDefinition> validateRules) {
+                         GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules) {
 
     /**
      * Reads a declaration.
@@ -101,14 +102,14 @@ record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerE
         }
 
         return new DeclarationReader(Collections.unmodifiableList(onValue), Collections.unmodifiableList(elements), cascaded,
-                conversions, ValidateDefinition.load(declaration));
+                conversions, ValidateDefinition.load(declaration), ExprDefinition.load(declaration));
     }
 
     /**
      * Whether the declaration contributes anything to validate.
      */
     boolean isConstrained() {
-        return !constraints.isEmpty() || !elements.isEmpty() || cascaded || !validateRules.isEmpty();
+        return !constraints.isEmpty() || !elements.isEmpty() || cascaded || !validateRules.isEmpty() || !exprRules.isEmpty();
     }
 
     private static List<ConstraintDefinition> merge(List<ConstraintDefinition> declaration, List<ConstraintDefinition> typeUse) {

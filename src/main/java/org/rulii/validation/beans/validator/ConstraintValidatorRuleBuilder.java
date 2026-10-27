@@ -24,7 +24,11 @@ import org.rulii.model.function.Function;
 import org.rulii.validation.Severity;
 
 import java.lang.annotation.Annotation;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -45,6 +49,8 @@ public final class ConstraintValidatorRuleBuilder {
     private final Map<String, Object> parameters = new LinkedHashMap<>();
     private String name;
     private String description;
+    private String category;
+    private final List<String> tags = new ArrayList<>();
     private SourceDefinition source;
     private String valueName = DEFAULT_VALUE_NAME;
     private String errorCode = ConstraintValidatorRule.ERROR_CODE;
@@ -71,6 +77,39 @@ public final class ConstraintValidatorRuleBuilder {
 
     public ConstraintValidatorRuleBuilder description(String description) {
         this.description = description;
+        return this;
+    }
+
+    /**
+     * Where the rule belongs, for tools that group rules; null for none.
+     *
+     * @param category the category.
+     * @return this builder.
+     */
+    public ConstraintValidatorRuleBuilder category(String category) {
+        this.category = category;
+        return this;
+    }
+
+    /**
+     * What the rule is about, for tools that filter rules; adds to the tags given before.
+     *
+     * @param tags the tags.
+     * @return this builder.
+     */
+    public ConstraintValidatorRuleBuilder tags(String... tags) {
+        if (tags != null) this.tags.addAll(Arrays.asList(tags));
+        return this;
+    }
+
+    /**
+     * What the rule is about, for tools that filter rules; adds to the tags given before.
+     *
+     * @param tags the tags.
+     * @return this builder.
+     */
+    public ConstraintValidatorRuleBuilder tags(Collection<String> tags) {
+        if (tags != null) this.tags.addAll(tags);
         return this;
     }
 
@@ -139,7 +178,7 @@ public final class ConstraintValidatorRuleBuilder {
     }
 
     public ConstraintValidatorRule build() {
-        return new ConstraintValidatorRule(name, description, source, valueFunction, valueName, errorCode, severity, errorMessage,
-                validator, annotationType, defaultMessageTemplate, parameters);
+        return new ConstraintValidatorRule(name, description, category, tags, source, valueFunction, valueName, errorCode, severity,
+                errorMessage, validator, annotationType, defaultMessageTemplate, parameters);
     }
 }

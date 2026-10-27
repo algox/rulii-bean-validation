@@ -40,7 +40,8 @@ import java.util.List;
 /**
  * Validation definition of one bean class: its {@link PropertyDefinition properties} in discovery
  * order, its class-level {@link ConstraintDefinition constraints} in hierarchy order, the registry
- * rules attached at class level with {@code @Validate} ({@link ValidateDefinition}), also in
+ * rules attached at class level with {@code @Validate} ({@link ValidateDefinition}) and the script
+ * conditions declared at class level with {@code @Expr} ({@link ExprDefinition}), also in
  * hierarchy order, its constrained {@link ExecutableDefinition methods and constructors}, and its
  * redefined {@link #getDefaultGroupSequence() Default group}, if any. Everything declared on
  * superclasses and interfaces is included, cumulatively, except the Default redefinition, which the
@@ -59,6 +60,7 @@ public final class BeanDefinition implements Definition {
     private final List<PropertyDefinition> properties;
     private final List<ConstraintDefinition> classConstraints;
     private final List<ValidateDefinition> validateRules;
+    private final List<ExprDefinition> exprRules;
     private final List<ExecutableDefinition> methods;
     private final List<ExecutableDefinition> constructors;
     private final List<Class<?>> defaultGroupSequence;
@@ -67,19 +69,20 @@ public final class BeanDefinition implements Definition {
     private final boolean cascading;
 
     private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints,
-                           List<ValidateDefinition> validateRules, List<ExecutableDefinition> methods, List<ExecutableDefinition> constructors,
-                           List<Class<?>> defaultGroupSequence) {
+                           List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules, List<ExecutableDefinition> methods,
+                           List<ExecutableDefinition> constructors, List<Class<?>> defaultGroupSequence) {
         super();
         this.beanClass = beanClass;
         this.properties = properties;
         this.classConstraints = classConstraints;
         this.validateRules = validateRules;
+        this.exprRules = exprRules;
         this.methods = methods;
         this.constructors = constructors;
         this.defaultGroupSequence = defaultGroupSequence;
         this.source = SourceDefinition.forClass(beanClass);
 
-        boolean constrained = !classConstraints.isEmpty() || !validateRules.isEmpty();
+        boolean constrained = !classConstraints.isEmpty() || !validateRules.isEmpty() || !exprRules.isEmpty();
         boolean cascading = false;
 
         for (PropertyDefinition property : properties) {
@@ -144,8 +147,8 @@ public final class BeanDefinition implements Definition {
 
         return new BeanDefinition(beanClass, Collections.unmodifiableList(properties),
                 Collections.unmodifiableList(loader.classConstraints), Collections.unmodifiableList(loader.validateRules),
-                loader.executables.getMethods(registry, names), ExecutableDiscovery.constructors(beanClass, registry, names),
-                defaultGroupSequence(beanClass));
+                Collections.unmodifiableList(loader.exprRules), loader.executables.getMethods(registry, names),
+                ExecutableDiscovery.constructors(beanClass, registry, names), defaultGroupSequence(beanClass));
     }
 
     /**
@@ -259,6 +262,15 @@ public final class BeanDefinition implements Definition {
     }
 
     /**
+     * The {@code @Expr} conditions declared at class level, in hierarchy order.
+     *
+     * @return the definitions; empty if none.
+     */
+    public List<ExprDefinition> getExprRules() {
+        return exprRules;
+    }
+
+    /**
      * The constrained methods, getters included, in discovery order.
      *
      * @return the definitions; empty if none.
@@ -322,7 +334,8 @@ public final class BeanDefinition implements Definition {
 
     /**
      * Whether validating an instance of the class has anything to do: a constrained property, a
-     * class-level constraint or a {@code @Validate} rule. Executable constraints do not count.
+     * class-level constraint, a {@code @Validate} rule or an {@code @Expr}. Executable constraints do
+     * not count.
      *
      * @return true if the bean is constrained.
      */
@@ -343,7 +356,7 @@ public final class BeanDefinition implements Definition {
     public String toString() {
         return "BeanDefinition{beanClass=" + beanClass.getName() + ", properties=" + properties.size()
                 + ", classConstraints=" + classConstraints.size() + ", validateRules=" + validateRules.size()
-                + ", methods=" + methods.size() + ", constructors=" + constructors.size()
+                + ", exprRules=" + exprRules.size() + ", methods=" + methods.size() + ", constructors=" + constructors.size()
                 + (defaultGroupSequence != null ? ", defaultGroupSequence=" + defaultGroupSequence : "") + '}';
     }
 
@@ -356,6 +369,7 @@ public final class BeanDefinition implements Definition {
         private final ExecutableDiscovery executables;
         private final List<ConstraintDefinition> classConstraints = new ArrayList<>();
         private final List<ValidateDefinition> validateRules = new ArrayList<>();
+        private final List<ExprDefinition> exprRules = new ArrayList<>();
 
         private Loader(Class<?> beanClass) {
             super();
@@ -367,6 +381,7 @@ public final class BeanDefinition implements Definition {
         public void visitType(Class<?> type) {
             classConstraints.addAll(ConstraintDefinition.load(type));
             validateRules.addAll(ValidateDefinition.load(type));
+            exprRules.addAll(ExprDefinition.load(type));
         }
 
         @Override

@@ -242,7 +242,11 @@ public final class ExecutableRules implements MaterializedRules {
                 if (rule.isActive(groups)) rules.add(rule.getRule());
             }
 
-            return RuleSet.builder().with(name + "_parameters").rules(rules).build();
+            return RuleSet.builder().with(name + "_parameters")
+                    .description("Rules of the arguments of " + definition.getExecutable() + " for groups " + groups.getGroupNames())
+                    .category(getBeanClass().getName())
+                    .tags(groups.getGroupNames())
+                    .rules(rules).build();
         });
     }
 
@@ -261,7 +265,11 @@ public final class ExecutableRules implements MaterializedRules {
                 if (rule.isActive(groups)) rules.add(rule.getRule());
             }
 
-            return RuleSet.builder().with(name + "_returnValue").rules(rules).build();
+            return RuleSet.builder().with(name + "_returnValue")
+                    .description("Rules of the return value of " + definition.getExecutable() + " for groups " + groups.getGroupNames())
+                    .category(getBeanClass().getName())
+                    .tags(groups.getGroupNames())
+                    .rules(rules).build();
         });
     }
 
@@ -279,7 +287,11 @@ public final class ExecutableRules implements MaterializedRules {
                 }
             }
 
-            return RuleSet.builder().with(name + "_" + RuleMaterializer.segment(node)).rules(rules).build();
+            return RuleSet.builder().with(name + "_" + RuleMaterializer.segment(node))
+                    .description("Rules of " + node.getSourceDeclaration().describe() + " " + node.getName() + " for groups " + groups.getGroupNames())
+                    .category(getBeanClass().getName())
+                    .tags(groups.getGroupNames())
+                    .rules(rules).build();
         });
     }
 

@@ -29,7 +29,7 @@ import java.util.List;
 
 /**
  * Definition of the return value of a method, or of the object a constructor creates: the constraints
- * declared on it, the {@code @Validate} rules attached to it, whether it is cascaded ({@code @Valid}),
+ * declared on it, the {@code @Validate} and {@code @Expr} rules attached to it, whether it is cascaded ({@code @Valid}),
  * and the constrained positions within its type. Return-value constraints and rules accumulate over
  * the methods a method overrides, so a return value is read from one declaration per method of the
  * chain, the validated method's first.
@@ -45,10 +45,11 @@ public final class ReturnValueDefinition implements Definition {
     private final List<ValueDeclaration> cascadedDeclarations;
     private final GroupConversions groupConversions;
     private final List<ValidateDefinition> validateRules;
+    private final List<ExprDefinition> exprRules;
 
     private ReturnValueDefinition(List<ValueDeclaration> declarations, List<ConstraintDefinition> constraints,
                                   List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations,
-                                  GroupConversions groupConversions, List<ValidateDefinition> validateRules) {
+                                  GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules) {
         super();
         this.declarations = declarations;
         this.constraints = constraints;
@@ -56,6 +57,7 @@ public final class ReturnValueDefinition implements Definition {
         this.cascadedDeclarations = cascadedDeclarations;
         this.groupConversions = groupConversions;
         this.validateRules = validateRules;
+        this.exprRules = exprRules;
     }
 
     /**
@@ -74,6 +76,7 @@ public final class ReturnValueDefinition implements Definition {
         List<ValueDeclaration> cascaded = new ArrayList<>(1);
         GroupConversions conversions = GroupConversions.NONE;
         List<ValidateDefinition> validateRules = new ArrayList<>();
+        List<ExprDefinition> exprRules = new ArrayList<>();
 
         for (ValueDeclaration declaration : declarations) {
             Assert.isTrue(declaration.getKind() == ValueDeclaration.Kind.RETURN_VALUE || declaration.getKind() == ValueDeclaration.Kind.GETTER,
@@ -84,12 +87,14 @@ public final class ReturnValueDefinition implements Definition {
             if (read.cascaded()) cascaded.add(declaration);
             conversions = conversions.merge(read.groupConversions(), declaration.describe());
             validateRules.addAll(read.validateRules());
+            exprRules.addAll(read.exprRules());
         }
 
         ValidateDefinition.checkDistinct(validateRules, "the return value of [" + declarations.get(0).describe() + "]");
 
         return new ReturnValueDefinition(List.copyOf(declarations), Collections.unmodifiableList(constraints), elements,
-                Collections.unmodifiableList(cascaded), conversions, Collections.unmodifiableList(validateRules));
+                Collections.unmodifiableList(cascaded), conversions, Collections.unmodifiableList(validateRules),
+                Collections.unmodifiableList(exprRules));
     }
 
     /**
@@ -161,17 +166,28 @@ public final class ReturnValueDefinition implements Definition {
     }
 
     /**
+     * The {@code @Expr} conditions attached to the return value, in declaration order over the chain.
+     *
+     * @return the conditions; empty if none.
+     */
+    public List<ExprDefinition> getExprRules() {
+        return exprRules;
+    }
+
+    /**
      * Whether anything is to be validated for the return value.
      *
-     * @return true if constrained, cascaded, holding constrained positions or carrying {@code @Validate} rules.
+     * @return true if constrained, cascaded, holding constrained positions or carrying {@code @Validate}
+     *         or {@code @Expr} rules.
      */
     public boolean isConstrained() {
-        return !constraints.isEmpty() || !containerElements.isEmpty() || isCascaded() || !validateRules.isEmpty();
+        return !constraints.isEmpty() || !containerElements.isEmpty() || isCascaded() || !validateRules.isEmpty() || !exprRules.isEmpty();
     }
 
     @Override
     public String toString() {
         return "ReturnValueDefinition{" + getName() + ", constraints=" + constraints.size() + ", elements="
-                + containerElements.size() + ", cascaded=" + isCascaded() + ", validateRules=" + validateRules.size() + '}';
+                + containerElements.size() + ", cascaded=" + isCascaded() + ", validateRules=" + validateRules.size()
+                + ", exprRules=" + exprRules.size() + '}';
     }
 }

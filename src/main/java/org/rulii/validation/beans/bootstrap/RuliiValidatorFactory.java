@@ -68,6 +68,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
     private final ClockProvider clockProvider;
     private final Map<String, String> properties;
     private final RuleRegistry registry;
+    private final boolean registerFlows;
     private final List<ConstraintMapper<?>> mappers;
     private final RuleContextOptions options;
     private final List<ValueExtractor<?>> extractors;
@@ -91,6 +92,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.clockProvider = state.getClockProvider() != null ? state.getClockProvider() : Defaults.CLOCK_PROVIDER;
         this.properties = state.getProperties() != null ? Map.copyOf(state.getProperties()) : Map.of();
         this.registry = ours != null ? ours.getRuleRegistry() : null;
+        this.registerFlows = ours != null && ours.isRegisterFlows();
         this.mappers = ours != null ? ours.getConstraintMappers() : List.of();
         this.options = ours != null ? ours.getOptions() : null;
         this.constraintValidatorFactory = state.getConstraintValidatorFactory() != null ? state.getConstraintValidatorFactory()
@@ -115,6 +117,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         builder.messageInterpolator(messageInterpolator);
         builder.traversableResolver(traversableResolver);
         if (registry != null) builder.registry(registry);
+        builder.registerFlows(registerFlows);
 
         for (ConstraintMapper<?> mapper : mappers) {
             builder.mapper(mapper);

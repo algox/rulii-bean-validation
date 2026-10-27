@@ -28,6 +28,7 @@ import org.rulii.lib.spring.core.annotation.AnnotationUtils;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
+import org.rulii.validation.beans.Expr;
 import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 
@@ -59,10 +60,11 @@ import java.util.Set;
  * accumulate over the chain and {@code @Valid} anywhere in it cascades the return value. A
  * {@code void} method may not constrain or cascade its return value.</p>
  *
- * <p>A {@code @Validate} on the executable attaches registry rules to its parameters as a whole or to
- * its return value, as its {@code applyTo} says: {@code IMPLICIT} means the parameters when there are
- * any, the return value otherwise. Rules for the parameters follow the inheritance rules of parameter
- * constraints; rules for the return value accumulate over the chain like return-value constraints.</p>
+ * <p>A {@code @Validate} on the executable attaches registry rules, and an {@code @Expr} a script
+ * condition, to its parameters as a whole or to its return value, as its {@code applyTo} says:
+ * {@code IMPLICIT} means the parameters when there are any, the return value otherwise. Rules for the
+ * parameters follow the inheritance rules of parameter constraints; rules for the return value
+ * accumulate over the chain like return-value constraints.</p>
  *
  * <p>A constraint on the method itself is a return-value constraint unless it is a cross-parameter
  * one. The constraint says so with {@code validationAppliesTo}; when it does not (the
@@ -99,11 +101,13 @@ public final class ExecutableDefinition implements Definition {
     private final ReturnValueDefinition returnValue;
     private final List<ConstraintDefinition> crossParameterConstraints;
     private final List<ValidateDefinition> validateRules;
+    private final List<ExprDefinition> exprRules;
     private final SourceDefinition source;
 
     private ExecutableDefinition(Kind kind, Executable executable, Class<?> owner, List<Executable> declarations,
                                  List<ParameterDefinition> parameters, ReturnValueDefinition returnValue,
-                                 List<ConstraintDefinition> crossParameterConstraints, List<ValidateDefinition> validateRules) {
+                                 List<ConstraintDefinition> crossParameterConstraints, List<ValidateDefinition> validateRules,
+                                 List<ExprDefinition> exprRules) {
         super();
         this.kind = kind;
         this.executable = executable;
@@ -113,6 +117,7 @@ public final class ExecutableDefinition implements Definition {
         this.returnValue = returnValue;
         this.crossParameterConstraints = crossParameterConstraints;
         this.validateRules = validateRules;
+        this.exprRules = exprRules;
         this.source = executable instanceof Constructor<?> constructor ? SourceDefinition.forConstructor(constructor)
                 : SourceDefinition.forMethod((Method) executable);
     }
@@ -218,6 +223,7 @@ public final class ExecutableDefinition implements Definition {
 
         List<ConstraintDefinition> crossParameter = List.of();
         List<ValidateDefinition> validateRules = new ArrayList<>();
+        List<ExprDefinition> exprRules = new ArrayList<>();
 
         if (constrainedRoot != null) {
             CrossParameterConstraintSource source = new CrossParameterConstraintSource(constrainedRoot.executable, owner);
@@ -228,6 +234,10 @@ public final class ExecutableDefinition implements Definition {
             }
 
             ValidateDefinition.checkDistinct(validateRules, "the parameters of [" + describe(primary) + "]");
+
+            for (Annotation annotation : constrainedRoot.parameterExprAnnotations) {
+                exprRules.add(ExprDefinition.load(source, (Expr) annotation));
+            }
         }
 
         ReturnValueDefinition returnValue = null;
@@ -243,7 +253,8 @@ public final class ExecutableDefinition implements Definition {
         }
 
         return new ExecutableDefinition(kind, primary, owner, Collections.unmodifiableList(declarations),
-                Collections.unmodifiableList(parameters), returnValue, crossParameter, Collections.unmodifiableList(validateRules));
+                Collections.unmodifiableList(parameters), returnValue, crossParameter, Collections.unmodifiableList(validateRules),
+                Collections.unmodifiableList(exprRules));
     }
 
     /**
@@ -369,27 +380,44 @@ public final class ExecutableDefinition implements Definition {
      */
     public static boolean validatesParameters(Validate annotation, Executable executable) {
         Assert.notNull(annotation, "annotation cannot be null.");
+        return validatesParameters(annotation.applyTo(), "@Validate", executable);
+    }
+
+    /**
+     * Whether an {@code @Expr} declared on an executable attaches to its parameters as a whole, per
+     * its {@code applyTo}, with the rules of {@link #validatesParameters(Validate, Executable)}.
+     *
+     * @param annotation the annotation.
+     * @param executable the method or constructor it is declared on.
+     * @return true for the parameters, false for the return value.
+     * @throws IllegalExecutableConstraintException if the resolved target does not exist on the executable.
+     */
+    public static boolean validatesParameters(Expr annotation, Executable executable) {
+        Assert.notNull(annotation, "annotation cannot be null.");
+        return validatesParameters(annotation.applyTo(), "@Expr", executable);
+    }
+
+    private static boolean validatesParameters(ConstraintTarget applies, String annotationName, Executable executable) {
         Assert.notNull(executable, "executable cannot be null.");
         boolean hasParameters = executable.getParameterCount() > 0;
         boolean hasReturnValue = hasReturnValue(executable);
-        ConstraintTarget applies = annotation.applyTo();
 
         if (applies == ConstraintTarget.PARAMETERS) {
             if (!hasParameters) {
-                throw new IllegalExecutableConstraintException(executable, "declares @Validate(applyTo = PARAMETERS) but has no parameters.");
+                throw new IllegalExecutableConstraintException(executable, "declares " + annotationName + "(applyTo = PARAMETERS) but has no parameters.");
             }
             return true;
         }
 
         if (applies == ConstraintTarget.RETURN_VALUE) {
             if (!hasReturnValue) {
-                throw new IllegalExecutableConstraintException(executable, "declares @Validate(applyTo = RETURN_VALUE) but returns void.");
+                throw new IllegalExecutableConstraintException(executable, "declares " + annotationName + "(applyTo = RETURN_VALUE) but returns void.");
             }
             return false;
         }
 
         if (!hasParameters && !hasReturnValue) {
-            throw new IllegalExecutableConstraintException(executable, "carries @Validate but has neither parameters nor a return value to validate.");
+            throw new IllegalExecutableConstraintException(executable, "carries " + annotationName + " but has neither parameters nor a return value to validate.");
         }
 
         return hasParameters;
@@ -539,13 +567,22 @@ public final class ExecutableDefinition implements Definition {
     }
 
     /**
-     * Whether any parameter is constrained or cascaded, or a cross-parameter constraint or a
-     * {@code @Validate} for the parameters is declared.
+     * The {@code @Expr} conditions attached to the parameters as a whole, in declaration order.
+     *
+     * @return the conditions; empty if none.
+     */
+    public List<ExprDefinition> getExprRules() {
+        return exprRules;
+    }
+
+    /**
+     * Whether any parameter is constrained or cascaded, or a cross-parameter constraint, a
+     * {@code @Validate} or an {@code @Expr} for the parameters is declared.
      *
      * @return true if parameter validation has anything to do.
      */
     public boolean hasConstrainedParameters() {
-        if (!crossParameterConstraints.isEmpty() || !validateRules.isEmpty()) return true;
+        if (!crossParameterConstraints.isEmpty() || !validateRules.isEmpty() || !exprRules.isEmpty()) return true;
 
         for (ParameterDefinition parameter : parameters) {
             if (parameter.isConstrained()) return true;
@@ -582,13 +619,14 @@ public final class ExecutableDefinition implements Definition {
     public String toString() {
         return "ExecutableDefinition{" + kind + " " + describe(executable) + ", parameters=" + parameters.size()
                 + ", returnValue=" + (returnValue != null) + ", crossParameter=" + crossParameterConstraints.size()
-                + ", validateRules=" + validateRules.size() + '}';
+                + ", validateRules=" + validateRules.size() + ", exprRules=" + exprRules.size() + '}';
     }
 
     /**
      * One executable of the chain, read: its parameter declarations, its return-value declaration (with
-     * the cross-parameter constraints and the {@code @Validate} for the parameters taken out of its
-     * annotations), the cross-parameter annotations and the parameter-side {@code @Validate} annotations.
+     * the cross-parameter constraints and the {@code @Validate} and {@code @Expr} for the parameters
+     * taken out of its annotations), the cross-parameter annotations and the parameter-side
+     * {@code @Validate} and {@code @Expr} annotations.
      */
     private static final class Read {
 
@@ -597,16 +635,19 @@ public final class ExecutableDefinition implements Definition {
         private final ValueDeclaration returnValue;
         private final List<Annotation> crossParameterAnnotations;
         private final List<Annotation> parameterValidateAnnotations;
+        private final List<Annotation> parameterExprAnnotations;
         private final boolean parameterConstrained;
 
         private Read(Executable executable, List<ValueDeclaration> parameters, ValueDeclaration returnValue,
-                     List<Annotation> crossParameterAnnotations, List<Annotation> parameterValidateAnnotations, boolean parameterConstrained) {
+                     List<Annotation> crossParameterAnnotations, List<Annotation> parameterValidateAnnotations,
+                     List<Annotation> parameterExprAnnotations, boolean parameterConstrained) {
             super();
             this.executable = executable;
             this.parameters = parameters;
             this.returnValue = returnValue;
             this.crossParameterAnnotations = crossParameterAnnotations;
             this.parameterValidateAnnotations = parameterValidateAnnotations;
+            this.parameterExprAnnotations = parameterExprAnnotations;
             this.parameterConstrained = parameterConstrained;
         }
 
@@ -622,6 +663,7 @@ public final class ExecutableDefinition implements Definition {
 
             List<Annotation> crossParameter = new ArrayList<>();
             List<Annotation> parameterValidate = new ArrayList<>();
+            List<Annotation> parameterExpr = new ArrayList<>();
             List<Annotation> returnValue = new ArrayList<>();
 
             for (Annotation annotation : executable.getDeclaredAnnotations()) {
@@ -633,6 +675,13 @@ public final class ExecutableDefinition implements Definition {
                     (isCrossParameter(annotation, executable) ? crossParameter : returnValue).add(annotation);
                 } else if (annotation instanceof Validate validate) {
                     (validatesParameters(validate, executable) ? parameterValidate : returnValue).add(annotation);
+                } else if (annotation instanceof Expr expr) {
+                    (validatesParameters(expr, executable) ? parameterExpr : returnValue).add(annotation);
+                } else if (annotation instanceof Expr.List list) {
+                    // Each expression decides its own side, so the container is unwrapped here.
+                    for (Expr expr : list.value()) {
+                        (validatesParameters(expr, executable) ? parameterExpr : returnValue).add(expr);
+                    }
                 } else {
                     returnValue.add(annotation);
                 }
@@ -650,7 +699,8 @@ public final class ExecutableDefinition implements Definition {
 
             return new Read(executable, Collections.unmodifiableList(parameters), returnDeclaration,
                     Collections.unmodifiableList(crossParameter), Collections.unmodifiableList(parameterValidate),
-                    constrained || !crossParameter.isEmpty() || !parameterValidate.isEmpty());
+                    Collections.unmodifiableList(parameterExpr),
+                    constrained || !crossParameter.isEmpty() || !parameterValidate.isEmpty() || !parameterExpr.isEmpty());
         }
 
         private static boolean constrainsReturnValue(List<Annotation> annotations, AnnotatedType returnType) {
@@ -674,6 +724,7 @@ public final class ExecutableDefinition implements Definition {
         private boolean isEquallyParameterConstrained(Read other) {
             if (!new HashSet<>(crossParameterAnnotations).equals(new HashSet<>(other.crossParameterAnnotations))) return false;
             if (!new HashSet<>(parameterValidateAnnotations).equals(new HashSet<>(other.parameterValidateAnnotations))) return false;
+            if (!new HashSet<>(parameterExprAnnotations).equals(new HashSet<>(other.parameterExprAnnotations))) return false;
             Parameter[] mine = executable.getParameters();
             Parameter[] theirs = other.executable.getParameters();
 

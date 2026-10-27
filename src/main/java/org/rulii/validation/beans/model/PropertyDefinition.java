@@ -52,7 +52,7 @@ import java.util.List;
  *
  * <p>A declaration may also attach registry rules with {@code @Validate}; each occurrence is kept as
  * a {@link ValidateDefinition} in declaration order, and a rule name may not repeat across the
- * occurrences of one property.</p>
+ * occurrences of one property. Likewise each {@code @Expr} is kept as an {@link ExprDefinition}.</p>
  *
  * <p>Every property gets a definition, constrained or not, since every property is bound in the
  * validation scope; {@link #isConstrained()} tells whether anything is to be validated.</p>
@@ -68,11 +68,12 @@ public final class PropertyDefinition implements Definition {
     private final List<ValueDeclaration> cascadedDeclarations;
     private final GroupConversions groupConversions;
     private final List<ValidateDefinition> validateRules;
+    private final List<ExprDefinition> exprRules;
     private final SourceDefinition source;
 
     private PropertyDefinition(PropertySource propertySource, List<ConstraintDefinition> constraints,
                                List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations,
-                               GroupConversions groupConversions, List<ValidateDefinition> validateRules) {
+                               GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules) {
         super();
         this.propertySource = propertySource;
         this.constraints = constraints;
@@ -80,6 +81,7 @@ public final class PropertyDefinition implements Definition {
         this.cascadedDeclarations = cascadedDeclarations;
         this.groupConversions = groupConversions;
         this.validateRules = validateRules;
+        this.exprRules = exprRules;
         this.source = propertySource.getSourceDefinition();
     }
 
@@ -156,6 +158,7 @@ public final class PropertyDefinition implements Definition {
         List<ConstraintDefinition> constraints = new ArrayList<>();
         List<ContainerElementDefinition> elements = Collections.emptyList();
         List<ValidateDefinition> validateRules = new ArrayList<>();
+        List<ExprDefinition> exprRules = new ArrayList<>();
         List<ValueDeclaration> cascadedDeclarations = new ArrayList<>(1);
         GroupConversions conversions = GroupConversions.NONE;
 
@@ -166,12 +169,14 @@ public final class PropertyDefinition implements Definition {
             if (read.cascaded()) cascadedDeclarations.add(declaration);
             conversions = conversions.merge(read.groupConversions(), "property [" + propertySource.getName() + "]");
             validateRules.addAll(read.validateRules());
+            exprRules.addAll(read.exprRules());
         }
 
         ValidateDefinition.checkDistinct(validateRules, "property [" + propertySource.getName() + "]");
 
         return new PropertyDefinition(propertySource, Collections.unmodifiableList(constraints), elements,
-                Collections.unmodifiableList(cascadedDeclarations), conversions, Collections.unmodifiableList(validateRules));
+                Collections.unmodifiableList(cascadedDeclarations), conversions, Collections.unmodifiableList(validateRules),
+                Collections.unmodifiableList(exprRules));
     }
 
     /**
@@ -285,6 +290,16 @@ public final class PropertyDefinition implements Definition {
     }
 
     /**
+     * The {@code @Expr} conditions attached to the property, in declaration order over its
+     * declarations.
+     *
+     * @return the attached conditions; empty if none.
+     */
+    public List<ExprDefinition> getExprRules() {
+        return exprRules;
+    }
+
+    /**
      * Whether anything is to be validated for this property: constraints, cascade, container
      * elements or attached rules. Unconstrained properties still exist so they can be bound for
      * sibling rules.
@@ -292,7 +307,7 @@ public final class PropertyDefinition implements Definition {
      * @return true if the property has validation to perform.
      */
     public boolean isConstrained() {
-        return !constraints.isEmpty() || isCascaded() || !containerElements.isEmpty() || !validateRules.isEmpty();
+        return !constraints.isEmpty() || isCascaded() || !containerElements.isEmpty() || !validateRules.isEmpty() || !exprRules.isEmpty();
     }
 
     @Override
@@ -305,6 +320,7 @@ public final class PropertyDefinition implements Definition {
                 ", cascaded=" + isCascaded() +
                 ", containerElements=" + containerElements +
                 ", validateRules=" + validateRules +
+                ", exprRules=" + exprRules +
                 '}';
     }
 }

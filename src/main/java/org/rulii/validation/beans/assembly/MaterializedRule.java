@@ -22,13 +22,15 @@ import org.rulii.rule.Rule;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintTarget;
 import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.beans.model.RuleDeclaration;
 
 import java.util.List;
 
 /**
- * One rulii rule materialized from a constraint, with what the runtime needs to know about it: the
- * constraint it came from, the binding it reads, where it reports ({@link RulePlacement}), the
- * composition host it belongs to, and the raw message template for render-time resolution.
+ * One rulii rule materialized from a declaration (a constraint or an {@code @Expr}), with what the
+ * runtime needs to know about it: the declaration it came from, the binding it reads, where it
+ * reports ({@link RulePlacement}), the composition host it belongs to, and the raw message template
+ * for render-time resolution.
  *
  * <p>A {@code @ReportAsSingleViolation} composition is one materialized rule whose
  * {@link #getHostedRules() hosted rules} are the rules of its composing constraints: the rule runs
@@ -40,7 +42,7 @@ import java.util.List;
 public final class MaterializedRule {
 
     private final Rule rule;
-    private final ConstraintDefinition definition;
+    private final RuleDeclaration definition;
     private final ConstraintDefinition host;
     private final ConstraintTarget target;
     private final RulePlacement placement;
@@ -50,13 +52,13 @@ public final class MaterializedRule {
      * Creates the materialized rule.
      *
      * @param rule the built rule.
-     * @param definition the constraint the rule was materialized from.
+     * @param definition the declaration the rule was materialized from.
      * @param host the nearest enclosing {@code @ReportAsSingleViolation} composition host; null when
      *             the rule reports on its own.
      * @param target the target the rule was built for.
      * @param placement where the violations report, relative to the path the rule runs at.
      */
-    public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
+    public MaterializedRule(Rule rule, RuleDeclaration definition, ConstraintDefinition host,
                             ConstraintTarget target, RulePlacement placement) {
         this(rule, definition, host, target, placement, List.of());
     }
@@ -65,14 +67,14 @@ public final class MaterializedRule {
      * Creates a materialized rule that runs hosted rules and reports once for them.
      *
      * @param rule the built rule.
-     * @param definition the constraint the rule was materialized from.
+     * @param definition the declaration the rule was materialized from.
      * @param host the nearest enclosing {@code @ReportAsSingleViolation} composition host; null when
      *             the rule reports on its own.
      * @param target the target the rule was built for.
      * @param placement where the violations report, relative to the path the rule runs at.
      * @param hostedRules the rules this one runs and reports for; empty for an ordinary rule.
      */
-    public MaterializedRule(Rule rule, ConstraintDefinition definition, ConstraintDefinition host,
+    public MaterializedRule(Rule rule, RuleDeclaration definition, ConstraintDefinition host,
                             ConstraintTarget target, RulePlacement placement, List<MaterializedRule> hostedRules) {
         super();
         Assert.notNull(rule, "rule cannot be null.");
@@ -121,12 +123,12 @@ public final class MaterializedRule {
     }
 
     /**
-     * The constraint the rule was materialized from; for a composing constraint, the composing
-     * definition (which carries the host's groups and payload).
+     * The declaration the rule was materialized from: the constraint (for a composing constraint, the
+     * composing definition, which carries the host's groups and payload) or the {@code @Expr}.
      *
      * @return the definition.
      */
-    public ConstraintDefinition getDefinition() {
+    public RuleDeclaration getDefinition() {
         return definition;
     }
 

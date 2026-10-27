@@ -269,7 +269,11 @@ public final class BeanRules implements MaterializedRules {
             if (rule.isActive(groups) && filter.test(rule)) rules.add(rule.getRule());
         }
 
-        return RuleSet.builder().with(name).rules(rules).build();
+        return RuleSet.builder().with(name)
+                .description("Rules of " + getBeanClass().getName() + " for groups " + groups.getGroupNames())
+                .category(getBeanClass().getName())
+                .tags(groups.getGroupNames())
+                .rules(rules).build();
     }
 
     /**
@@ -291,7 +295,11 @@ public final class BeanRules implements MaterializedRules {
                 if (propertyName.equals(rule.getLeaf()) && rule.isActive(groups)) rules.add(rule.getRule());
             }
 
-            return RuleSet.builder().with(name + "_" + propertyName).rules(rules).build();
+            return RuleSet.builder().with(name + "_" + propertyName)
+                    .description("Rules of property " + propertyName + " of " + getBeanClass().getName() + " for groups " + groups.getGroupNames())
+                    .category(getBeanClass().getName())
+                    .tags(groups.getGroupNames())
+                    .rules(rules).build();
         });
     }
 
@@ -317,7 +325,11 @@ public final class BeanRules implements MaterializedRules {
                 }
             }
 
-            return RuleSet.builder().with(name + "_" + RuleMaterializer.segment(node)).rules(rules).build();
+            return RuleSet.builder().with(name + "_" + RuleMaterializer.segment(node))
+                    .description("Rules of " + node.getSourceDeclaration().describe() + " " + node.getName() + " for groups " + groups.getGroupNames())
+                    .category(getBeanClass().getName())
+                    .tags(groups.getGroupNames())
+                    .rules(rules).build();
         });
     }
 

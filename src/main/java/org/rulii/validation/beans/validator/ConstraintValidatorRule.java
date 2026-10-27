@@ -102,9 +102,10 @@ public final class ConstraintValidatorRule implements Rule {
     }
 
     @SuppressWarnings("unchecked")
-    ConstraintValidatorRule(String name, String description, SourceDefinition source, Function<?> valueFunction, String valueName,
-                            String errorCode, Severity severity, String errorMessage, ConstraintValidator<?, ?> validator,
-                            Class<? extends Annotation> annotationType, String defaultMessageTemplate, Map<String, Object> parameters) {
+    ConstraintValidatorRule(String name, String description, String category, List<String> tags, SourceDefinition source,
+                            Function<?> valueFunction, String valueName, String errorCode, Severity severity, String errorMessage,
+                            ConstraintValidator<?, ?> validator, Class<? extends Annotation> annotationType, String defaultMessageTemplate,
+                            Map<String, Object> parameters) {
         super();
         Assert.hasText(name, "name cannot be null/empty.");
         Assert.notNull(valueFunction, "valueFunction cannot be null.");
@@ -128,7 +129,7 @@ public final class ConstraintValidatorRule implements Rule {
         this.defaultMessageTemplate = defaultMessageTemplate;
         this.parameters = Collections.unmodifiableMap(new LinkedHashMap<>(parameters));
         // No method definitions: the rule has no condition or action methods to describe.
-        this.definition = new RuleDefinition(ConstraintValidatorRule.class, false, name, this.description,
+        this.definition = new RuleDefinition(ConstraintValidatorRule.class, false, name, this.description, category, tags,
                 source != null ? source : SourceDefinition.build(), null, null, Collections.emptyList(), null);
     }
 

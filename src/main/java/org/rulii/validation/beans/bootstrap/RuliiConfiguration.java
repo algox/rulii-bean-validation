@@ -78,6 +78,7 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     private final Set<ValueExtractor<?>> extractors = new LinkedHashSet<>();
     private final Map<String, String> properties = new LinkedHashMap<>();
     private RuleRegistry registry;
+    private boolean registerFlows;
     private final List<ConstraintMapper<?>> mappers = new ArrayList<>();
     private RuleContextOptions options;
     private MessageInterpolator defaultMessageInterpolator;
@@ -111,6 +112,19 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     }
 
     /**
+     * Whether the validators register the flows they build in the {@link #registry(RuleRegistry)
+     * registry}, as {@code BeanValidator.builder().registerFlows(true)} does. Off by default; needs a
+     * mutable registry.
+     *
+     * @param registerFlows true to register the flows.
+     * @return this configuration.
+     */
+    public RuliiConfiguration registerFlows(boolean registerFlows) {
+        this.registerFlows = registerFlows;
+        return this;
+    }
+
+    /**
      * Adds a constraint mapper to the standard ones.
      *
      * @param mapper the mapper.
@@ -136,6 +150,10 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
 
     public RuleRegistry getRuleRegistry() {
         return registry;
+    }
+
+    public boolean isRegisterFlows() {
+        return registerFlows;
     }
 
     public List<ConstraintMapper<?>> getConstraintMappers() {

@@ -92,6 +92,8 @@ public class RuleFlowAssemblerTest {
         RuleFlow<?> flow = ASSEMBLER.assemble(rules(Order.class));
         assertEquals("orderValidationFlow", flow.getName());
         assertEquals("orderValidationFlow", RuleFlowAssembler.flowName(Order.class));
+        assertEquals(Order.class.getName(), flow.getDefinition().getCategory(), "flows are categorised under the bean class");
+        assertEquals(List.of(RuleFlowAssembler.BEAN_TAG), flow.getDefinition().getTags());
 
         Order order = new Order();
         order.code = "x";

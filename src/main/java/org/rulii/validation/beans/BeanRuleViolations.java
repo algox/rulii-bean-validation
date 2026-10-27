@@ -298,7 +298,10 @@ public class BeanRuleViolations extends RuleViolations {
             path = placement.apply(path);
         }
         Object invalidValue = error.getParameterValues().get(rule.getTarget().getValueName());
-        return violation(error, path, rule.getDefinition(), invalidValue, frame.getBean());
+        // Only a constraint has a descriptor and a Bean Validation message template; an @Expr rule's
+        // message is rulii's own, already resolved from its error code.
+        ConstraintDefinition constraint = rule.getDefinition() instanceof ConstraintDefinition c ? c : null;
+        return violation(error, path, constraint, invalidValue, frame.getBean());
     }
 
     private BeanRuleViolation violation(RuleViolation error, PropertyPath path, ConstraintDefinition constraint,

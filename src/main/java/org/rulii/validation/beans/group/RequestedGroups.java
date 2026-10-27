@@ -19,7 +19,7 @@ package org.rulii.validation.beans.group;
 
 import jakarta.validation.groups.Default;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.validation.beans.model.ConstraintDefinition;
+import org.rulii.validation.beans.model.RuleDeclaration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,7 +39,7 @@ import java.util.Set;
  * <p>Resolution fails fast on a group that is not an interface ({@link InvalidGroupException}):
  * nothing group-related is silently approximated.</p>
  *
- * <p>A constraint is {@link #activates(ConstraintDefinition) active} when its declared groups, empty
+ * <p>A constraint is {@link #activates(RuleDeclaration) active} when its declared groups, empty
  * meaning {@code Default}, intersect the expanded requested groups.</p>
  *
  * @author Max Arulananthan
@@ -145,6 +145,23 @@ public final class RequestedGroups {
     }
 
     /**
+     * The simple names of the expanded groups, sorted: what a rule set built for these groups is
+     * tagged with and described by.
+     *
+     * @return the names; never null.
+     */
+    public List<String> getGroupNames() {
+        List<String> result = new ArrayList<>(groups.size());
+
+        for (Class<?> group : groups) {
+            result.add(group.getSimpleName());
+        }
+
+        Collections.sort(result);
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
      * Whether the call requested no groups, so {@code Default} alone is active.
      *
      * @return true for the default request.
@@ -189,14 +206,14 @@ public final class RequestedGroups {
     }
 
     /**
-     * Whether a constraint is active for these groups.
+     * Whether a declaration (a constraint or an {@code @Expr}) is active for these groups.
      *
-     * @param constraint the constraint.
+     * @param declaration the declaration.
      * @return true if its declared groups, empty meaning {@code Default}, intersect the expanded groups.
      */
-    public boolean activates(ConstraintDefinition constraint) {
-        Assert.notNull(constraint, "constraint cannot be null.");
-        return activates(constraint.getGroups());
+    public boolean activates(RuleDeclaration declaration) {
+        Assert.notNull(declaration, "declaration cannot be null.");
+        return activates(declaration.getGroups());
     }
 
     /**

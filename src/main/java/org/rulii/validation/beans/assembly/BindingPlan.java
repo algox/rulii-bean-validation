@@ -27,6 +27,7 @@ import org.rulii.validation.beans.model.BeanDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.DeclarationConstraintSource;
+import org.rulii.validation.beans.model.ExprDefinition;
 import org.rulii.validation.beans.model.ValueDeclaration;
 import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.model.PropertySource;
@@ -167,6 +168,10 @@ public final class BindingPlan implements BindingLoader<Object> {
 
         for (ConstraintDefinition constraint : property.getConstraints()) {
             result.add(((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration());
+        }
+
+        for (ExprDefinition expr : property.getExprRules()) {
+            result.add(((DeclarationConstraintSource) expr.getConstraintSource()).getDeclaration());
         }
 
         result.addAll(property.getCascadedDeclarations());
