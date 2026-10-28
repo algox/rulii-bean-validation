@@ -36,7 +36,6 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
 
-        <slf4j.version>2.0.18</slf4j.version>
         <logback.classic.version>1.5.38</logback.classic.version>
         <junit.version>6.1.1</junit.version>
         <rulii.version>2.2.0-SNAPSHOT</rulii.version>
@@ -54,13 +53,6 @@
     </properties>
 
     <dependencies>
-
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
-            <scope>provided</scope>
-        </dependency>
 
         <dependency>
             <groupId>org.rulii</groupId>

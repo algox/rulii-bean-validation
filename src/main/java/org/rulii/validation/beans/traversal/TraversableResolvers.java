@@ -18,9 +18,9 @@
 package org.rulii.validation.beans.traversal;
 
 import jakarta.validation.TraversableResolver;
+import org.rulii.lib.apache.commons.logging.Log;
+import org.rulii.lib.apache.commons.logging.LogFactory;
 import org.rulii.lib.spring.util.Assert;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The traversable resolvers the library provides, and the default: the {@link JpaTraversableResolver}
@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  */
 public final class TraversableResolvers {
 
-    private static final Logger logger = LoggerFactory.getLogger(TraversableResolvers.class);
+    private static final Log logger = LogFactory.getLog(TraversableResolvers.class);
     private static final TraverseAllTraversableResolver TRAVERSE_ALL = new TraverseAllTraversableResolver();
     private static volatile TraversableResolver standard;
 

@@ -19,13 +19,13 @@ package org.rulii.validation.beans.message;
 
 import org.rulii.bind.Bindings;
 import org.rulii.context.RuleContext;
+import org.rulii.lib.apache.commons.logging.Log;
+import org.rulii.lib.apache.commons.logging.LogFactory;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.script.Script;
 import org.rulii.script.ScriptProcessor;
 import org.rulii.script.ScriptProcessorFactory;
 import org.rulii.script.el.ElScriptProcessorFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Locale;
 import java.util.Map;
@@ -74,7 +74,7 @@ public final class MessageExpressions {
      */
     public static final MessageExpressions NONE = new MessageExpressions(null);
 
-    private static final Logger logger = LoggerFactory.getLogger(MessageExpressions.class);
+    private static final Log logger = LogFactory.getLog(MessageExpressions.class);
     private static final Pattern EXPRESSION = Pattern.compile("\\$\\{([^}]*)}");
     private static volatile MessageExpressions standard;
 
@@ -128,13 +128,17 @@ public final class MessageExpressions {
         try {
             factory = new ElScriptProcessorFactory();
         } catch (RuntimeException | LinkageError e) {
-            logger.debug("Message expressions are not evaluated: the [" + LANGUAGE + "] scripting language cannot be set up.", e);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Message expressions are not evaluated: the [" + LANGUAGE + "] scripting language cannot be set up.", e);
+            }
             return NONE;
         }
 
         if (!factory.isAvailable()) {
-            logger.debug("Message expressions are not evaluated: the [{}] scripting language is not available;"
-                    + " add a Jakarta Expression Language implementation to enable them.", LANGUAGE);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Message expressions are not evaluated: the [" + LANGUAGE + "] scripting language is not available;"
+                        + " add a Jakarta Expression Language implementation to enable them.");
+            }
             return NONE;
         }
 
@@ -193,7 +197,9 @@ public final class MessageExpressions {
             Object result = processor.evaluate(script, RuleContext.builder().with(bindings).build());
             return result != null ? String.valueOf(result) : "";
         } catch (RuntimeException e) {
-            logger.warn("Message expression [{}] could not be evaluated and is left as written: {}", expression, e.getMessage());
+            if (logger.isWarnEnabled()) {
+                logger.warn("Message expression [" + expression + "] could not be evaluated and is left as written: " + e.getMessage());
+            }
             return null;
         }
     }
@@ -203,7 +209,9 @@ public final class MessageExpressions {
             try {
                 return Optional.of(factory.getScriptCompiler().compile(text, Object.class));
             } catch (RuntimeException e) {
-                logger.warn("Message expression [{}] could not be compiled and is left as written: {}", text, e.getMessage());
+                if (logger.isWarnEnabled()) {
+                    logger.warn("Message expression [" + text + "] could not be compiled and is left as written: " + e.getMessage());
+                }
                 return Optional.empty();
             }
         }).orElse(null);
@@ -228,7 +236,9 @@ public final class MessageExpressions {
             bindings.bind(name, value != null ? value.getClass() : Object.class, value);
         } catch (RuntimeException e) {
             // A name the binding model refuses (a reserved name, say) is simply not in scope of the expression.
-            logger.debug("Message expression variable [{}] cannot be bound: {}", name, e.getMessage());
+            if (logger.isDebugEnabled()) {
+                logger.debug("Message expression variable [" + name + "] cannot be bound: " + e.getMessage());
+            }
         }
     }
 

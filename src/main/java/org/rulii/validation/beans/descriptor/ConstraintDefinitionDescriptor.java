@@ -26,17 +26,12 @@ import jakarta.validation.groups.Default;
 import jakarta.validation.metadata.ConstraintDescriptor;
 import jakarta.validation.metadata.ValidateUnwrappedValue;
 import jakarta.validation.valueextraction.Unwrapping;
+import org.rulii.lib.spring.core.annotation.AnnotationUtils;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 
 import java.lang.annotation.Annotation;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -141,34 +136,11 @@ public final class ConstraintDefinitionDescriptor<A extends Annotation> implemen
      */
     @Override
     public Map<String, Object> getAttributes() {
-        Method[] methods = definition.getAnnotationType().getDeclaredMethods();
-        Arrays.sort(methods, Comparator.comparing(Method::getName));
-        Map<String, Object> result = new LinkedHashMap<>();
-
-        for (Method method : methods) {
-            if (method.getParameterCount() == 0) {
-                result.put(method.getName(), invoke(method));
-            }
-        }
-
-        return Collections.unmodifiableMap(result);
+        return Collections.unmodifiableMap(AnnotationUtils.getAnnotationAttributes(definition.getAnnotation()));
     }
 
     private Object attribute(String name) {
-        try {
-            return invoke(definition.getAnnotationType().getMethod(name));
-        } catch (NoSuchMethodException e) {
-            return null;
-        }
-    }
-
-    private Object invoke(Method method) {
-        try {
-            return method.invoke(definition.getAnnotation());
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new UnrulyException("cannot read attribute [" + method.getName() + "] of ["
-                    + definition.getAnnotationType().getName() + "]", e);
-        }
+        return AnnotationUtils.getValue(definition.getAnnotation(), name);
     }
 
     @Override
