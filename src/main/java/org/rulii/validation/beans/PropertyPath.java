@@ -183,6 +183,20 @@ public final class PropertyPath implements Path {
     }
 
     /**
+     * Marks the leaf as an array addressed by index: renders {@code leaf[index]}; the contents report
+     * the array class as their container and no type argument index, arrays having none.
+     *
+     * @param index the index of the contents.
+     * @param arrayClass the array type.
+     * @return a path whose leaf carries the subscript.
+     */
+    public PropertyPath inArray(int index, Class<?> arrayClass) {
+        Assert.notNull(arrayClass, "arrayClass cannot be null.");
+        Assert.isTrue(arrayClass.isArray(), "[" + arrayClass.getName() + "] is not an array type.");
+        return withSubscript(new Subscript(index, null, arrayClass, null));
+    }
+
+    /**
      * Marks the leaf as a container addressed by key (Map): renders {@code leaf[key]}.
      *
      * @param key the key of the contents.

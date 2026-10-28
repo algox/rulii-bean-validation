@@ -127,10 +127,10 @@ public class BeanDefinitionLoaderTest {
     }
 
     @Test
-    public void arraysWithoutAnExtractorAreLeftAlone() {
+    public void validArraysCascadeIntoTheirComponentType() {
         BeanDefinitionLoader loader = loader();
         assertDoesNotThrow(() -> loader.load(WithArray.class));
-        assertFalse(loader.isLoaded(Address.class));
+        assertTrue(loader.isLoaded(Address.class), "@Valid Address[] cascades into the addresses (spec legacy container support)");
         assertFalse(loader.isPoisoned(WithArray.class));
     }
 

@@ -74,17 +74,6 @@ public interface ConstraintMapper<A extends Annotation> {
     List<Rule> map(A annotation, ConstraintTarget target);
 
     /**
-     * For constraint attributes the produced rules report under a different parameter name, the
-     * attribute name to parameter name mapping, so that a message template written with the
-     * attribute name ({@code {regexp}}) interpolates the rule's parameter ({@code pattern}).
-     *
-     * @return the mapping; empty when attribute and parameter names coincide.
-     */
-    default Map<String, String> getParameterNames() {
-        return Collections.emptyMap();
-    }
-
-    /**
      * What the constraint validates: the annotated element (a property, parameter, return value or
      * class) for an ordinary constraint; the parameters of a method or constructor as a whole, as an
      * {@code Object[]}, for a cross-parameter constraint. A mapper may support both.

@@ -31,6 +31,7 @@ import org.rulii.context.RuleContextBuilder;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.model.UnrulyException;
 import org.rulii.registry.AlreadyRegisteredException;
 import org.rulii.registry.MutableRuleRegistry;
 import org.rulii.registry.RuleRegistry;
@@ -166,14 +167,42 @@ public final class BeanValidator implements Validator {
      * @param violations the collector the steps report into.
      * @param step the body of one step.
      */
+    /**
+     * Runs one validation call of the specification API: a step per requested group, a sequence stopping
+     * at its first step with violations. A failure inside the run surfaces the way the specification
+     * has it: rulii wraps whatever a rule throws in {@link UnrulyException}; the {@link ValidationException}
+     * underneath (a failing constraint validator, interpolator or resolver, or one thrown on purpose) is
+     * rethrown as itself, anything else as a {@link BeanValidationException} keeping the rulii chain as
+     * its cause. The rulii-native entry points ({@link #validateIn}, the flows) keep rulii's wrapping.
+     */
     static void run(GroupPlan plan, BeanRuleViolations violations, Consumer<RequestedGroups> step) {
-        for (GroupPlan.Pass pass : plan.getPasses()) {
-            for (RequestedGroups groups : pass.steps()) {
-                int before = violations.size();
-                step.accept(groups);
-                if (pass.sequence() && violations.size() > before) break;
+        try {
+            for (GroupPlan.Pass pass : plan.getPasses()) {
+                for (RequestedGroups groups : pass.steps()) {
+                    int before = violations.size();
+                    step.accept(groups);
+                    if (pass.sequence() && violations.size() > before) break;
+                }
             }
+        } catch (UnrulyException e) {
+            throw unwrap(e);
         }
+    }
+
+    /**
+     * The exception a failed run reports to a caller of the specification API: the first
+     * {@link ValidationException} in the cause chain of the rulii wrapper, else a
+     * {@link BeanValidationException} wrapping the whole chain.
+     *
+     * @param e the rulii wrapper.
+     * @return the exception to throw.
+     */
+    static ValidationException unwrap(UnrulyException e) {
+        for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof ValidationException validation) return validation;
+        }
+
+        return new BeanValidationException("validation failed: " + e.getMessage(), e);
     }
 
     /**

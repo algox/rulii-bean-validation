@@ -87,21 +87,33 @@ public final class ExecutableDefinitionDescriptor extends DefinitionElementDescr
      *
      * @return the descriptor; null for a {@code void} method.
      */
+    /**
+     * The return value's descriptor; for a {@code void} method, one representing {@code void}, as the
+     * specification has it.
+     */
     @Override
     public ReturnValueDescriptor getReturnValueDescriptor() {
         return executable.getReturnValue() != null
                 ? new ReturnValueDefinitionDescriptor(getBeanClass(), executable.getReturnValue(), executable.isConstructor())
-                : null;
+                : new ReturnValueDefinitionDescriptor(getBeanClass());
     }
 
+    /**
+     * As the specification defines it: a constraint or cascade on a parameter, or a cross-parameter
+     * constraint; the library's own {@code @Validate} and {@code @Expr} rules do not count.
+     */
     @Override
     public boolean hasConstrainedParameters() {
-        return executable.hasConstrainedParameters();
+        return executable.hasSpecConstrainedParameters();
     }
 
+    /**
+     * As the specification defines it: a constraint or cascade on the return value; the library's own
+     * {@code @Validate} and {@code @Expr} rules do not count.
+     */
     @Override
     public boolean hasConstrainedReturnValue() {
-        return executable.hasConstrainedReturnValue();
+        return executable.hasSpecConstrainedReturnValue();
     }
 
     @Override

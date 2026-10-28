@@ -69,6 +69,30 @@ public class BindingPlanTest {
     }
 
     @Test
+    public void overriddenGetterReadsThePrimaryBinding() {
+        BeanDefinition bean = BeanDefinition.load(Implementing.class, REGISTRY);
+        BindingPlan plan = BindingPlan.of(bean);
+        PropertyDefinition name = bean.getProperty("name");
+        List<ValueDeclaration> getters = name.getPropertySource().getDeclarations(Kind.GETTER);
+        ValueDeclaration override = name.getPropertySource().getPrimary();
+        ValueDeclaration declared = getters.get(0).equals(override) ? getters.get(1) : getters.get(0);
+
+        // The constrained interface getter is read through the binding of the override: no accessor of its own.
+        assertEquals(Named.class, declared.getDeclaringClass());
+        assertEquals(Implementing.class, override.getDeclaringClass());
+        assertTrue(plan.isPrimary(override));
+        assertFalse(plan.isPrimary(declared));
+        assertTrue(plan.readsBinding(override));
+        assertTrue(plan.readsBinding(declared));
+        assertEquals(List.of(override), List.copyOf(plan.getAccessors().keySet()));
+        assertThrows(IllegalArgumentException.class, () -> plan.getAccessor(declared));
+
+        Bindings bindings = Bindings.builder().standard();
+        bindings.bind("name", String.class, "bound");
+        assertEquals("bound", plan.read(bindings, new Implementing(), name, declared));
+    }
+
+    @Test
     public void fieldBesideGetterReadsTheFieldDirectly() {
         BeanDefinition bean = BeanDefinition.load(Dual.class, REGISTRY);
         BindingPlan plan = BindingPlan.of(bean);
@@ -286,5 +310,15 @@ public class BindingPlanTest {
 
         public String getName() { reads++; return name; }
         public List<String> getItems() { reads++; return items; }
+    }
+
+    public interface Named {
+        @NotNull
+        String getName();
+    }
+
+    public static class Implementing implements Named {
+        @Override
+        public String getName() { return "own"; }
     }
 }

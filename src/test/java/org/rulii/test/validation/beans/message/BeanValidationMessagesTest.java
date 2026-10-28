@@ -112,7 +112,7 @@ public class BeanValidationMessagesTest {
         Map<String, String> messages = messages(validator.validate(new Form()));
 
         assertEquals("must not be blank", messages.get("name"));
-        assertEquals("must be between 2 and 5", messages.get("code"));
+        assertEquals("size must be between 2 and 5", messages.get("code"));
         assertEquals("must match \"[a-z]+\"", messages.get("slug"));
         assertEquals("must be greater than or equal to 3", messages.get("min"));
         assertEquals("must be less than or equal to 10", messages.get("max"));
@@ -201,7 +201,7 @@ public class BeanValidationMessagesTest {
         RuleContext ours = RuleContext.builder().with(options).bindings(Bindings.builder().scoped()).build();
         BeanRuleViolations report = (BeanRuleViolations) validator.validateIn(ours, form);
         assertEquals("must be absent", message(report, "absent"));
-        assertEquals("must be between 2 and 5", message(report, "code"));
+        assertEquals("size must be between 2 and 5", message(report, "code"));
     }
 
     private static String message(BeanRuleViolations report, String path) {
@@ -214,7 +214,7 @@ public class BeanValidationMessagesTest {
     @Test
     public void interpolatorRendersAsTheValidatorDoes() {
         BeanValidator validator = BeanValidator.builder().options(withLocale(Locale.ENGLISH)).build();
-        RuliiMessageInterpolator interpolator = new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build());
+        RuliiMessageInterpolator interpolator = new RuliiMessageInterpolator();
 
         for (BeanRuleViolation violation : validator.validate(new Form()).getViolations()) {
             assertEquals(violation.getMessage(), interpolator.interpolate(violation.getMessageTemplate(), context(violation), Locale.ENGLISH),
@@ -258,16 +258,15 @@ public class BeanValidationMessagesTest {
 
     @Test
     public void resolverAndFormatterUnits() {
-        BeanValidationMessageResolver resolver = new BeanValidationMessageResolver(ConstraintMapperRegistry.builder().build(), null);
+        BeanValidationMessageResolver resolver = new BeanValidationMessageResolver((org.rulii.text.MessageResolver) null);
 
         assertEquals("default", resolver.resolve(Locale.ENGLISH, null, "default"));
         assertEquals("default", resolver.resolve(Locale.ENGLISH, "no.such", "default"));
-        assertEquals("must match \"${pattern}\"", resolver.resolve(Locale.ENGLISH, Pattern.class.getName() + ".message", null), "translated with the constraint's parameter names");
-        assertEquals("must match \"${pattern}\"", resolver.resolve(null, Pattern.class.getName() + ".message", null));
-        assertEquals("must be between {min} and {max}", resolver.lookup(Locale.ENGLISH, Size.class.getName() + ".message"), "as found");
+        assertEquals("must match \"${regexp}\"", resolver.resolve(Locale.ENGLISH, Pattern.class.getName() + ".message", null), "translated into a rulii template");
+        assertEquals("must match \"${regexp}\"", resolver.resolve(null, Pattern.class.getName() + ".message", null));
+        assertEquals("size must be between {min} and {max}", resolver.lookup(Locale.ENGLISH, Size.class.getName() + ".message"), "as found");
         assertEquals("custom text", resolver.resolve(Locale.ENGLISH, "my.key", null), "a non-constraint key is returned as found");
         assertNull(resolver.getDelegate());
-        assertThrows(IllegalArgumentException.class, () -> new BeanValidationMessageResolver(null, null));
 
         BeanValidationMessageFormatter formatter = new BeanValidationMessageFormatter(org.rulii.text.MessageFormatter.builder().build(), resolver);
         org.rulii.text.ParameterInfo min = new org.rulii.text.ParameterInfo(0, "min", 2);

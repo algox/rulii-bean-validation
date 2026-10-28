@@ -196,6 +196,17 @@ public class BeanRuleViolations extends RuleViolations {
     }
 
     /**
+     * The rules of the innermost open frame that knows them: those of the class or executable being
+     * validated at this point.
+     *
+     * @return the rules; null when no frame is open or the innermost frame carries none.
+     */
+    public MaterializedRules getCurrentRules() {
+        Frame frame = frames.peek();
+        return frame != null ? frame.getRules() : null;
+    }
+
+    /**
      * The violations, each stamped.
      *
      * @return the violations in the order they were reported.

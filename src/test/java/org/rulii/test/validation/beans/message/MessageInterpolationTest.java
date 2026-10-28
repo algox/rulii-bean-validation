@@ -29,7 +29,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
 import org.rulii.context.StandardRuleContextOptions;
-import org.rulii.model.UnrulyException;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.BeanRuleViolation;
 import org.rulii.validation.beans.BeanValidator;
@@ -37,7 +36,6 @@ import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.bootstrap.RuliiConfiguration;
 import org.rulii.validation.beans.bootstrap.RuliiValidationProvider;
 import org.rulii.validation.beans.bootstrap.RuliiValidatorFactory;
-import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.message.MessageInterpolationException;
 import org.rulii.validation.beans.message.RuliiMessageInterpolator;
 import org.rulii.validation.beans.message.RuliiMessageInterpolatorContext;
@@ -87,15 +85,6 @@ public class MessageInterpolationTest {
         account.code = "x";
         account.tag = "t";
         return account;
-    }
-
-    private static <T extends Throwable> T cause(Throwable root, Class<T> type) {
-        Throwable cause = root;
-        while (cause != null && !type.isInstance(cause)) {
-            cause = cause.getCause();
-        }
-        assertNotNull(cause, "no [" + type.getSimpleName() + "] in the cause chain of " + root);
-        return type.cast(cause);
     }
 
     private static StandardRuleContextOptions withLocale(Locale locale) {
@@ -165,7 +154,7 @@ public class MessageInterpolationTest {
     @Test
     public void withoutAnInterpolatorAndWithOurOwnTheRulesRender() {
         BeanValidator plain = BeanValidator.builder().registry(REGISTRY).build();
-        RuliiMessageInterpolator ours = new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build());
+        RuliiMessageInterpolator ours = new RuliiMessageInterpolator();
         BeanValidator withOurs = BeanValidator.builder().registry(REGISTRY).messageInterpolator(ours).build();
 
         assertNull(plain.getMessageInterpolator());
@@ -194,8 +183,8 @@ public class MessageInterpolationTest {
 
     @Test
     public void ourInterpolatorUsesTheOptionsLocaleWhenNoneIsGiven() {
-        RuliiMessageInterpolator english = new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build(), withLocale(Locale.ENGLISH));
-        RuliiMessageInterpolator german = new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build(), withLocale(Locale.GERMAN));
+        RuliiMessageInterpolator english = new RuliiMessageInterpolator(withLocale(Locale.ENGLISH));
+        RuliiMessageInterpolator german = new RuliiMessageInterpolator(withLocale(Locale.GERMAN));
         Recording recording = new Recording();
         BeanValidator.builder().registry(REGISTRY).messageInterpolator(recording).build().validate(invalid());
         MessageInterpolator.Context context = recording.context("owner");
@@ -240,15 +229,14 @@ public class MessageInterpolationTest {
         BeanValidator failing = BeanValidator.builder().registry(REGISTRY).messageInterpolator(new Throwing(new IllegalStateException("boom"))).build();
         BeanValidator validation = BeanValidator.builder().registry(REGISTRY).messageInterpolator(new Throwing(new ValidationException("mine"))).build();
 
-        // The interpolator runs while the rule reports; core wraps what a rule throws, as for a failing constraint validator.
-        UnrulyException wrapped = assertThrows(UnrulyException.class, () -> failing.validate(invalid()));
-        MessageInterpolationException interpolation = cause(wrapped, MessageInterpolationException.class);
+        // The interpolator runs while the rule reports; the ValidationException surfaces as itself through the specification API.
+        MessageInterpolationException interpolation = assertThrows(MessageInterpolationException.class, () -> failing.validate(invalid()));
         assertEquals(NOT_BLANK_KEY, interpolation.getMessageTemplate());
         assertInstanceOf(IllegalStateException.class, interpolation.getCause());
         assertTrue(interpolation.getMessage().contains(NOT_BLANK_KEY));
 
-        UnrulyException own = assertThrows(UnrulyException.class, () -> validation.validate(invalid()));
-        assertEquals("mine", cause(own, ValidationException.class).getMessage(), "a ValidationException is not wrapped again");
+        ValidationException own = assertThrows(ValidationException.class, () -> validation.validate(invalid()));
+        assertEquals("mine", own.getMessage(), "a ValidationException is thrown as itself, never wrapped again");
         assertThrows(IllegalArgumentException.class, () -> BeanValidator.builder().messageInterpolator(null));
     }
 

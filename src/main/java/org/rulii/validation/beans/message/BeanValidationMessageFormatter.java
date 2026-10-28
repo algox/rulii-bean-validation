@@ -170,7 +170,7 @@ public final class BeanValidationMessageFormatter implements MessageFormatter {
                 String text = key != null && resolver != null && depth < MAX_DEPTH ? resolver.resolve(locale, key, null) : null;
 
                 if (text != null) {
-                    result.append(prepare(locale, MessageTemplates.translate(text, Map.of(), MessageTemplates.VALIDATED_VALUE),
+                    result.append(prepare(locale, MessageTemplates.translate(text, MessageTemplates.VALIDATED_VALUE),
                             values, first, shielded, depth + 1));
                 } else if (key != null) {
                     result.append(shield(shielded, "{" + key + "}"));

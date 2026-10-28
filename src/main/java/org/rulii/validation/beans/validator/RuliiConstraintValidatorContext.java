@@ -23,8 +23,13 @@ import jakarta.validation.ElementKind;
 import jakarta.validation.ValidationException;
 import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
+import org.rulii.validation.beans.assembly.ExecutableRules;
+import org.rulii.validation.beans.assembly.MaterializedRules;
 import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
+import org.rulii.validation.beans.model.ParameterDefinition;
+import org.rulii.validation.beans.traversal.Traversal;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -153,6 +158,7 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
 
         private final ElementKind kind;
         private final String name;
+        private final int parameterIndex;
         private Class<?> containerClass;
         private Integer typeArgumentIndex;
         private boolean inIterable;
@@ -160,14 +166,28 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
         private Integer index;
 
         private Node(ElementKind kind, String name, Class<?> containerClass, Integer typeArgumentIndex) {
+            this(kind, name, containerClass, typeArgumentIndex, -1);
+        }
+
+        private Node(ElementKind kind, String name, Class<?> containerClass, Integer typeArgumentIndex, int parameterIndex) {
             super();
             this.kind = kind;
             this.name = name;
             this.containerClass = containerClass;
             this.typeArgumentIndex = typeArgumentIndex;
+            this.parameterIndex = parameterIndex;
         }
 
         private PropertyPath appendTo(PropertyPath path) {
+            if (kind == ElementKind.PARAMETER) {
+                // The specification: the trailing cross-parameter node gives way to the parameter node.
+                if (path.isRoot() || path.getLeafNode().getKind() != ElementKind.CROSS_PARAMETER) {
+                    throw new ValidationException("addParameterNode(" + parameterIndex + ") is for cross-parameter constraint validators;"
+                            + " this constraint reports at [" + path + "], not at the cross-parameter node.");
+                }
+                return path.getParent().parameter(name, parameterIndex);
+            }
+
             PropertyPath result = path;
 
             if (inIterable && !result.isRoot()) {
@@ -254,11 +274,39 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
         }
 
         /**
-         * @throws ValidationException always: parameter nodes belong to executable validation.
+         * Points the violation at one parameter of the executable being validated, by index; for
+         * cross-parameter constraint validators, as the first node of the path (the specification has
+         * the parameter node take the place of the cross-parameter node). The parameter's name is the
+         * one the {@code ParameterNameProvider} gave it.
+         *
+         * @param index the parameter index.
+         * @return this builder.
+         * @throws ValidationException if no executable is being validated, or the node is not the first.
+         * @throws IllegalArgumentException if the index is out of range.
          */
         @Override
         public ViolationBuilder addParameterNode(int index) {
-            throw new ValidationException("parameter nodes belong to executable (method/constructor) validation, which is not supported by rulii bean validation.");
+            if (!nodes.isEmpty()) {
+                throw new ValidationException("addParameterNode(" + index + ") must be the first node of the violation's path;"
+                        + " the specification replaces the cross-parameter node with it.");
+            }
+
+            BeanRuleViolations collector = Traversal.collector(ruleContext);
+            MaterializedRules rules = collector != null ? collector.getCurrentRules() : null;
+
+            if (!(rules instanceof ExecutableRules executable)) {
+                throw new ValidationException("addParameterNode(" + index + ") is for cross-parameter constraint validators run by the"
+                        + " executable validator; this constraint is validated on a bean.");
+            }
+
+            List<ParameterDefinition> parameters = executable.getDefinition().getParameters();
+
+            if (index < 0 || index >= parameters.size()) {
+                throw new IllegalArgumentException("parameter index [" + index + "] is out of range: ["
+                        + executable.getDefinition().getExecutable() + "] has " + parameters.size() + " parameter(s).");
+            }
+
+            return add(new Node(ElementKind.PARAMETER, parameters.get(index).getName(), null, null, index));
         }
 
         @Override

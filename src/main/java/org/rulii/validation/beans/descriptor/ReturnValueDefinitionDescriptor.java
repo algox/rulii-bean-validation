@@ -44,6 +44,18 @@ public final class ReturnValueDefinitionDescriptor extends DefinitionElementDesc
         this.returnValue = returnValue;
     }
 
+    /**
+     * Creates the descriptor of a {@code void} method's return value, as the specification has
+     * {@code getReturnValueDescriptor()} answer for one: element class {@code void}, no constraints,
+     * not cascaded, nothing constrained inside.
+     *
+     * @param beanClass the bean class.
+     */
+    public ReturnValueDefinitionDescriptor(Class<?> beanClass) {
+        super(beanClass, List.of());
+        this.returnValue = null;
+    }
+
     private static List<Entry> entries(ReturnValueDefinition returnValue, boolean constructor) {
         Assert.notNull(returnValue, "returnValue cannot be null.");
         List<Entry> result = new ArrayList<>();
@@ -55,32 +67,37 @@ public final class ReturnValueDefinitionDescriptor extends DefinitionElementDesc
         return result;
     }
 
+    /**
+     * The definition described; null for the return value of a {@code void} method.
+     *
+     * @return the definition, or null for {@code void}.
+     */
     public ReturnValueDefinition getDefinition() {
         return returnValue;
     }
 
     @Override
     public Class<?> getElementClass() {
-        return returnValue.getType();
+        return returnValue != null ? returnValue.getType() : void.class;
     }
 
     @Override
     public boolean isCascaded() {
-        return returnValue.isCascaded();
+        return returnValue != null && returnValue.isCascaded();
     }
 
     @Override
     public Set<GroupConversionDescriptor> getGroupConversions() {
-        return GroupConversionDefinitionDescriptor.describe(getDefinition().getGroupConversions());
+        return returnValue != null ? GroupConversionDefinitionDescriptor.describe(returnValue.getGroupConversions()) : Set.of();
     }
 
     @Override
     public Set<ContainerElementTypeDescriptor> getConstrainedContainerElementTypes() {
-        return ContainerElementDefinitionDescriptor.describe(getBeanClass(), returnValue.getContainerElements());
+        return returnValue != null ? ContainerElementDefinitionDescriptor.describe(getBeanClass(), returnValue.getContainerElements()) : Set.of();
     }
 
     @Override
     public String toString() {
-        return "ReturnValueDescriptor{" + returnValue.getName() + '}';
+        return "ReturnValueDescriptor{" + (returnValue != null ? returnValue.getName() : "void") + '}';
     }
 }

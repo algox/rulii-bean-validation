@@ -17,9 +17,11 @@
  */
 package org.rulii.test.validation.beans.mapper;
 
+import jakarta.validation.ConstraintDeclarationException;
 import jakarta.validation.UnexpectedTypeException;
 import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
+import org.rulii.validation.beans.mapper.ConstraintMapperException;
 import org.rulii.validation.beans.mapper.ConstraintNotApplicableException;
 import org.rulii.validation.beans.mapper.NoConstraintMapperException;
 
@@ -37,6 +39,15 @@ public class ConstraintMapperExceptionsTest {
 
     public ConstraintMapperExceptionsTest() {
         super();
+    }
+
+    @Test
+    public void constraintMapperExceptionIsADeclarationException() {
+        ConstraintMapperException e = new ConstraintMapperException(Size.class, "com.acme.Order.total", "returned no rules.");
+        assertInstanceOf(ConstraintDeclarationException.class, e, "a mapper refusing a declaration is a declaration problem (spec 10.3)");
+        assertEquals(Size.class, e.getAnnotationType());
+        assertEquals("com.acme.Order.total", e.getLocation());
+        assertTrue(e.getMessage().contains("returned no rules."));
     }
 
     @Test

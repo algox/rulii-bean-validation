@@ -54,7 +54,7 @@ public final class BeanValidationOptions implements RuleContextOptions {
     private BeanValidationOptions(RuleContextOptions delegate, ConstraintMapperRegistry mappers) {
         super();
         this.delegate = delegate;
-        this.messageResolver = new BeanValidationMessageResolver(mappers, delegate.getMessageResolver());
+        this.messageResolver = new BeanValidationMessageResolver(delegate.getMessageResolver());
         this.messageFormatter = new BeanValidationMessageFormatter(delegate.getMessageFormatter(), messageResolver);
     }
 

@@ -133,7 +133,8 @@ public final class BeanDefinitionDescriptor extends DefinitionElementDescriptor 
     public MethodDescriptor getConstraintsForMethod(String methodName, Class<?>... parameterTypes) {
         Assert.notNull(methodName, "methodName cannot be null.");
         ExecutableDefinition method = definition.getMethod(methodName, parameterTypes);
-        return method != null ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), method) : null;
+        // An executable the engine validates for the library's own rules only is not one the specification's metadata knows.
+        return method != null && method.isSpecConstrained() ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), method) : null;
     }
 
     @Override
@@ -143,7 +144,7 @@ public final class BeanDefinitionDescriptor extends DefinitionElementDescriptor 
         Set<MethodDescriptor> result = new LinkedHashSet<>();
 
         for (ExecutableDefinition method : definition.getMethods()) {
-            if (types.contains(method.isGetter() ? MethodType.GETTER : MethodType.NON_GETTER)) {
+            if (method.isSpecConstrained() && types.contains(method.isGetter() ? MethodType.GETTER : MethodType.NON_GETTER)) {
                 result.add(new ExecutableDefinitionDescriptor(definition.getBeanClass(), method));
             }
         }
@@ -154,7 +155,8 @@ public final class BeanDefinitionDescriptor extends DefinitionElementDescriptor 
     @Override
     public ConstructorDescriptor getConstraintsForConstructor(Class<?>... parameterTypes) {
         ExecutableDefinition constructor = definition.getConstructor(parameterTypes);
-        return constructor != null ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor) : null;
+        return constructor != null && constructor.isSpecConstrained()
+                ? new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor) : null;
     }
 
     @Override
@@ -162,7 +164,7 @@ public final class BeanDefinitionDescriptor extends DefinitionElementDescriptor 
         Set<ConstructorDescriptor> result = new LinkedHashSet<>();
 
         for (ExecutableDefinition constructor : definition.getConstructors()) {
-            result.add(new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor));
+            if (constructor.isSpecConstrained()) result.add(new ExecutableDefinitionDescriptor(definition.getBeanClass(), constructor));
         }
 
         return Collections.unmodifiableSet(result);

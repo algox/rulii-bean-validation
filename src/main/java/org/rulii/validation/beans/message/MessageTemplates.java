@@ -23,7 +23,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.LinkedHashSet;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -118,14 +117,11 @@ public final class MessageTemplates {
      * Translates a jakarta message template into a rulii one; see the class description.
      *
      * @param template the jakarta template.
-     * @param parameterNames attribute name to rule parameter name, for attributes the rule reports
-     *                       under a different name; may be empty.
      * @param valueName the parameter the rule reports the validated value under.
      * @return the rulii template.
      */
-    public static String translate(String template, Map<String, String> parameterNames, String valueName) {
+    public static String translate(String template, String valueName) {
         Assert.notNull(template, "template cannot be null.");
-        Assert.notNull(parameterNames, "parameterNames cannot be null.");
         Assert.hasText(valueName, "valueName cannot be empty/null.");
 
         StringBuilder result = new StringBuilder(template.length() + 16);
@@ -152,7 +148,7 @@ public final class MessageTemplates {
                 if (content.equals(VALIDATED_VALUE)) {
                     placeholder(result, valueName);
                 } else if (IDENTIFIER.matcher(content).matches()) {
-                    placeholder(result, parameterNames.getOrDefault(content, content));
+                    placeholder(result, content);
                 } else {
                     // EL expression: left as written for the render-time formatter to evaluate.
                     result.append(template, i, end + 1);
@@ -173,7 +169,7 @@ public final class MessageTemplates {
                 if (content.equals(VALIDATED_VALUE)) {
                     placeholder(result, valueName);
                 } else if (IDENTIFIER.matcher(content).matches()) {
-                    placeholder(result, parameterNames.getOrDefault(content, content));
+                    placeholder(result, content);
                 } else if (isKey(content)) {
                     // Bundle key: a marked placeholder the render-time formatter expands against the bundles.
                     placeholder(result, KEY_MARK + content);

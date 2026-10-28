@@ -42,6 +42,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceConfigurationError;
+import java.util.ServiceLoader;
 
 /**
  * The spec's {@link ValidatorFactory} for rulii bean validation: built by the provider from a
@@ -72,6 +74,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
     private final List<ConstraintMapper<?>> mappers;
     private final RuleContextOptions options;
     private final List<ValueExtractor<?>> extractors;
+    private final List<ValueExtractor<?>> discoveredExtractors;
     private final List<BeanValidator> validators = new ArrayList<>();
     private final BeanValidator validator;
 
@@ -86,7 +89,7 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         Assert.notNull(state, "state cannot be null.");
         RuliiConfiguration ours = state instanceof RuliiConfiguration configuration ? configuration : null;
         this.messageInterpolator = state.getMessageInterpolator() != null ? state.getMessageInterpolator()
-                : new RuliiMessageInterpolator(ConstraintMapperRegistry.builder().build());
+                : new RuliiMessageInterpolator();
         this.traversableResolver = state.getTraversableResolver() != null ? state.getTraversableResolver() : Defaults.TRAVERSABLE_RESOLVER;
         this.parameterNameProvider = state.getParameterNameProvider() != null ? state.getParameterNameProvider() : Defaults.PARAMETER_NAME_PROVIDER;
         this.clockProvider = state.getClockProvider() != null ? state.getClockProvider() : Defaults.CLOCK_PROVIDER;
@@ -98,7 +101,32 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
         this.constraintValidatorFactory = state.getConstraintValidatorFactory() != null ? state.getConstraintValidatorFactory()
                 : new DefaultConstraintValidatorFactory((options != null ? options : StandardRuleContextOptions.build()).getObjectFactory());
         this.extractors = state.getValueExtractors() != null ? List.copyOf(state.getValueExtractors()) : List.of();
+        this.discoveredExtractors = discoverExtractors();
         this.validator = build(List.of(), clockProvider, constraintValidatorFactory, parameterNameProvider, messageInterpolator, traversableResolver);
+    }
+
+    /**
+     * The value extractors the specification has the bootstrap discover: those listed in
+     * {@code META-INF/services/jakarta.validation.valueextraction.ValueExtractor}, loaded through the
+     * context class loader (this class's when there is none). They rank above the built-in extractors
+     * and below the configured ones; among themselves, the last listed wins, the specification leaving
+     * that case undefined. The rulii-native {@code BeanValidator.builder()} does no discovery.
+     */
+    private static List<ValueExtractor<?>> discoverExtractors() {
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        ClassLoader classLoader = context != null ? context : RuliiValidatorFactory.class.getClassLoader();
+        List<ValueExtractor<?>> result = new ArrayList<>();
+
+        try {
+            for (ValueExtractor<?> extractor : ServiceLoader.load(ValueExtractor.class, classLoader)) {
+                result.add(extractor);
+            }
+        } catch (ServiceConfigurationError e) {
+            throw new ValidationException("cannot load the value extractors listed in META-INF/services/"
+                    + ValueExtractor.class.getName() + ": " + e.getMessage(), e);
+        }
+
+        return Collections.unmodifiableList(result);
     }
 
     /**
@@ -121,6 +149,11 @@ public final class RuliiValidatorFactory implements ValidatorFactory {
 
         for (ConstraintMapper<?> mapper : mappers) {
             builder.mapper(mapper);
+        }
+
+        // The specification's precedence, lowest first: built-in (the builder's), discovered, configured, context.
+        for (ValueExtractor<?> extractor : discoveredExtractors) {
+            builder.extractor(extractor);
         }
 
         for (ValueExtractor<?> extractor : extractors) {

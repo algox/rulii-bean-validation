@@ -23,8 +23,10 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.MessageInterpolator;
 import jakarta.validation.Validation;
 import jakarta.validation.ValidationException;
+import jakarta.validation.executable.ExecutableType;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
+import jakarta.validation.valueextraction.ValueExtractorDeclarationException;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -33,6 +35,7 @@ import jakarta.validation.valueextraction.ValueExtractor;
 import org.junit.jupiter.api.Test;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.BeanValidator;
+import org.rulii.validation.beans.extract.NoValueExtractorException;
 import org.rulii.validation.beans.traversal.TraversableResolvers;
 import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.bootstrap.RuliiConfiguration;
@@ -138,7 +141,9 @@ public class BootstrapTest {
         assertNotNull(configuration.getDefaultMessageInterpolator());
         assertNotNull(configuration.getDefaultClockProvider());
         assertNull(configuration.getBootstrapConfiguration().getDefaultProviderClassName());
-        assertFalse(configuration.getBootstrapConfiguration().isExecutableValidationEnabled());
+        assertTrue(configuration.getBootstrapConfiguration().isExecutableValidationEnabled(), "the specification's default without XML");
+        assertEquals(Set.of(ExecutableType.CONSTRUCTORS, ExecutableType.NON_GETTER_METHODS),
+                configuration.getBootstrapConfiguration().getDefaultValidatedExecutableTypes());
         assertTrue(configuration.getBootstrapConfiguration().getProperties().isEmpty());
         assertThrows(ValidationException.class, () -> configuration.addMapping(new ByteArrayInputStream(new byte[0])), "no XML mappings");
         assertThrows(IllegalArgumentException.class, () -> configuration.registry(null));
@@ -266,5 +271,30 @@ public class BootstrapTest {
         public boolean isValid(Object value, jakarta.validation.ConstraintValidatorContext context) {
             return true;
         }
+    }
+
+    @Test
+    public void serviceProvidedExtractorsAreDiscoveredByTheBootstrap() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        Validator validator = factory.getValidator();
+
+        // Listed in META-INF/services/jakarta.validation.valueextraction.ValueExtractor: found without any registration.
+        assertNotNull(((BeanValidator) validator).getValueExtractorRegistry().find(Crate.class, 0));
+        assertEquals(1, validator.validate(new DiscoveredCrateExtractor.Cargo()).size());
+
+        // The rulii-native builder does no discovery: the crate is unknown to it.
+        assertThrows(NoValueExtractorException.class, () -> BeanValidator.builder().build().validate(new DiscoveredCrateExtractor.Cargo()));
+
+        // Precedence: a configured extractor beats the discovered one, a context extractor beats both.
+        ValueExtractor<?> lenient = new DiscoveredCrateExtractor.LenientCrateExtractor();
+        assertTrue(Validation.byProvider(RuliiValidationProvider.class).configure().addValueExtractor(lenient).buildValidatorFactory()
+                .getValidator().validate(new DiscoveredCrateExtractor.Cargo()).isEmpty());
+        assertTrue(factory.usingContext().addValueExtractor(lenient).getValidator().validate(new DiscoveredCrateExtractor.Cargo()).isEmpty());
+
+        // One extractor per container type and type argument at each level.
+        assertThrows(ValueExtractorDeclarationException.class, () -> Validation.byDefaultProvider().configure()
+                .addValueExtractor(lenient).addValueExtractor(new DiscoveredCrateExtractor()));
+        assertThrows(ValueExtractorDeclarationException.class, () -> factory.usingContext()
+                .addValueExtractor(lenient).addValueExtractor(new DiscoveredCrateExtractor()));
     }
 }

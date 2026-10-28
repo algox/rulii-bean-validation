@@ -19,11 +19,20 @@ package org.rulii.test.validation.beans.constraints;
 
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Future;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Size;
 import org.junit.jupiter.api.Test;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.validation.beans.BeanRuleViolation;
 import org.rulii.validation.beans.BeanValidationResult;
 import org.rulii.validation.beans.BeanValidator;
+import org.rulii.validation.beans.message.RuliiMessageInterpolator;
 import org.rulii.validation.beans.constraints.Alpha;
 import org.rulii.validation.beans.constraints.AlphaNumeric;
 import org.rulii.validation.beans.constraints.Ascii;
@@ -56,6 +65,11 @@ import java.lang.annotation.Annotation;
 import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.chrono.HijrahDate;
+import java.time.chrono.JapaneseDate;
+import java.time.chrono.MinguoDate;
+import java.time.chrono.ThaiBuddhistDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -371,5 +385,115 @@ public class ConstraintsTest {
 
         @CodePointLength(min = 1, max = 3, normalizationStrategy = CodePointLength.NormalizationStrategy.NFC)
         String mixedCase = "é";
+    }
+
+    @Test
+    public void emailWithARegexpReportsOnce() {
+        Map<String, String> messages = messages(VALIDATOR.validate(new Mailbox()));
+
+        // messages() asserts one violation per property: a value failing both the form and the pattern reports once.
+        assertEquals(List.of("malformed", "mismatch"), List.copyOf(messages.keySet()));
+        assertEquals("must be a well-formed email address", messages.get("malformed"));
+        assertEquals("must be a well-formed email address", messages.get("mismatch"));
+    }
+
+    @SuppressWarnings("unused")
+    private static class Mailbox {
+        @Email(regexp = "[a-z]+@acme\\.com")
+        String malformed = "nope";
+
+        @Email(regexp = "[a-z]+@acme\\.com")
+        String mismatch = "bob@other.com";
+
+        @Email(regexp = "[a-z]+@acme\\.com", flags = jakarta.validation.constraints.Pattern.Flag.CASE_INSENSITIVE)
+        String matching = "Bob@acme.com";
+    }
+
+    @Test
+    public void digitsAllowZeroIntegralDigits() {
+        assertEquals(List.of("tooBig", "tooPrecise"), List.copyOf(messages(VALIDATOR.validate(new Fractions())).keySet()));
+    }
+
+    @SuppressWarnings("unused")
+    private static class Fractions {
+        @Digits(integer = 0, fraction = 2)
+        BigDecimal fraction = new BigDecimal("0.12");
+
+        @Digits(integer = 0, fraction = 2)
+        String text = "0.5";
+
+        @Digits(integer = 0, fraction = 2)
+        BigDecimal tooBig = new BigDecimal("1.2");
+
+        @Digits(integer = 0, fraction = 2)
+        BigDecimal tooPrecise = new BigDecimal("0.123");
+    }
+
+    @Test
+    public void attributePlaceholdersRenderFromTheConstraint() {
+        Map<String, String> expected = Map.of(
+                "email", ".*",
+                "code", "x [CASE_INSENSITIVE]",
+                "count", "5",
+                "amount", "1/0",
+                "name", "2");
+
+        // The default path: the rules report the constraint's attributes under the constraint's own names.
+        assertEquals(expected, messages(VALIDATOR.validate(new Placeholders())));
+
+        // The same through the library's interpolator.
+        BeanValidator interpolating = BeanValidator.builder().messageInterpolator(new RuliiMessageInterpolator()).build();
+        assertEquals(expected, messages(interpolating.validate(new Placeholders())));
+    }
+
+    @SuppressWarnings("unused")
+    private static class Placeholders {
+        @Email(message = "{regexp}")
+        String email = "nope";
+
+        @jakarta.validation.constraints.Pattern(regexp = "x", flags = jakarta.validation.constraints.Pattern.Flag.CASE_INSENSITIVE, message = "{regexp} {flags}")
+        String code = "y";
+
+        @Min(value = 5, message = "{value}")
+        int count = 1;
+
+        @Digits(integer = 1, fraction = 0, message = "{integer}/{fraction}")
+        int amount = 100;
+
+        @Size(max = 1, message = "${max + 1}")
+        String name = "ab";
+    }
+
+    @Test
+    public void chronoDatesAreTemporalTypes() {
+        assertEquals(List.of("hijrahFuture", "japanesePast", "minguoFuture", "thaiPast"),
+                List.copyOf(messages(VALIDATOR.validate(new ChronoDates())).keySet()));
+    }
+
+    @SuppressWarnings("unused")
+    private static class ChronoDates {
+        @Past HijrahDate hijrahPast = HijrahDate.from(LocalDate.of(1980, 1, 1));
+        @Past HijrahDate hijrahFuture = HijrahDate.from(LocalDate.of(2100, 1, 1));
+        @Future JapaneseDate japaneseFuture = JapaneseDate.from(LocalDate.of(2100, 1, 1));
+        @Future JapaneseDate japanesePast = JapaneseDate.from(LocalDate.of(1980, 1, 1));
+        @PastOrPresent MinguoDate minguoPast = MinguoDate.from(LocalDate.of(1980, 1, 1));
+        @PastOrPresent MinguoDate minguoFuture = MinguoDate.from(LocalDate.of(2100, 1, 1));
+        @FutureOrPresent ThaiBuddhistDate thaiFuture = ThaiBuddhistDate.from(LocalDate.of(2100, 1, 1));
+        @FutureOrPresent ThaiBuddhistDate thaiPast = ThaiBuddhistDate.from(LocalDate.of(1980, 1, 1));
+    }
+
+    @Test
+    public void emailAcceptsWhatTheReferenceImplementationAccepts() {
+        assertEquals(List.of("malformed", "trailingDot"), List.copyOf(messages(VALIDATOR.validate(new Mailboxes())).keySet()));
+    }
+
+    @SuppressWarnings("unused")
+    private static class Mailboxes {
+        @Email String local = "user@localhost";
+        @Email String intranet = "bob@intranet";
+        @Email String reservedTld = "bob@example.example";
+        @Email String ip = "bob@[192.168.0.1]";
+        @Email String malformed = "nope";
+        @Email String trailingDot = "bob@example.com.";
     }
 }

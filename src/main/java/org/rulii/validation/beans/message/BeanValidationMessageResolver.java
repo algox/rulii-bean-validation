@@ -20,14 +20,9 @@ package org.rulii.validation.beans.message;
 import jakarta.validation.Constraint;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.text.MessageResolver;
-import org.rulii.validation.beans.mapper.ConstraintMapper;
-import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 
-import java.lang.annotation.Annotation;
 import java.util.Locale;
-import java.util.Map;
 import java.util.MissingResourceException;
-import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -38,7 +33,7 @@ import java.util.concurrent.ConcurrentMap;
  * of the classpath, with locale variants), the resolver it wraps (a rulii user's own bundles), and this
  * library's default bundle. When the code is a constraint's default message key, the text found is
  * Bean Validation syntax: {@code {key}} references are expanded recursively against the same sources,
- * then the text is translated into a rulii template with the constraint's parameter names, so
+ * then the text is translated into a rulii template, so
  * {@code must match "{regexp}"} renders through the rule's {@code pattern} parameter. Any other code
  * (a {@code @Validate} rule's, for instance) resolves through the same sources but is returned as found,
  * since its templates are rulii's own.
@@ -76,34 +71,29 @@ public final class BeanValidationMessageResolver implements MessageResolver {
     private static final String MESSAGE_KEY_SUFFIX = ".message";
     private static final int MAX_DEPTH = 8;
 
-    private final ConstraintMapperRegistry mappers;
     private final MessageResolver delegate;
     private final ClassLoader classLoader;
-    private final ConcurrentMap<String, Optional<Map<String, String>>> parameterNames = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, Boolean> constraintKeys = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, String> templates = new ConcurrentHashMap<>();
 
     /**
      * Creates the resolver.
      *
-     * @param mappers the constraint mappers, for the parameter names of each constraint.
      * @param delegate the resolver to consult after the user's bundle; null for none.
      */
-    public BeanValidationMessageResolver(ConstraintMapperRegistry mappers, MessageResolver delegate) {
-        this(mappers, delegate, null);
+    public BeanValidationMessageResolver(MessageResolver delegate) {
+        this(delegate, null);
     }
 
     /**
      * Creates the resolver.
      *
-     * @param mappers the constraint mappers, for the parameter names of each constraint.
      * @param delegate the resolver to consult after the user's bundle; null for none.
-     * @param classLoader the class loader the user's bundle is read through; null for the context class
-     *                    loader, falling back to this class's.
+     * @param classLoader the class loader the user's bundle is read and the constraint annotation types
+     *                    are looked up through; null for the context class loader, falling back to this class's.
      */
-    public BeanValidationMessageResolver(ConstraintMapperRegistry mappers, MessageResolver delegate, ClassLoader classLoader) {
+    public BeanValidationMessageResolver(MessageResolver delegate, ClassLoader classLoader) {
         super();
-        Assert.notNull(mappers, "mappers cannot be null.");
-        this.mappers = mappers;
         this.delegate = delegate;
         ClassLoader context = classLoader != null ? classLoader : Thread.currentThread().getContextClassLoader();
         this.classLoader = context != null ? context : BeanValidationMessageResolver.class.getClassLoader();
@@ -162,11 +152,9 @@ public final class BeanValidationMessageResolver implements MessageResolver {
 
         if (text == null) return null;
 
-        Map<String, String> names = parameterNames(code);
+        if (!isConstraintKey(code)) return text;
 
-        if (names == null) return text;
-
-        return MessageTemplates.translate(expand(locale, text, 0), names, MessageTemplates.VALIDATED_VALUE);
+        return MessageTemplates.translate(expand(locale, text, 0), MessageTemplates.VALIDATED_VALUE);
     }
 
     /**
@@ -208,25 +196,22 @@ public final class BeanValidationMessageResolver implements MessageResolver {
     }
 
     /**
-     * The parameter names of the constraint a code belongs to; null when the code is not a mapped
-     * constraint's default message key.
+     * Whether a code is a constraint's default message key ({@code <annotation>.message} for a
+     * {@code @Constraint} annotation type), whose text is a jakarta template to translate; any other
+     * code's text is returned as found.
      */
-    private Map<String, String> parameterNames(String code) {
-        return parameterNames.computeIfAbsent(code, c -> Optional.ofNullable(lookupParameterNames(c))).orElse(null);
+    private boolean isConstraintKey(String code) {
+        return constraintKeys.computeIfAbsent(code, this::lookupConstraintKey);
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, String> lookupParameterNames(String code) {
-        if (!code.endsWith(MESSAGE_KEY_SUFFIX)) return null;
+    private boolean lookupConstraintKey(String code) {
+        if (!code.endsWith(MESSAGE_KEY_SUFFIX)) return false;
 
         try {
             Class<?> type = Class.forName(code.substring(0, code.length() - MESSAGE_KEY_SUFFIX.length()), false, classLoader);
-            if (!type.isAnnotation() || !type.isAnnotationPresent(Constraint.class)) return null;
-            // A composition has no mapper of its own: its text is translated with the attribute names as they are.
-            ConstraintMapper<?> mapper = mappers.find((Class<? extends Annotation>) type);
-            return mapper != null ? mapper.getParameterNames() : Map.of();
+            return type.isAnnotation() && type.isAnnotationPresent(Constraint.class);
         } catch (ClassNotFoundException | LinkageError e) {
-            return null;
+            return false;
         }
     }
 

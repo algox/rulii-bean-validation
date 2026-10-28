@@ -17,18 +17,20 @@
  */
 package org.rulii.validation.beans.mapper;
 
-import org.rulii.model.UnrulyException;
+import jakarta.validation.ConstraintDeclarationException;
 
 import java.lang.annotation.Annotation;
 
 /**
  * Thrown when a {@link ConstraintMapper} misbehaves while materializing a constraint: it returns no
- * rules, a null rule, a rule whose name is already taken in the bean class, or throws.
+ * rules, a null rule, a rule whose name is already taken in the bean class, or throws (typically on an
+ * attribute value the rule refuses, a negative {@code @Size} bound say). A
+ * {@link ConstraintDeclarationException}, as the specification classes an illegal declaration.
  *
  * @author Max Arulananthan
  * @since 1.0
  */
-public class ConstraintMapperException extends UnrulyException {
+public class ConstraintMapperException extends ConstraintDeclarationException {
 
     private final Class<? extends Annotation> annotationType;
     private final String location;

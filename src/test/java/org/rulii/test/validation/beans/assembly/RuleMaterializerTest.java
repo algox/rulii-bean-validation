@@ -83,16 +83,16 @@ public class RuleMaterializerTest {
 
         assertEquals(Order.class, rules.getBeanClass());
         assertEquals("OrderRules", rules.getName());
-        assertEquals(List.of("code_notNull", "code_size", "name_notNull", "name_size", "quantity_min", "email_email", "email_email_2"),
+        assertEquals(List.of("code_notNull", "code_size", "name_notNull", "name_size", "quantity_min", "email_email"),
                 names(rules.getPropertyRules()));
         assertEquals(List.of("Order_validOrder"), names(rules.getClassRules()));
         assertEquals(List.of("tags_List0_notBlank", "counts_Map0_notBlank", "counts_Map1_positive"),
                 rules.getElementRules().stream().flatMap(e -> e.rules().stream()).map(MaterializedRule::getName).toList());
-        assertEquals(11, rules.getRules().size());
+        assertEquals(10, rules.getRules().size());
         assertFalse(rules.isEmpty());
         assertNotNull(rules.getRule("quantity_min"));
         assertNull(rules.getRule("missing"));
-        assertTrue(rules.toString().contains("propertyRules=7"));
+        assertTrue(rules.toString().contains("propertyRules=6"));
     }
 
     @Test
@@ -177,10 +177,10 @@ public class RuleMaterializerTest {
         assertEquals(Severity.WARNING, warning.getViolation(0).getSeverity());
         assertNotNull(warning.getViolation(0).getErrorMessage());
 
-        // @Email with a regexp: two rules, both on the same binding.
-        assertEquals(RuleExecutionStatus.PASS, status(rules.getRule("email_email"), "email", "bob@other.com"));
-        assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("email_email_2"), "email", "bob@other.com"));
-        assertEquals(RuleExecutionStatus.PASS, status(rules.getRule("email_email_2"), "email", "bob@acme.com"));
+        // @Email with a regexp: one rule checking both the form and the pattern.
+        assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("email_email"), "email", "bob@other.com"));
+        assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("email_email"), "email", "nope"));
+        assertEquals(RuleExecutionStatus.PASS, status(rules.getRule("email_email"), "email", "bob@acme.com"));
 
         assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("tags_List0_notBlank"), BindingPlan.ELEMENT, " "));
         assertEquals(RuleExecutionStatus.FAIL, status(rules.getRule("counts_Map1_positive"), BindingPlan.VALUE, -1));

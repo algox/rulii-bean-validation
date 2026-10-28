@@ -47,7 +47,6 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
     private final Class<A> annotationType;
     private final List<Class<?>> supportedTypes;
     private final BiFunction<A, ConstraintTarget, List<Rule>> materializer;
-    private final Map<String, String> parameterNames;
     private final List<ValidationTarget> supportedTargets;
 
     /**
@@ -59,7 +58,7 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
      */
     public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes,
                                   BiFunction<A, ConstraintTarget, List<Rule>> materializer) {
-        this(annotationType, supportedTypes, materializer, Map.of());
+        this(annotationType, supportedTypes, materializer, List.of(ValidationTarget.ANNOTATED_ELEMENT));
     }
 
     /**
@@ -68,35 +67,18 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
      * @param annotationType the constraint annotation type.
      * @param supportedTypes the supported value types; empty for no restriction.
      * @param materializer produces the rules for one occurrence.
-     * @param parameterNames attribute name to rule parameter name, where they differ.
-     */
-    public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes,
-                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer, Map<String, String> parameterNames) {
-        this(annotationType, supportedTypes, materializer, parameterNames, List.of(ValidationTarget.ANNOTATED_ELEMENT));
-    }
-
-    /**
-     * Creates the mapper.
-     *
-     * @param annotationType the constraint annotation type.
-     * @param supportedTypes the supported value types; empty for no restriction.
-     * @param materializer produces the rules for one occurrence.
-     * @param parameterNames attribute name to rule parameter name, where they differ.
      * @param supportedTargets the validation targets: the annotated element, the parameters, or both.
      */
     public SimpleConstraintMapper(Class<A> annotationType, List<Class<?>> supportedTypes,
-                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer, Map<String, String> parameterNames,
-                                  List<ValidationTarget> supportedTargets) {
+                                  BiFunction<A, ConstraintTarget, List<Rule>> materializer, List<ValidationTarget> supportedTargets) {
         super();
         Assert.notNull(annotationType, "annotationType cannot be null.");
         Assert.notNull(supportedTypes, "supportedTypes cannot be null.");
         Assert.notNull(materializer, "materializer cannot be null.");
-        Assert.notNull(parameterNames, "parameterNames cannot be null.");
         Assert.notEmpty(supportedTargets, "supportedTargets cannot be empty.");
         this.annotationType = annotationType;
         this.supportedTypes = List.copyOf(supportedTypes);
         this.materializer = materializer;
-        this.parameterNames = Map.copyOf(parameterNames);
         this.supportedTargets = List.copyOf(supportedTargets);
     }
 
@@ -115,11 +97,6 @@ public final class SimpleConstraintMapper<A extends Annotation> implements Const
         Assert.notNull(annotation, "annotation cannot be null.");
         Assert.notNull(target, "target cannot be null.");
         return materializer.apply(annotation, target);
-    }
-
-    @Override
-    public Map<String, String> getParameterNames() {
-        return parameterNames;
     }
 
     @Override

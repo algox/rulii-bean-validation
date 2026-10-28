@@ -25,6 +25,7 @@ import jakarta.validation.TraversableResolver;
 import jakarta.validation.ValidatorContext;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.validation.beans.BeanValidator;
 
 import java.util.ArrayList;
@@ -84,9 +85,15 @@ public final class RuliiValidatorContext implements ValidatorContext {
         return this;
     }
 
+    /**
+     * @throws jakarta.validation.valueextraction.ValueExtractorDeclarationException if an extractor for the same
+     *         container type and type argument was already added to this context (one per level); an
+     *         extractor here takes precedence over the factory's.
+     */
     @Override
     public RuliiValidatorContext addValueExtractor(ValueExtractor<?> extractor) {
         Assert.notNull(extractor, "extractor cannot be null.");
+        ValueExtractorDescriptor.requireDistinct(extractors, extractor, "the validator context");
         extractors.add(extractor);
         return this;
     }

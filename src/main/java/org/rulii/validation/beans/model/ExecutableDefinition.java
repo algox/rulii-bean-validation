@@ -605,6 +605,45 @@ public final class ExecutableDefinition implements Definition {
     }
 
     /**
+     * Whether the specification's metadata has anything to say about the parameters: a constraint or
+     * a cascade on one of them, constrained positions in one, or a cross-parameter constraint. The
+     * library's own {@code @Validate} and {@code @Expr} rules do not count; they are not constraints.
+     *
+     * @return true if a constraint descriptor would describe a parameter or the parameters as a whole.
+     */
+    public boolean hasSpecConstrainedParameters() {
+        if (!crossParameterConstraints.isEmpty()) return true;
+
+        for (ParameterDefinition parameter : parameters) {
+            if (parameter.isConstrained()) return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the specification's metadata has anything to say about the return value: a constraint,
+     * constrained positions or a cascade; {@code @Validate} and {@code @Expr} rules do not count.
+     *
+     * @return true if a constraint descriptor would describe the return value.
+     */
+    public boolean hasSpecConstrainedReturnValue() {
+        return returnValue != null && returnValue.isSpecConstrained();
+    }
+
+    /**
+     * Whether the specification's metadata describes this executable at all; see
+     * {@link #hasSpecConstrainedParameters()} and {@link #hasSpecConstrainedReturnValue()}. An
+     * executable carrying only {@code @Validate} or {@code @Expr} rules is {@link #isConstrained()
+     * constrained} for the engine and invisible to the metadata API.
+     *
+     * @return true if the metadata API reports this executable.
+     */
+    public boolean isSpecConstrained() {
+        return hasSpecConstrainedParameters() || hasSpecConstrainedReturnValue();
+    }
+
+    /**
      * Whether this definition is the one of the given signature.
      *
      * @param name the method name, or the simple class name for a constructor.

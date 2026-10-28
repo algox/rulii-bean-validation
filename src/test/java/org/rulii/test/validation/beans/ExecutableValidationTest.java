@@ -21,6 +21,7 @@ import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintTarget;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import jakarta.validation.ValidationException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ElementKind;
 import jakarta.validation.ParameterNameProvider;
@@ -68,6 +69,7 @@ import org.rulii.validation.beans.bootstrap.RuliiValidatorFactory;
 import org.rulii.validation.beans.model.AmbiguousConstraintTargetException;
 import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.model.ExecutableDefinition;
+import org.rulii.validation.beans.validator.ConstraintValidatorException;
 import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
 import org.rulii.validation.beans.traversal.RuleFlowAssembler;
 import org.rulii.validation.rules.Validators;
@@ -176,6 +178,43 @@ public class ExecutableValidationTest {
         assertEquals(List.of("place.p0.code:code_size"), report(violations));
         assertSame(order, violations.iterator().next().getLeafBean());
         assertEquals("x", violations.iterator().next().getInvalidValue());
+    }
+
+    @Test
+    public void validArrayParametersCascadeIntoTheirElements() throws Exception {
+        ExecutableValidator validator = validator().forExecutables();
+        Order bad = new Order();
+        bad.code = "x";
+        Order good = new Order();
+        good.code = "ok";
+
+        Set<ConstraintViolation<OrderService>> violations = validator.validateParameters(new OrderService(),
+                method(OrderService.class, "batch", Order[].class), new Object[] {new Order[] {good, null, bad}});
+
+        assertEquals(List.of("batch.p0[2].code:code_size"), report(violations));
+        assertSame(bad, violations.iterator().next().getLeafBean());
+    }
+
+    @Test
+    public void crossParameterValidatorsCanPointAtAParameter() throws Exception {
+        ExecutableValidator validator = validator().forExecutables();
+        Order order = new Order();
+        order.code = "ok";
+
+        // The parameter node takes the place of the cross-parameter node, named by the parameter name provider.
+        assertEquals(List.of("pair.p1:pair_pointed"), report(validator.validateParameters(new Pointing(),
+                method(Pointing.class, "pair", Order.class, int.class), new Object[] {order, 1})));
+        assertEquals(List.of("deep.p0.code:deep_pointed"), report(validator.validateParameters(new Pointing(),
+                method(Pointing.class, "deep", Order.class, int.class), new Object[] {order, 1})));
+
+        ConstraintValidatorException range = assertThrows(ConstraintValidatorException.class, () -> validator.validateParameters(new Pointing(),
+                method(Pointing.class, "beyond", Order.class, int.class), new Object[] {order, 1}));
+        assertInstanceOf(IllegalArgumentException.class, range.getCause());
+
+        // A parameter-level validator is not at the cross-parameter node: refused when the path is built.
+        ValidationException misplaced = assertThrows(ValidationException.class, () -> validator.validateParameters(new Pointing(),
+                method(Pointing.class, "single", String.class), new Object[] {"x"}));
+        assertTrue(misplaced.getMessage().contains("cross-parameter"), misplaced.getMessage());
     }
 
     @Test
@@ -414,7 +453,13 @@ public class ExecutableValidationTest {
         MethodDescriptor schedule = descriptor.getConstraintsForMethod("schedule", LocalDate.class, LocalDate.class);
         assertEquals(Object[].class, schedule.getCrossParameterDescriptor().getElementClass());
         assertEquals(1, schedule.getCrossParameterDescriptor().getConstraintDescriptors().size());
-        assertNull(schedule.getReturnValueDescriptor());
+        // A void method's return value is described as void, not as nothing.
+        assertEquals(void.class, schedule.getReturnValueDescriptor().getElementClass());
+        assertFalse(schedule.getReturnValueDescriptor().hasConstraints());
+        assertFalse(schedule.getReturnValueDescriptor().isCascaded());
+        assertTrue(schedule.getReturnValueDescriptor().getConstrainedContainerElementTypes().isEmpty());
+        assertTrue(schedule.getReturnValueDescriptor().getGroupConversions().isEmpty());
+        assertFalse(schedule.hasConstrainedReturnValue());
 
         assertNull(descriptor.getConstraintsForMethod("plain", String.class));
         List<String> nonGetters = new ArrayList<>();
@@ -431,6 +476,17 @@ public class ExecutableValidationTest {
         assertEquals(OrderService.class, constructor.getElementClass());
         assertTrue(constructor.hasConstrainedParameters());
         assertNull(descriptor.getConstraintsForConstructor());
+
+        // Executables carrying only the library's @Validate rules are validated but are not the specification's metadata.
+        BeanDescriptor desk = validator().getConstraintsForClass(Desk.class);
+        assertNull(desk.getConstraintsForMethod("book", LocalDate.class, LocalDate.class));
+        assertNull(desk.getConstraintsForMethod("label"));
+        assertNull(desk.getConstraintsForConstructor(LocalDate.class));
+        assertTrue(desk.getConstrainedMethods(MethodType.NON_GETTER, MethodType.GETTER).isEmpty());
+        assertTrue(desk.getConstrainedConstructors().isEmpty());
+        assertFalse(desk.isBeanConstrained());
+        assertTrue(validator().getBeanDefinition(Desk.class).getMethod("book", LocalDate.class, LocalDate.class).isConstrained(),
+                "the engine still validates it");
     }
 
     // --- wiring -------------------------------------------------------------------------------------
@@ -839,6 +895,9 @@ public class ExecutableValidationTest {
         public void tag(@NotNull List<@NotBlank String> tags) {
         }
 
+        public void batch(@Valid Order[] orders) {
+        }
+
         public @Valid Shipment ship(@Valid Shipment shipment) {
             return shipment;
         }
@@ -947,6 +1006,83 @@ public class ExecutableValidationTest {
     public static class CrossWithoutValidator {
         @ElementOnly(validationAppliesTo = ConstraintTarget.PARAMETERS)
         public void run(String value) {
+        }
+    }
+
+    @Constraint(validatedBy = PointedValidator.class)
+    @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Pointed {
+        String message() default "pointed";
+        Class<?>[] groups() default {};
+        Class<? extends Payload>[] payload() default {};
+        int index();
+        String property() default "";
+    }
+
+    @SupportedValidationTarget(ValidationTarget.PARAMETERS)
+    public static class PointedValidator implements ConstraintValidator<Pointed, Object[]> {
+        private Pointed pointed;
+
+        public PointedValidator() {
+            super();
+        }
+
+        @Override
+        public void initialize(Pointed pointed) {
+            this.pointed = pointed;
+        }
+
+        @Override
+        public boolean isValid(Object[] values, ConstraintValidatorContext context) {
+            context.disableDefaultConstraintViolation();
+            ConstraintValidatorContext.ConstraintViolationBuilder.NodeBuilderDefinedContext node =
+                    context.buildConstraintViolationWithTemplate("pointed").addParameterNode(pointed.index());
+            if (pointed.property().isEmpty()) {
+                node.addConstraintViolation();
+            } else {
+                node.addPropertyNode(pointed.property()).addConstraintViolation();
+            }
+            return false;
+        }
+    }
+
+    @Constraint(validatedBy = MisplacedValidator.class)
+    @Target(ElementType.PARAMETER)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Misplaced {
+        String message() default "misplaced";
+        Class<?>[] groups() default {};
+        Class<? extends Payload>[] payload() default {};
+    }
+
+    public static class MisplacedValidator implements ConstraintValidator<Misplaced, String> {
+        public MisplacedValidator() {
+            super();
+        }
+
+        @Override
+        public boolean isValid(String value, ConstraintValidatorContext context) {
+            context.disableDefaultConstraintViolation();
+            context.buildConstraintViolationWithTemplate("misplaced").addParameterNode(0).addConstraintViolation();
+            return false;
+        }
+    }
+
+    public static class Pointing {
+        @Pointed(index = 1)
+        public void pair(Order order, int quantity) {
+        }
+
+        @Pointed(index = 0, property = "code")
+        public void deep(Order order, int quantity) {
+        }
+
+        @Pointed(index = 5)
+        public void beyond(Order order, int quantity) {
+        }
+
+        public void single(@Misplaced String value) {
         }
     }
 }

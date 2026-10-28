@@ -30,7 +30,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.metadata.ConstraintDescriptor;
 import org.junit.jupiter.api.Test;
 import org.rulii.context.RuleContext;
-import org.rulii.model.UnrulyException;
 import org.rulii.validation.RuleViolation;
 import org.rulii.validation.beans.BeanValidationResult;
 import org.rulii.validation.beans.BeanValidator;
@@ -329,13 +328,10 @@ public class ConstraintValidatorAdapterTest {
         Exploding exploding = new Exploding();
         exploding.value = "x";
 
-        UnrulyException e = assertThrows(UnrulyException.class, () -> validator.validate(exploding));
-        Throwable cause = e;
-        while (cause != null && !(cause instanceof ConstraintValidatorException)) {
-            cause = cause.getCause();
-        }
-        assertNotNull(cause, "the validator's failure is in the chain");
-        assertEquals(Thrower.class, ((ConstraintValidatorException) cause).getValidatorClass());
+        // The specification API reports the ValidationException itself, unwrapped from rulii's rule failure.
+        ConstraintValidatorException e = assertThrows(ConstraintValidatorException.class, () -> validator.validate(exploding));
+        assertEquals(Thrower.class, e.getValidatorClass());
+        assertInstanceOf(IllegalStateException.class, e.getCause(), "the validator's own failure is the cause");
     }
 
     // --- the context ----------------------------------------------------------------------------
@@ -403,13 +399,8 @@ public class ConstraintValidatorAdapterTest {
         BeanValidator validator = BeanValidator.builder().build();
         ParameterNoded bean = new ParameterNoded();
 
-        UnrulyException e = assertThrows(UnrulyException.class, () -> validator.validate(bean));
-        Throwable cause = e;
-        while (cause != null && !(cause instanceof ConstraintValidatorException)) {
-            cause = cause.getCause();
-        }
-        assertNotNull(cause);
-        assertInstanceOf(ValidationException.class, cause.getCause());
+        ConstraintValidatorException e = assertThrows(ConstraintValidatorException.class, () -> validator.validate(bean));
+        assertInstanceOf(ValidationException.class, e.getCause());
     }
 
     @Test
@@ -417,12 +408,9 @@ public class ConstraintValidatorAdapterTest {
         BeanValidator validator = BeanValidator.builder().build();
         DoubleAdder bean = new DoubleAdder();
 
-        UnrulyException e = assertThrows(UnrulyException.class, () -> validator.validate(bean));
-        Throwable cause = e;
-        while (cause != null && !(cause instanceof IllegalStateException)) {
-            cause = cause.getCause();
-        }
-        assertNotNull(cause);
+        // The builder fails inside isValid, so the validator's failure is what the caller sees, the builder's as its cause.
+        ConstraintValidatorException e = assertThrows(ConstraintValidatorException.class, () -> validator.validate(bean));
+        assertInstanceOf(IllegalStateException.class, e.getCause());
     }
 
     // --- fixtures: constraints and validators ------------------------------------------------------

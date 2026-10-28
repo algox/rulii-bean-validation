@@ -97,7 +97,6 @@ public class StandardConstraintMappersTest {
                 (a, t) -> List.of());
         assertEquals(Size.class, mapper.getAnnotationType());
         assertEquals(List.of(CharSequence.class), mapper.getSupportedTypes());
-        assertEquals(Map.of(), mapper.getParameterNames());
         assertThrows(UnsupportedOperationException.class, () -> mapper.getSupportedTypes().clear());
         assertTrue(mapper.toString().contains("Size"));
         assertThrows(IllegalArgumentException.class, () -> new SimpleConstraintMapper<>(null, List.of(), (a, t) -> List.of()));

@@ -226,9 +226,7 @@ public final class BindingPlan implements BindingLoader<Object> {
         Assert.notNull(bindings, "bindings cannot be null.");
         Assert.notNull(declaration, "declaration cannot be null.");
 
-        if (isPrimary(declaration) || declaration.getKind() == ValueDeclaration.Kind.GETTER) {
-            return bindings.getValue(getBindingName(property));
-        }
+        if (readsBinding(declaration)) return bindings.getValue(getBindingName(property));
 
         return getAccessor(declaration).read(bean);
     }
@@ -274,6 +272,19 @@ public final class BindingPlan implements BindingLoader<Object> {
     public boolean isPrimary(ValueDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
         return primaries.contains(declaration);
+    }
+
+    /**
+     * Whether a declaration is read through the property binding rather than through an accessor of
+     * its own: the primary declaration, and every getter, since a getter that is not the primary is
+     * overridden by it and the virtual call yields the same value.
+     *
+     * @param declaration the declaration.
+     * @return true if the property binding holds the declaration's value.
+     */
+    public boolean readsBinding(ValueDeclaration declaration) {
+        Assert.notNull(declaration, "declaration cannot be null.");
+        return primaries.contains(declaration) || declaration.getKind() == ValueDeclaration.Kind.GETTER;
     }
 
     /**

@@ -184,6 +184,16 @@ public final class ReturnValueDefinition implements Definition {
         return !constraints.isEmpty() || !containerElements.isEmpty() || isCascaded() || !validateRules.isEmpty() || !exprRules.isEmpty();
     }
 
+    /**
+     * Whether the specification's metadata has anything to say about the return value: constrained,
+     * cascaded or holding constrained positions. {@code @Validate} and {@code @Expr} rules do not count.
+     *
+     * @return true if a constraint descriptor would describe the return value.
+     */
+    public boolean isSpecConstrained() {
+        return !constraints.isEmpty() || !containerElements.isEmpty() || isCascaded();
+    }
+
     @Override
     public String toString() {
         return "ReturnValueDefinition{" + getName() + ", constraints=" + constraints.size() + ", elements="

@@ -40,7 +40,10 @@ import java.util.Set;
  * nothing group-related is silently approximated.</p>
  *
  * <p>A constraint is {@link #activates(RuleDeclaration) active} when its declared groups, empty
- * meaning {@code Default}, intersect the expanded requested groups.</p>
+ * meaning {@code Default}, intersect the expanded requested groups; or, implicit grouping (specification
+ * 5.4.4), when it is hosted on an interface, belongs to {@code Default}, and that interface is among
+ * the expanded requested groups: requesting {@code Auditable.class} validates the {@code Default}
+ * constraints declared on {@code Auditable}.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -213,7 +216,14 @@ public final class RequestedGroups {
      */
     public boolean activates(RuleDeclaration declaration) {
         Assert.notNull(declaration, "declaration cannot be null.");
-        return activates(declaration.getGroups());
+        List<Class<?>> declared = declaration.getGroups();
+
+        if (activates(declared)) return true;
+
+        // Implicit grouping (specification 5.4.4): a declaration hosted on an interface and in the Default group
+        // belongs to the group named after that interface as well.
+        Class<?> host = declaration.getConstraintSource().getDeclaringClass();
+        return host.isInterface() && (declared.isEmpty() || declared.contains(Default.class)) && groups.contains(host);
     }
 
     /**

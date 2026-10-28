@@ -145,11 +145,11 @@ public final class LibraryConstraintMappers {
             StandardConstraintMappers.of(UpperCase.class, UpperCaseValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
                     t.configure(Validators.upperCase(t.value())))),
             StandardConstraintMappers.of(StartsWith.class, StartsWithValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.startsWith(t.value(), a.value()))), Map.of("value", "prefixes")),
+                    t.configure(Validators.startsWith(t.value(), a.value())))),
             StandardConstraintMappers.of(EndsWith.class, EndsWithValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.endsWith(t.value(), a.value()))), Map.of("value", "suffixes")),
+                    t.configure(Validators.endsWith(t.value(), a.value())))),
             StandardConstraintMappers.of(In.class, InValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.in(t.value(), List.of(a.value())))), Map.of("value", "values"))
+                    t.configure(Validators.in(t.value(), List.of(a.value())))))
     );
 
     private LibraryConstraintMappers() {

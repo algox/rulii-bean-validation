@@ -20,6 +20,7 @@ package org.rulii.validation.beans.assembly;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.lib.spring.util.ReflectionUtils;
 import org.rulii.model.UnrulyException;
+import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.validation.beans.model.ValueDeclaration;
 
 import java.lang.invoke.MethodHandle;
@@ -124,7 +125,7 @@ public final class PropertyAccessor {
      * @param bean the bean.
      * @return the value.
      * @throws InaccessiblePropertyException if the member cannot be made accessible (lazy accessors).
-     * @throws UnrulyException if the read itself fails.
+     * @throws BeanValidationException if the member throws a checked exception; an unchecked one propagates as is.
      */
     public Object read(Object bean) {
         Assert.notNull(bean, "bean cannot be null.");
@@ -140,7 +141,7 @@ public final class PropertyAccessor {
         } catch (RuntimeException | Error e) {
             throw e;
         } catch (Throwable e) {
-            throw new UnrulyException("failed to read property [" + declaration.describe() + "] of [" + bean.getClass().getName() + "]", e);
+            throw new BeanValidationException("failed to read property [" + declaration.describe() + "] of [" + bean.getClass().getName() + "]", e);
         }
     }
 

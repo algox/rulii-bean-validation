@@ -29,7 +29,9 @@ import org.rulii.validation.rules.Validators;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * What the materializer prepared for one constraint occurrence, handed to its
@@ -76,6 +78,7 @@ public final class ConstraintTarget {
     private final String description;
     private final String category;
     private final List<String> tags;
+    private final Map<String, Object> attributes;
     private final List<String> ruleNames = new ArrayList<>(1);
 
     /**
@@ -167,6 +170,20 @@ public final class ConstraintTarget {
                             String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
                             Function<?> valueFunction, ValidationTarget validationTarget, String description, String category,
                             List<String> tags) {
+        this(beanClass, propertyName, bindingName, valueName, type, ruleName, errorCode, severity, message, source, valueFunction,
+                validationTarget, description, category, tags, null);
+    }
+
+    /**
+     * @param attributes the constraint's attributes (its own, less {@code message}, {@code groups} and
+     *                   {@code payload}), reported as parameters of every violation under the names the
+     *                   constraint gives them, so a message template's {@code {attr}} placeholders and
+     *                   expressions see them; null or empty for none.
+     */
+    public ConstraintTarget(Class<?> beanClass, String propertyName, String bindingName, String valueName, Class<?> type,
+                            String ruleName, String errorCode, Severity severity, String message, SourceDefinition source,
+                            Function<?> valueFunction, ValidationTarget validationTarget, String description, String category,
+                            List<String> tags, Map<String, Object> attributes) {
         super();
         Assert.notNull(beanClass, "beanClass cannot be null.");
         Assert.hasText(bindingName, "bindingName cannot be empty/null.");
@@ -193,6 +210,17 @@ public final class ConstraintTarget {
         this.description = description;
         this.category = category;
         this.tags = tags != null ? List.copyOf(tags) : List.of();
+        this.attributes = attributes != null ? Collections.unmodifiableMap(new LinkedHashMap<>(attributes)) : Map.of();
+    }
+
+    /**
+     * The constraint's attributes every rule reports as violation parameters, under the constraint's
+     * own names (see the constructor).
+     *
+     * @return the attributes by name; empty when the target carries none.
+     */
+    public Map<String, Object> getAttributes() {
+        return attributes;
     }
 
     /**
@@ -238,6 +266,7 @@ public final class ConstraintTarget {
         if (description != null) builder.description(description);
         if (category != null) builder.category(category);
         if (!tags.isEmpty()) builder.tags(tags.toArray(new String[0]));
+        if (!attributes.isEmpty()) builder.params(attributes);
         return builder;
     }
 

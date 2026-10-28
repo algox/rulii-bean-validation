@@ -18,7 +18,7 @@
 package org.rulii.test.validation.beans.assembly;
 
 import org.junit.jupiter.api.Test;
-import org.rulii.model.UnrulyException;
+import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.validation.beans.assembly.InaccessiblePropertyException;
 import org.rulii.validation.beans.assembly.PropertyAccessor;
 import org.rulii.validation.beans.model.ValueDeclaration;
@@ -68,7 +68,7 @@ public class PropertyAccessorTest {
         assertThrows(IllegalStateException.class, () -> unchecked.read(new Bean()));
 
         PropertyAccessor checked = PropertyAccessor.of(ValueDeclaration.ofGetter(Bean.class.getDeclaredMethod("getChecked")));
-        UnrulyException e = assertThrows(UnrulyException.class, () -> checked.read(new Bean()));
+        BeanValidationException e = assertThrows(BeanValidationException.class, () -> checked.read(new Bean()));
         assertInstanceOf(IOException.class, e.getCause());
 
         assertThrows(IllegalArgumentException.class, () -> unchecked.read(null));

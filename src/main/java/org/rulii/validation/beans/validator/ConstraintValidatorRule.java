@@ -193,7 +193,7 @@ public final class ConstraintValidatorRule implements Rule {
             // A template built at run time keeps its expressions as written unless the validator enabled them.
             String template = custom.expressionLanguageEnabled() ? custom.messageTemplate() : MessageExpressions.escape(custom.messageTemplate());
             RuleViolationBuilder builder = violation(value)
-                    .errorMessage(RuleMaterializer.message(annotationType, template, Map.of(), valueName));
+                    .errorMessage(RuleMaterializer.message(annotationType, template, valueName));
             ruleViolations.add(new CustomPathRuleViolation(builder.build(ruleContext), custom.pathExtension(), custom.messageTemplate(),
                     custom.expressionLanguageEnabled()));
         }

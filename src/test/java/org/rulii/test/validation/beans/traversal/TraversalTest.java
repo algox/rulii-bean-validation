@@ -40,6 +40,7 @@ import org.rulii.validation.beans.ValidateRuleNotFoundException;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.RuleMaterializer;
+import org.rulii.validation.beans.extract.NoValueExtractorException;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
@@ -152,6 +153,34 @@ public class TraversalTest {
         city.getPropertyPath().forEach(nodes::add);
         assertEquals(List.of(ElementKind.PROPERTY, ElementKind.PROPERTY), nodes.stream().map(Path.Node::getKind).toList());
         assertEquals(List.of("address", "city"), nodes.stream().map(Path.Node::getName).toList());
+    }
+
+    @Test
+    public void cascadesIntoArraysOfObjectsOneLevelDeep() {
+        Fleet fleet = new Fleet();
+        fleet.stops = new Address[] {address("ok"), null, address("")};
+        fleet.codes = new int[] {1, 2};
+        fleet.routes = List.<Address[]>of(new Address[] {address("")});
+
+        BeanRuleViolations violations = validate(fleet);
+
+        // The null element and the primitive array are skipped; an array inside a container is subscripted under its element node.
+        assertEquals(List.of("city_notBlank@stops[2].city", "city_notBlank@routes[0].<list element>[0].city"), report(violations));
+        List<Path.Node> nodes = new ArrayList<>();
+        violations.getBeanViolations().get(0).getPropertyPath().forEach(nodes::add);
+        assertEquals(List.of("stops", "city"), nodes.stream().map(Path.Node::getName).toList());
+        assertTrue(nodes.get(1).isInIterable());
+        assertEquals(2, nodes.get(1).getIndex());
+        assertEquals(Address[].class, nodes.get(1).as(Path.PropertyNode.class).getContainerClass());
+        assertNull(nodes.get(1).as(Path.PropertyNode.class).getTypeArgumentIndex());
+        assertSame(fleet.stops[2], violations.getBeanViolations().get(0).getLeafBean());
+
+        fleet.stops = null;
+        fleet.routes = null;
+        assertTrue(validate(fleet).isEmpty());
+
+        // A nested array is a container element position on an array, which is not supported: fail fast at metadata read.
+        assertThrows(NoValueExtractorException.class, () -> rules(Grid.class));
     }
 
     @Test
@@ -477,6 +506,21 @@ public class TraversalTest {
 
         @Valid
         Customer owner;
+    }
+
+    public static class Fleet {
+        @Valid
+        Address[] stops;
+
+        @Valid
+        int[] codes;
+
+        List<Address @Valid []> routes;
+    }
+
+    public static class Grid {
+        @Valid
+        Address[][] cells;
     }
 
     public static class Order {

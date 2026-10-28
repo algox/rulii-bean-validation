@@ -285,8 +285,9 @@ public final class BeanDefinitionLoader {
         if (raw == Object.class || raw.isPrimitive()) return;
 
         if (raw.isArray()) {
-            // Arrays are not a built-in container (R7.2): only a registered array extractor makes the elements reachable.
-            if (!extractorRegistry.find(raw).isEmpty()) addTargets(Types.componentType(type), result);
+            // Arrays are not a built-in container (R7.2): no element constraints. A @Valid array of objects still
+            // cascades into its elements (R5.2), through a registered array extractor or element by element.
+            addTargets(Types.componentType(type), result);
             return;
         }
 

@@ -20,11 +20,13 @@ package org.rulii.validation.beans.extract;
 import jakarta.validation.valueextraction.ExtractedValue;
 import jakarta.validation.valueextraction.UnwrapByDefault;
 import jakarta.validation.valueextraction.ValueExtractor;
+import jakarta.validation.valueextraction.ValueExtractorDeclarationException;
 import jakarta.validation.valueextraction.ValueExtractorDefinitionException;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.validation.beans.util.reflect.AnnotatedTypes;
 
 import java.lang.reflect.AnnotatedParameterizedType;
+import java.util.Collection;
 import java.lang.reflect.AnnotatedType;
 
 /**
@@ -69,6 +71,39 @@ public final class ValueExtractorDescriptor {
      * @return its descriptor.
      * @throws ValueExtractorDefinitionException if the extractor's declaration is not valid.
      */
+    /**
+     * Checks that a candidate extractor does not serve the same container type and type argument as
+     * one already declared at the same level (the bootstrap configuration, a validator context), which
+     * the specification refuses with {@link ValueExtractorDeclarationException}; across levels the
+     * later level wins instead.
+     *
+     * @param declared the extractors declared at the level so far.
+     * @param candidate the extractor being added.
+     * @param level the level, for the message ("the configuration", say).
+     * @return the candidate's descriptor.
+     * @throws ValueExtractorDeclarationException if the candidate duplicates a declared extractor.
+     * @throws ValueExtractorDefinitionException if the candidate is not a legal extractor.
+     */
+    public static ValueExtractorDescriptor requireDistinct(Collection<? extends ValueExtractor<?>> declared, ValueExtractor<?> candidate,
+                                                           String level) {
+        Assert.notNull(declared, "declared cannot be null.");
+        Assert.notNull(candidate, "candidate cannot be null.");
+        Assert.hasText(level, "level cannot be null/empty.");
+        ValueExtractorDescriptor descriptor = of(candidate);
+
+        for (ValueExtractor<?> existing : declared) {
+            ValueExtractorDescriptor other = of(existing);
+
+            if (other.getContainerType().equals(descriptor.getContainerType()) && other.getTypeArgumentIndex() == descriptor.getTypeArgumentIndex()) {
+                throw new ValueExtractorDeclarationException("value extractor [" + candidate.getClass().getName() + "] serves the same "
+                        + "container type and type argument as [" + existing.getClass().getName() + "] already added to " + level
+                        + ": " + descriptor + "; one extractor per container type and type argument at each level.");
+            }
+        }
+
+        return descriptor;
+    }
+
     public static ValueExtractorDescriptor of(ValueExtractor<?> extractor) {
         Assert.notNull(extractor, "extractor cannot be null.");
         Class<?> extractorClass = extractor.getClass();

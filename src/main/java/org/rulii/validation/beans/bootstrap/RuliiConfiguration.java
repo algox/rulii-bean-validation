@@ -35,6 +35,7 @@ import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.extract.ValueExtractorDescriptor;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.mapper.ConstraintMapper;
 import org.rulii.validation.beans.mapper.ConstraintMapperRegistryBuilder;
@@ -204,9 +205,14 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
         return this;
     }
 
+    /**
+     * @throws jakarta.validation.valueextraction.ValueExtractorDeclarationException if an extractor for the same
+     *         container type and type argument was already added here (the specification allows one per level).
+     */
     @Override
     public RuliiConfiguration addValueExtractor(ValueExtractor<?> extractor) {
         Assert.notNull(extractor, "extractor cannot be null.");
+        ValueExtractorDescriptor.requireDistinct(extractors, extractor, "the configuration");
         extractors.add(extractor);
         return this;
     }
@@ -234,12 +240,7 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     @Override
     public MessageInterpolator getDefaultMessageInterpolator() {
         if (defaultMessageInterpolator == null) {
-            ConstraintMapperRegistryBuilder registry = ConstraintMapperRegistryBuilder.standard();
-            for (ConstraintMapper<?> mapper : mappers) {
-                registry.mapper(mapper);
-            }
-            defaultMessageInterpolator = new RuliiMessageInterpolator(registry.build(),
-                    options != null ? options : StandardRuleContextOptions.build());
+            defaultMessageInterpolator = new RuliiMessageInterpolator(options != null ? options : StandardRuleContextOptions.build());
         }
         return defaultMessageInterpolator;
     }
@@ -397,14 +398,21 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
             return Set.of();
         }
 
+        /**
+         * The specification's default without XML: executable validation enabled, for an integrator
+         * that asks (the engine itself never does; explicit calls always validate).
+         */
         @Override
         public boolean isExecutableValidationEnabled() {
-            return false;
+            return true;
         }
 
+        /**
+         * The specification's default without XML: constructors and non-getter methods.
+         */
         @Override
         public Set<ExecutableType> getDefaultValidatedExecutableTypes() {
-            return Set.of();
+            return Set.of(ExecutableType.CONSTRUCTORS, ExecutableType.NON_GETTER_METHODS);
         }
 
         @Override

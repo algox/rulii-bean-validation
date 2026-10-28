@@ -103,6 +103,25 @@ public class ExprValidationTest {
     }
 
     @Test
+    public void exprOnAnInterfaceGetterReadsTheOverride() {
+        BeanValidator validator = validator();
+
+        Item item = new Item();
+        item.price = -1;
+        List<BeanRuleViolation> violations = validator.validate(item).getViolations();
+        assertEquals(List.of("price:price_expr"), report(violations));
+        assertEquals("price must be positive", violations.get(0).getMessage());
+        assertEquals(-1, violations.get(0).getInvalidValue());
+
+        item.price = 5;
+        assertTrue(validator.validate(item).isEmpty());
+
+        // Implicit grouping: the Default @Expr hosted on the interface belongs to the interface's group too.
+        item.price = -1;
+        assertEquals(List.of("price:price_expr"), report(validator.validate(item, Priced.class).getViolations()));
+    }
+
+    @Test
     public void propertyExprReportsAtThePropertyWithTheDeclaredCodeAndBundleMessage() {
         BeanValidator validator = validator();
         Trip trip = trip(LocalDate.of(2026, 1, 10), LocalDate.of(2026, 1, 1));
@@ -316,6 +335,21 @@ public class ExprValidationTest {
     // --- fixtures -----------------------------------------------------------------------------------
 
     public interface OnCreate {}
+
+    @ExprDefaults(lang = "jakarta-el")
+    public interface Priced {
+        @Expr(value = "${price > 0}", errorCode = "item.price", message = "price must be positive")
+        Integer getPrice();
+    }
+
+    public static class Item implements Priced {
+        Integer price;
+
+        @Override
+        public Integer getPrice() {
+            return price;
+        }
+    }
 
     @ExprDefaults(lang = "jakarta-el")
     @Expr(value = "${start != null && end != null}", errorCode = "trip.dates")

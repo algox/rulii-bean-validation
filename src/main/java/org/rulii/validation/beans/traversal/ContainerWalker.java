@@ -17,6 +17,7 @@
  */
 package org.rulii.validation.beans.traversal;
 
+import jakarta.validation.ConstraintDeclarationException;
 import jakarta.validation.ValidationException;
 import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.bind.Binding;
@@ -25,6 +26,7 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.validation.beans.BeanRuleViolations;
+import org.rulii.validation.beans.BeanValidationException;
 import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BindingPlan;
 import org.rulii.validation.beans.assembly.MaterializedRules;
@@ -149,7 +151,7 @@ public final class ContainerWalker {
 
             if (value == null) return;
 
-            if (cascading && node.isCascaded()) traversal.descend(ruleContext, value, path, node.getGroupConversions());
+            if (cascading && node.isCascaded()) descend(value, path, elementPath, node.getGroupConversions());
 
             for (ContainerElementDefinition child : node.getChildren()) {
                 walk(value, child, elementPath);
@@ -193,16 +195,45 @@ public final class ContainerWalker {
         if (descriptor == null) descriptor = legacyExtractor(value.getClass());
 
         if (descriptor == null) {
-            traversal.descend(ruleContext, value, path, conversions);
+            descend(value, path, path, conversions);
             return;
         }
 
         extract(descriptor, value, null, new Receiver(path, descriptor) {
             @Override
             void on(PropertyPath elementPath, String nodeName, boolean keyed, Object key, Object element) {
-                traversal.descend(ruleContext, element, elementPath, conversions);
+                descend(element, elementPath, nodeName != null ? elementPath.element(nodeName) : elementPath, conversions);
             }
         });
+    }
+
+    /**
+     * Descends into a cascaded value: into the value itself under its path, or, for an array of
+     * objects, into its elements one level deep, each under the array base subscripted by index
+     * ({@code stops[1].city}; inside a container, {@code routes[0].<list element>[1].city}), as the
+     * specification's legacy container support has it. Arrays are not a container the library
+     * extracts from (no element constraints), so this is the one place they are opened. A primitive
+     * array holds no bean and cascades nothing; so does an element that is itself an array.
+     *
+     * @param value the cascaded value.
+     * @param path the path of the value.
+     * @param arrayBase the path the elements of an array are subscripted under: the value's path, or
+     *                  its element node inside a container.
+     * @param conversions the group conversions of the cascade.
+     */
+    private void descend(Object value, PropertyPath path, PropertyPath arrayBase, GroupConversions conversions) {
+        if (value instanceof Object[] elements) {
+            for (int i = 0; i < elements.length; i++) {
+                Object element = elements[i];
+                if (element == null || element.getClass().isArray()) continue;
+                traversal.descend(ruleContext, element, arrayBase.inArray(i, value.getClass()), conversions);
+            }
+            return;
+        }
+
+        if (value.getClass().isArray()) return;
+
+        traversal.descend(ruleContext, value, path, conversions);
     }
 
     /**
@@ -224,7 +255,7 @@ public final class ContainerWalker {
         }
 
         if (candidates.size() > 1) {
-            throw new UnrulyException("@Valid on a [" + type.getName() + "] is ambiguous: the type has several extractable positions "
+            throw new ConstraintDeclarationException("@Valid on a [" + type.getName() + "] is ambiguous: the type has several extractable positions "
                     + candidates + ". Declare @Valid on the type argument to cascade into.");
         }
 
@@ -238,7 +269,7 @@ public final class ContainerWalker {
         } catch (ValidationException | UnrulyException e) {
             throw e;
         } catch (RuntimeException e) {
-            throw new UnrulyException("value extractor [" + descriptor.getExtractor().getClass().getName() + "] failed on ["
+            throw new BeanValidationException("value extractor [" + descriptor.getExtractor().getClass().getName() + "] failed on ["
                     + container.getClass().getName() + "]" + (node != null ? " at " + node.getSourceDeclaration().describe()
                     + " " + node.getName() : "") + ": " + e.getMessage(), e);
         }

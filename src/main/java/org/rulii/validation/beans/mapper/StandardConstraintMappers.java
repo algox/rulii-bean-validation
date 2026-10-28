@@ -46,6 +46,7 @@ import org.rulii.validation.rules.asssert.AssertFalseValidationRule;
 import org.rulii.validation.rules.asssert.AssertTrueValidationRule;
 import org.rulii.validation.rules.digits.DigitsValidationRule;
 import org.rulii.validation.rules.email.EmailValidationRule;
+import org.rulii.validation.rules.email.EmailValidationRuleBuilder;
 import org.rulii.validation.rules.future.FutureOrPresentValidationRule;
 import org.rulii.validation.rules.future.FutureValidationRule;
 import org.rulii.validation.rules.max.DecimalMaxValidationRule;
@@ -67,7 +68,6 @@ import org.rulii.validation.rules.size.SizeValidationRule;
 
 import java.lang.annotation.Annotation;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -99,14 +99,14 @@ public final class StandardConstraintMappers {
     private static final List<ConstraintMapper<?>> MAPPERS = List.of(
             of(AssertFalse.class,     AssertFalseValidationRule.SUPPORTED_TYPES,     (a, t) -> single(t.configure(Validators.assertFalse(t.value())))),
             of(AssertTrue.class,      AssertTrueValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.assertTrue(t.value())))),
-            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMax(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive())), Map.of("value", "max")),
-            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMin(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive())), Map.of("value", "min")),
-            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.digits(t.value(), a.integer(), a.fraction()))), Map.of("integer", "maxIntegerLength", "fraction", "maxFractionLength")),
-            of(Email.class,           EmailValidationRule.SUPPORTED_TYPES,           StandardConstraintMappers::email, Map.of("regexp", "pattern")),
+            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMax(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive()))),
+            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMin(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive()))),
+            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.digits(t.value(), a.integer(), a.fraction())))),
+            of(Email.class,           EmailValidationRule.SUPPORTED_TYPES,           StandardConstraintMappers::email),
             of(Future.class,          FutureValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.future(t.value())))),
             of(FutureOrPresent.class, FutureOrPresentValidationRule.SUPPORTED_TYPES, (a, t) -> single(t.configure(Validators.futureOrPresent(t.value())))),
-            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.max(t.value(), a.value()))), Map.of("value", "max")),
-            of(Min.class,             MinValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.min(t.value(), a.value()))), Map.of("value", "min")),
+            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.max(t.value(), a.value())))),
+            of(Min.class,             MinValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.min(t.value(), a.value())))),
             of(Negative.class,        NegativeValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.negative(t.value())))),
             of(NegativeOrZero.class,  NegativeOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.negativeOrZero(t.value())))),
             of(NotBlank.class,        NotBlankValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.notBlank(t.value()), true))),
@@ -115,7 +115,7 @@ public final class StandardConstraintMappers {
             of(Null.class,            NullValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.isNull(t.value()), true))),
             of(Past.class,            PastValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.past(t.value())))),
             of(PastOrPresent.class,   PastOrPresentValidationRule.SUPPORTED_TYPES,   (a, t) -> single(t.configure(Validators.pastOrPresent(t.value())))),
-            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.pattern(t.value(), a.regexp())).flags(flags(a.flags()))), Map.of("regexp", "pattern")),
+            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.pattern(t.value(), a.regexp())).flags(flags(a.flags())))),
             of(Positive.class,        PositiveValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.positive(t.value())))),
             of(PositiveOrZero.class,  PositiveOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.positiveOrZero(t.value())))),
             of(Size.class,            SizeValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.size(t.value(), a.min(), a.max()))))
@@ -149,15 +149,20 @@ public final class StandardConstraintMappers {
         return result;
     }
 
+    /**
+     * One rule for {@code @Email}: well-formed and, with a non-default {@code regexp}, matching it
+     * entirely; one violation either way, as the specification defines the constraint. The domain is
+     * judged by shape alone ({@code anyDomain}), as the reference implementation accepts addresses:
+     * no top-level domain registry, local and single-label hosts allowed.
+     */
     private static List<Rule> email(Email email, ConstraintTarget target) {
-        List<Rule> result = new ArrayList<>(2);
-        result.add(target.configure(Validators.email(target.value())).build());
+        EmailValidationRuleBuilder builder = target.configure(Validators.email(target.value())).anyDomain();
 
         if (!EMAIL_ANY_REGEXP.equals(email.regexp())) {
-            result.add(target.configure(Validators.pattern(target.value(), email.regexp())).flags(flags(email.flags())).build());
+            builder.pattern(email.regexp()).flags(flags(email.flags()));
         }
 
-        return result;
+        return single(builder);
     }
 
     static List<Rule> single(ValueValidationRuleBuilder<?, ?> builder) {
@@ -169,9 +174,4 @@ public final class StandardConstraintMappers {
         return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer);
     }
 
-    static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,
-                                                                 BiFunction<A, ConstraintTarget, List<Rule>> materializer,
-                                                                 Map<String, String> parameterNames) {
-        return new SimpleConstraintMapper<>(annotationType, supportedTypes, materializer, parameterNames);
-    }
 }

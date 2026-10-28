@@ -393,4 +393,55 @@ public class GroupsTest {
     public static class FromSequence {
         @Valid @ConvertGroup(from = Ordered.class, to = Advanced.class) Owner owner;
     }
+
+    // --- implicit grouping (specification 5.4.4) ------------------------------------------------------
+
+    @Test
+    public void defaultConstraintsHostedOnAnInterfaceBelongToTheInterfaceGroup() {
+        BeanValidator validator = BeanValidator.builder().build();
+        AuditedOrder order = new AuditedOrder();
+
+        // Default: everything; the interface as a group: only what the interface hosts in Default.
+        assertEquals(List.of("orderNumber:orderNumber_notNull", "createdBy:createdBy_notNull"), report(validator.validate(order)));
+        assertEquals(List.of("createdBy:createdBy_notNull"), report(validator.validate(order, Auditable.class)));
+
+        // Explicitly grouped constraints on the interface are not in the implicit group.
+        assertEquals(List.of("lastModifier:lastModifier_notNull"), report(validator.validate(order, Auditing.class)));
+        assertTrue(validator.validate(order, Unrelated.class).isEmpty());
+
+        // Through the metadata finder as well.
+        assertEquals(1, validator.getConstraintsForClass(AuditedOrder.class).getConstraintsForProperty("createdBy")
+                .findConstraints().unorderedAndMatchingGroups(Auditable.class).getConstraintDescriptors().size());
+        assertTrue(validator.getConstraintsForClass(AuditedOrder.class).getConstraintsForProperty("orderNumber")
+                .findConstraints().unorderedAndMatchingGroups(Auditable.class).getConstraintDescriptors().isEmpty());
+    }
+
+    public interface Auditing {
+    }
+
+    public interface Unrelated {
+    }
+
+    public interface Auditable {
+        @NotNull
+        String getCreatedBy();
+
+        @NotNull(groups = Auditing.class)
+        String getLastModifier();
+    }
+
+    public static class AuditedOrder implements Auditable {
+        @NotNull
+        String orderNumber;
+
+        @Override
+        public String getCreatedBy() {
+            return null;
+        }
+
+        @Override
+        public String getLastModifier() {
+            return null;
+        }
+    }
 }

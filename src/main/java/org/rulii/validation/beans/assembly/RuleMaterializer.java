@@ -220,7 +220,7 @@ public final class RuleMaterializer {
 
         for (ConstraintDefinition constraint : property.getConstraints()) {
             ValueDeclaration declaration = ((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration();
-            Function<?> value = bindingOnly || plan.isPrimary(declaration)
+            Function<?> value = bindingOnly || plan.readsBinding(declaration)
                     ? Validators.binding(binding)
                     : reading(binding, plan.getAccessor(declaration));
             Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), RulePlacement.property(name),
@@ -230,7 +230,7 @@ public final class RuleMaterializer {
 
         for (ExprDefinition expr : property.getExprRules()) {
             ValueDeclaration declaration = ((DeclarationConstraintSource) expr.getConstraintSource()).getDeclaration();
-            Function<?> value = bindingOnly || plan.isPrimary(declaration)
+            Function<?> value = bindingOnly || plan.readsBinding(declaration)
                     ? Validators.binding(binding)
                     : reading(binding, plan.getAccessor(declaration));
             Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), RulePlacement.property(name),
@@ -430,12 +430,11 @@ public final class RuleMaterializer {
             throw new ConstraintMapperException(type, site.location(), "no mapper is registered for the constraint and it declares no validators.");
         }
 
-        Map<String, String> parameterNames = mapper != null ? mapper.getParameterNames() : Map.of();
         ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(),
                 site.valueName(), site.type(), ruleName, errorCode(type), constraint.getSeverity(),
-                message(type, constraint.getMessage(), parameterNames, site.valueName()), constraint.getSource(), site.value(),
+                message(type, constraint.getMessage(), site.valueName()), constraint.getSource(), site.value(),
                 site.validationTarget(), description(constraint, composedBy, site), site.beanClass().getName(),
-                tags(CONSTRAINT_TAG, type, constraint.getGroups(), host != null));
+                tags(CONSTRAINT_TAG, type, constraint.getGroups(), host != null), attributes(constraint));
         // Inside a @ReportAsSingleViolation constraint, every rule (its own and its composing ones) is hosted by it.
         ConstraintDefinition ownHost = constraint.isReportAsSingleViolation() ? constraint : host;
         List<MaterializedRule> own = new ArrayList<>();
@@ -624,11 +623,17 @@ public final class RuleMaterializer {
         }
     }
 
+    /**
+     * The constraint's attributes as violation parameters: its own, less {@code message},
+     * {@code groups} and {@code payload}; an array attribute as a list, so that it renders as
+     * {@code [A, B]} in a message, as the reference implementation renders it.
+     */
     private static Map<String, Object> attributes(ConstraintDefinition constraint) {
         Map<String, Object> result = new LinkedHashMap<>(ConstraintDefinitionDescriptor.of(constraint).getAttributes());
         result.remove("message");
         result.remove("groups");
         result.remove("payload");
+        result.replaceAll((name, value) -> value instanceof Object[] array ? List.of(array) : value);
         return result;
     }
 
@@ -645,19 +650,17 @@ public final class RuleMaterializer {
      *
      * @param annotationType the constraint annotation type.
      * @param template the jakarta template.
-     * @param parameterNames attribute name to rule parameter name, where they differ.
      * @param valueName the parameter the rules report the value under.
      * @return the rulii template; null when the message is to be resolved from the error code.
      */
-    public static String message(Class<? extends Annotation> annotationType, String template, Map<String, String> parameterNames,
-                                 String valueName) {
+    public static String message(Class<? extends Annotation> annotationType, String template, String valueName) {
         Assert.notNull(annotationType, "annotationType cannot be null.");
         Assert.notNull(template, "template cannot be null.");
         if (MessageTemplates.isTemplateKey(template, MessageTemplates.attributeNames(annotationType))
                 && errorCode(annotationType).equals(MessageTemplates.templateKey(template))) {
             return null;
         }
-        return MessageTemplates.translate(template, parameterNames, valueName);
+        return MessageTemplates.translate(template, valueName);
     }
 
     private static String decapitalize(Class<? extends Annotation> annotationType) {

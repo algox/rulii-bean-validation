@@ -38,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class MessageTemplatesTest {
 
-    private static final Map<String, String> NONE = Map.of();
 
     public MessageTemplatesTest() {
         super();
@@ -47,66 +46,56 @@ public class MessageTemplatesTest {
     @Test
     public void attributePlaceholdersBecomeRuliiPlaceholders() {
         assertEquals("size must be between ${min} and ${max}",
-                MessageTemplates.translate("size must be between {min} and {max}", NONE, "name"));
-        assertEquals("${min}", MessageTemplates.translate("{min}", NONE, "name"));
-        assertEquals("${ min }".replace(" ", ""), MessageTemplates.translate("{ min }", NONE, "name"));
-    }
-
-    @Test
-    public void parameterNamesAreMapped() {
-        assertEquals("must match ${pattern}",
-                MessageTemplates.translate("must match {regexp}", Map.of("regexp", "pattern"), "name"));
-        assertEquals("${maxIntegerLength}.${maxFractionLength}",
-                MessageTemplates.translate("{integer}.{fraction}", Map.of("integer", "maxIntegerLength", "fraction", "maxFractionLength"), "name"));
-        // Unmapped attributes keep their name.
-        assertEquals("${other}", MessageTemplates.translate("{other}", Map.of("regexp", "pattern"), "name"));
+                MessageTemplates.translate("size must be between {min} and {max}", "name"));
+        assertEquals("${min}", MessageTemplates.translate("{min}", "name"));
+        assertEquals("${ min }".replace(" ", ""), MessageTemplates.translate("{ min }", "name"));
     }
 
     @Test
     public void validatedValueBecomesTheValueName() {
-        assertEquals("${email} is taken", MessageTemplates.translate("${validatedValue} is taken", NONE, "email"));
-        assertEquals("${email} is taken", MessageTemplates.translate("{validatedValue} is taken", NONE, "email"));
-        assertEquals("${name$field}", MessageTemplates.translate("${validatedValue}", NONE, "name$field"));
+        assertEquals("${email} is taken", MessageTemplates.translate("${validatedValue} is taken", "email"));
+        assertEquals("${email} is taken", MessageTemplates.translate("{validatedValue} is taken", "email"));
+        assertEquals("${name$field}", MessageTemplates.translate("${validatedValue}", "name$field"));
     }
 
     @Test
     public void bareIdentifierInDollarBracesIsAParameter() {
-        assertEquals("at least ${min}", MessageTemplates.translate("at least ${min}", NONE, "name"));
-        assertEquals("at least ${min}", MessageTemplates.translate("at least ${value}", Map.of("value", "min"), "name"));
+        assertEquals("at least ${min}", MessageTemplates.translate("at least ${min}", "name"));
+        assertEquals("at least ${value}", MessageTemplates.translate("at least ${value}", "name"), "attributes keep their own names");
     }
 
     @Test
     public void expressionsAreLeftVerbatim() {
         String el = "must be less than ${inclusive == true ? 'or equal to ' : ''}{value}";
-        assertEquals("must be less than ${inclusive == true ? 'or equal to ' : ''}${max}",
-                MessageTemplates.translate(el, Map.of("value", "max"), "name"));
-        assertEquals("${validatedValue.length() > 3}", MessageTemplates.translate("${validatedValue.length() > 3}", NONE, "name"));
+        assertEquals("must be less than ${inclusive == true ? 'or equal to ' : ''}${value}",
+                MessageTemplates.translate(el, "name"));
+        assertEquals("${validatedValue.length() > 3}", MessageTemplates.translate("${validatedValue.length() > 3}", "name"));
     }
 
     @Test
     public void literalTextIsQuotedForMessageFormat() {
-        assertEquals("don''t", MessageTemplates.translate("don't", NONE, "name"));
-        assertEquals("'{'literal'}' ${min}", MessageTemplates.translate("\\{literal\\} {min}", NONE, "name"));
-        assertEquals("$ and \\", MessageTemplates.translate("\\$ and \\\\", NONE, "name"));
-        assertEquals("trailing \\", MessageTemplates.translate("trailing \\", NONE, "name"));
-        assertEquals("$", MessageTemplates.translate("$", NONE, "name"));
-        assertEquals("$'{'open", MessageTemplates.translate("${open", NONE, "name"));
-        assertEquals("'{'open", MessageTemplates.translate("{open", NONE, "name"));
-        assertEquals("close'}'", MessageTemplates.translate("close}", NONE, "name"));
+        assertEquals("don''t", MessageTemplates.translate("don't", "name"));
+        assertEquals("'{'literal'}' ${min}", MessageTemplates.translate("\\{literal\\} {min}", "name"));
+        assertEquals("$ and \\", MessageTemplates.translate("\\$ and \\\\", "name"));
+        assertEquals("trailing \\", MessageTemplates.translate("trailing \\", "name"));
+        assertEquals("$", MessageTemplates.translate("$", "name"));
+        assertEquals("$'{'open", MessageTemplates.translate("${open", "name"));
+        assertEquals("'{'open", MessageTemplates.translate("{open", "name"));
+        assertEquals("close'}'", MessageTemplates.translate("close}", "name"));
     }
 
     @Test
     public void bundleKeysInsideAMessageAreQuotedVerbatim() {
-        assertEquals("${#my.key} and ${min}", MessageTemplates.translate("{my.key} and {min}", NONE, "name"));
-        assertEquals("'{'some text'}'", MessageTemplates.translate("{some text}", NONE, "name"));
-        assertEquals("'{'it''s'}'", MessageTemplates.translate("{it's}", NONE, "name"));
+        assertEquals("${#my.key} and ${min}", MessageTemplates.translate("{my.key} and {min}", "name"));
+        assertEquals("'{'some text'}'", MessageTemplates.translate("{some text}", "name"));
+        assertEquals("'{'it''s'}'", MessageTemplates.translate("{it's}", "name"));
     }
 
     @Test
     public void translatedTextFormatsWithMessageFormat() {
         // What rulii does after placeholder substitution: ${x} -> {0}, then MessageFormat. The key placeholder
         // is expanded by the render-time formatter before that; a second argument stands in for it here.
-        String translated = MessageTemplates.translate("don't exceed {max} \\{chars\\}: {my.key}", NONE, "name");
+        String translated = MessageTemplates.translate("don't exceed {max} \\{chars\\}: {my.key}", "name");
         String formatted = new MessageFormat(translated.replace("${max}", "{0}").replace("${#my.key}", "{1}")).format(new Object[]{5, "custom"});
         assertEquals("don't exceed 5 {chars}: custom", formatted);
     }
@@ -136,9 +125,8 @@ public class MessageTemplatesTest {
 
     @Test
     public void nullsAreRejected() {
-        assertThrows(IllegalArgumentException.class, () -> MessageTemplates.translate(null, NONE, "name"));
-        assertThrows(IllegalArgumentException.class, () -> MessageTemplates.translate("x", null, "name"));
-        assertThrows(IllegalArgumentException.class, () -> MessageTemplates.translate("x", NONE, " "));
+        assertThrows(IllegalArgumentException.class, () -> MessageTemplates.translate(null, "name"));
+        assertThrows(IllegalArgumentException.class, () -> MessageTemplates.translate("x", " "));
         assertThrows(IllegalArgumentException.class, () -> MessageTemplates.isTemplateKey(null, List.of()));
         assertThrows(IllegalArgumentException.class, () -> MessageTemplates.isTemplateKey("{x}", null));
         assertThrows(IllegalArgumentException.class, () -> MessageTemplates.templateKey(null));

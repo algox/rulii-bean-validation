@@ -39,6 +39,7 @@ import org.rulii.bind.Bindings;
 import org.rulii.bind.ScopedBindings;
 import org.rulii.context.RuleContext;
 import org.rulii.context.StandardRuleContextOptions;
+import org.rulii.model.UnrulyException;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.rule.Rule;
 import org.rulii.validation.RuleViolation;
@@ -94,6 +95,54 @@ public class BeanValidatorTest {
             result.add(violation.getPropertyPath() + ":" + ((RuleViolation) violation).getRuleName());
         }
         return result;
+    }
+
+    @Test
+    public void failuresInsideARunSurfaceAsValidationExceptionsOnTheSpecApi() throws Exception {
+        BeanValidator validator = validator();
+
+        // A getter that throws: no ValidationException in rulii's chain, so the chain is wrapped and kept.
+        BeanValidationException getter = assertThrows(BeanValidationException.class, () -> validator.validate(new Boom()));
+        assertInstanceOf(UnrulyException.class, getter.getCause());
+        Throwable cause = getter;
+        while (cause != null && !(cause instanceof IllegalStateException)) {
+            cause = cause.getCause();
+        }
+        assertEquals("boom", cause.getMessage());
+
+        // The same through the executable validator: the guard is shared.
+        assertThrows(BeanValidationException.class, () -> validator.forExecutables().validateParameters(new BoomService(),
+                BoomService.class.getMethod("take", Boom.class), new Object[] {new Boom()}));
+
+        // A value extractor that throws.
+        BeanValidator extracting = BeanValidator.builder().registry(REGISTRY).extractor(new BombExtractor()).build();
+        BeanValidationException extractor = assertThrows(BeanValidationException.class, () -> extracting.validate(new Bombed()));
+        assertTrue(extractor.getMessage().contains("value extractor"), extractor.getMessage());
+
+        // The rulii-native entry point keeps rulii's contract: the wrapper as thrown by the rule engine.
+        ScopedBindings bindings = Bindings.builder().scoped();
+        RuleContext context = RuleContext.builder().with(bindings).registry(REGISTRY).build();
+        assertThrows(UnrulyException.class, () -> validator.validateIn(context, new Boom()));
+    }
+
+    @Test
+    public void constraintsOnOverriddenGettersReadTheOverride() {
+        BeanValidator validator = validator();
+
+        // An abstract interface getter implemented by the class, backed by a field or computed.
+        assertEquals(List.of("name:name_notNull"), report(validator.validate(new Badge(null))));
+        assertTrue(validator.validate(new Badge("ok")).isEmpty());
+        assertEquals(List.of("name:name_notNull"), report(validator.validate(new Computed())));
+
+        // A superclass getter overridden by the subclass.
+        assertEquals(List.of("code:code_notNull"), report(validator.validate(new Tag(null))));
+        assertTrue(validator.validate(new Tag("ok")).isEmpty());
+
+        // Constraints on the interface getter and on the override accumulate: two rules, both reading the override.
+        assertEquals(List.of("name:name_notNull"), report(validator.validate(new Both(null))));
+        assertEquals(List.of("name:name_size"), report(validator.validate(new Both("x"))));
+        assertTrue(validator.validate(new Both("ok")).isEmpty());
+        assertEquals(2, validator.getConstraintsForClass(Both.class).getConstraintsForProperty("name").getConstraintDescriptors().size());
     }
 
     @Test
@@ -485,5 +534,91 @@ public class BeanValidatorTest {
         Integer count;
 
         Box<@NotBlank String> box;
+    }
+
+    public static class Boom {
+        @NotNull
+        public String getValue() {
+            throw new IllegalStateException("boom");
+        }
+    }
+
+    public static class BoomService {
+        public void take(@Valid Boom boom) {
+        }
+    }
+
+    public static class Bomb<V> {
+    }
+
+    public static class BombExtractor implements ValueExtractor<Bomb<@ExtractedValue ?>> {
+        @Override
+        public void extractValues(Bomb<?> originalValue, ValueReceiver receiver) {
+            throw new IllegalStateException("bomb");
+        }
+    }
+
+    public static class Bombed {
+        Bomb<@NotBlank String> bomb = new Bomb<>();
+    }
+
+    public interface Named {
+        @NotNull
+        String getName();
+    }
+
+    public static class Badge implements Named {
+        private final String name;
+
+        public Badge(String name) {
+            super();
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+
+    public static class Computed implements Named {
+        @Override
+        public String getName() {
+            return null;
+        }
+    }
+
+    public static class Both implements Named {
+        private final String name;
+
+        public Both(String name) {
+            super();
+            this.name = name;
+        }
+
+        @Override
+        @Size(min = 2)
+        public String getName() {
+            return name;
+        }
+    }
+
+    public abstract static class Labelled {
+        @NotNull
+        public abstract String getCode();
+    }
+
+    public static class Tag extends Labelled {
+        private final String code;
+
+        public Tag(String code) {
+            super();
+            this.code = code;
+        }
+
+        @Override
+        public String getCode() {
+            return code;
+        }
     }
 }
