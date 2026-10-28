@@ -33,7 +33,9 @@ import org.rulii.validation.beans.traversal.Traversal;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.UnaryOperator;
 
 /**
@@ -57,9 +59,13 @@ import java.util.function.UnaryOperator;
  */
 public final class RuliiConstraintValidatorContext implements ConstraintValidatorContext {
 
+    private static final String HIBERNATE_PACKAGE = "org.hibernate.validator.";
+
     private final RuleContext ruleContext;
     private final String defaultConstraintMessageTemplate;
     private final List<Violation> violations = new ArrayList<>();
+    private final Map<String, Object> messageParameters = new LinkedHashMap<>();
+    private final Map<String, Object> expressionVariables = new LinkedHashMap<>();
     private boolean defaultConstraintViolationDisabled;
 
     /**
@@ -105,12 +111,67 @@ public final class RuliiConstraintValidatorContext implements ConstraintValidato
      *
      * @throws ValidationException if neither is of that type.
      */
+    /**
+     * This context, or the rulii context it wraps, viewed as the given type. Hibernate Validator's
+     * context types are not supported; the failure says what to unwrap instead, since the message
+     * parameters and expression variables of that API are available here.
+     */
     @Override
     public <T> T unwrap(Class<T> type) {
         Assert.notNull(type, "type cannot be null.");
         if (type.isInstance(this)) return type.cast(this);
         if (type.isInstance(ruleContext)) return type.cast(ruleContext);
-        throw new ValidationException("cannot unwrap [" + getClass().getName() + "] to [" + type.getName() + "]");
+        String hint = type.getName().startsWith(HIBERNATE_PACKAGE)
+                ? "; a validator written for Hibernate Validator unwraps " + RuliiConstraintValidatorContext.class.getName()
+                + " instead, which offers addMessageParameter and addExpressionVariable" : "";
+        throw new ValidationException("cannot unwrap [" + getClass().getName() + "] to [" + type.getName() + "]" + hint);
+    }
+
+    /**
+     * Adds a parameter the message templates of this evaluation's violations may refer to as
+     * {@code {name}}, the default message included: a bound computed at run time, say. Named like a
+     * constraint attribute, it takes the attribute's place.
+     *
+     * @param name the parameter name.
+     * @param value the value; may be null.
+     * @return this context.
+     */
+    public RuliiConstraintValidatorContext addMessageParameter(String name, Object value) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        messageParameters.put(name, value);
+        return this;
+    }
+
+    /**
+     * Adds a variable the expressions ({@code ${...}}) of this evaluation's violation messages may
+     * refer to by name.
+     *
+     * @param name the variable name.
+     * @param value the value; may be null.
+     * @return this context.
+     */
+    public RuliiConstraintValidatorContext addExpressionVariable(String name, Object value) {
+        Assert.hasText(name, "name cannot be null/empty.");
+        expressionVariables.put(name, value);
+        return this;
+    }
+
+    /**
+     * The message parameters added so far, in order.
+     *
+     * @return the parameters by name; unmodifiable.
+     */
+    public Map<String, Object> getMessageParameters() {
+        return Collections.unmodifiableMap(messageParameters);
+    }
+
+    /**
+     * The expression variables added so far, in order.
+     *
+     * @return the variables by name; unmodifiable.
+     */
+    public Map<String, Object> getExpressionVariables() {
+        return Collections.unmodifiableMap(expressionVariables);
     }
 
     public RuleContext getRuleContext() {

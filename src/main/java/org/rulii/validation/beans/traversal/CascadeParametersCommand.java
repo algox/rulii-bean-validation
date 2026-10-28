@@ -69,6 +69,7 @@ final class CascadeParametersCommand implements RuleFlowCommand {
         if (elementRules) ValidateExecutableCommand.walkParameterElements(rules, values, base, walker);
 
         for (ParameterDefinition parameter : rules.getDefinition().getParameters()) {
+            if (traversal.halted(collector)) return;
             if (!parameter.isCascaded()) continue;
             walker.cascade(values[parameter.getIndex()], parameter.getGenericType(),
                     base.parameter(parameter.getName(), parameter.getIndex()), parameter.getGroupConversions());

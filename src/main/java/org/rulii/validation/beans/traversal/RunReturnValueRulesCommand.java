@@ -70,7 +70,9 @@ final class RunReturnValueRulesCommand implements RuleFlowCommand {
 
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
             rules.returnValueRuleSet(groups).run(ruleContext);
+            if (traversal.halted(collector)) return;
             if (redefined) ValidateExecutableCommand.walkReturnValueElements(returnValue, value, path, new ContainerWalker(ruleContext, rules, false));
+            if (traversal.halted(collector)) return;
             ValidateRules.runReturnValue(ruleContext, collector, traversal, rules, ValidateExecutableCommand.bean(ruleContext), value, groups);
         });
     }

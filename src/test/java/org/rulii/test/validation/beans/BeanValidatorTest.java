@@ -126,6 +126,22 @@ public class BeanValidatorTest {
     }
 
     @Test
+    public void failFastStopsAtTheFirstViolation() {
+        Order order = new Order();
+        order.code = "x";
+        order.customer = new Customer();
+
+        assertEquals(List.of("code:code_size", "customer.name:name_notBlank"), report(validator().validate(order)), "off by default");
+
+        BeanValidator failFast = BeanValidator.builder().registry(REGISTRY).failFast(true).build();
+        assertTrue(failFast.isFailFast());
+        assertEquals(List.of("code:code_size"), report(failFast.validate(order)), "the first violation only");
+
+        order.code = "ok";
+        assertEquals(List.of("customer.name:name_notBlank"), report(failFast.validate(order)), "cascades still run when nothing failed before");
+    }
+
+    @Test
     public void constraintsOnOverriddenGettersReadTheOverride() {
         BeanValidator validator = validator();
 

@@ -267,7 +267,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
      * its groups, the collector, then the inputs of the flow.
      */
     private void run(RuleFlow<?> flow, Object object, BeanRuleViolations violations, GroupPlan plan, Consumer<Bindings> inputs) {
-        BeanValidator.run(plan, violations, step -> {
+        BeanValidator.run(plan, violations, validator.isFailFast(), step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
             BeanValidator.bind(bindings, object, validator.traversal(step));
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());

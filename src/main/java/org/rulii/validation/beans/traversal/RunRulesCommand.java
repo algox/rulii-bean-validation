@@ -76,7 +76,9 @@ final class RunRulesCommand implements RuleFlowCommand {
                         ? rules.ruleSet(groups, rule -> traversal.isReachable(ruleContext, bean, rule))
                         : rules.ruleSet(groups);
                 ruleSet.run(ruleContext);
+                if (traversal.halted(collector)) return;
                 if (redefined) elementRules(ruleContext, collector, traversal, bean);
+                if (traversal.halted(collector)) return;
                 ValidateRules.runBean(ruleContext, collector, traversal, rules, bean, groups);
             });
         }
@@ -93,6 +95,7 @@ final class RunRulesCommand implements RuleFlowCommand {
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
             for (ContainerElementDefinition node : property.getContainerElements()) {
+                if (traversal.halted(collector)) return;
                 if (!traversal.isReachable(ruleContext, bean, property.getName(), node.getSourceDeclaration().getKind())) continue;
                 walker.walk(plan.read(ruleContext.getBindings(), bean, property, node.getSourceDeclaration()), node,
                         base.property(property.getName()));

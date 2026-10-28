@@ -75,6 +75,7 @@ public final class BeanValidatorBuilder {
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
     private ValueExtractorRegistry extractorRegistry;
     private boolean registerFlows;
+    private boolean failFast;
 
     BeanValidatorBuilder() {
         super();
@@ -94,6 +95,19 @@ public final class BeanValidatorBuilder {
      */
     public BeanValidatorBuilder registerFlows(boolean registerFlows) {
         this.registerFlows = registerFlows;
+        return this;
+    }
+
+    /**
+     * Whether validation stops at the first violation (fail-fast mode, the reference implementation's
+     * {@code failFast}): the result holds that one violation and nothing after it is validated. Off by
+     * default.
+     *
+     * @param failFast true to stop at the first violation.
+     * @return this builder.
+     */
+    public BeanValidatorBuilder failFast(boolean failFast) {
+        this.failFast = failFast;
         return this;
     }
 
@@ -269,6 +283,6 @@ public final class BeanValidatorBuilder {
                 parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider(),
                 messageInterpolator,
                 traversableResolver != null ? traversableResolver : TraversableResolvers.getDefault(),
-                registerFlows);
+                registerFlows, failFast);
     }
 }

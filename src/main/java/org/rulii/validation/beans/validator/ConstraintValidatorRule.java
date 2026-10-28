@@ -186,13 +186,13 @@ public final class ConstraintValidatorRule implements Rule {
         RuleViolations ruleViolations = ruleViolations(ruleContext);
 
         if (!context.isDefaultConstraintViolationDisabled()) {
-            ruleViolations.add(violation(value).build(ruleContext));
+            ruleViolations.add(violation(value, context).build(ruleContext));
         }
 
         for (RuliiConstraintValidatorContext.Violation custom : context.getViolations()) {
             // A template built at run time keeps its expressions as written unless the validator enabled them.
             String template = custom.expressionLanguageEnabled() ? custom.messageTemplate() : MessageExpressions.escape(custom.messageTemplate());
-            RuleViolationBuilder builder = violation(value)
+            RuleViolationBuilder builder = violation(value, context)
                     .errorMessage(RuleMaterializer.message(annotationType, template, valueName));
             ruleViolations.add(new CustomPathRuleViolation(builder.build(ruleContext), custom.pathExtension(), custom.messageTemplate(),
                     custom.expressionLanguageEnabled()));
@@ -215,7 +215,13 @@ public final class ConstraintValidatorRule implements Rule {
         throw new UnrulyException("RuleViolations not defined. Please define org.rulii.validation.RuleViolations binding and try again.");
     }
 
-    private RuleViolationBuilder violation(Object value) {
+    /**
+     * A violation builder with the parameters every violation of this evaluation reports: the validated
+     * value first, the constraint's attributes, then what the validator added to its context (a message
+     * parameter named like an attribute replaces it; expression variables are parameters too, so the
+     * expressions see them).
+     */
+    private RuleViolationBuilder violation(Object value, RuliiConstraintValidatorContext context) {
         RuleViolationBuilder builder = RuleViolation.builder().with(name, errorCode)
                 .severity(severity)
                 .errorMessage(errorMessage)
@@ -224,6 +230,14 @@ public final class ConstraintValidatorRule implements Rule {
 
         for (Map.Entry<String, Object> parameter : parameters.entrySet()) {
             builder.param(parameter.getKey(), parameter.getValue());
+        }
+
+        for (Map.Entry<String, Object> parameter : context.getMessageParameters().entrySet()) {
+            builder.param(parameter.getKey(), parameter.getValue());
+        }
+
+        for (Map.Entry<String, Object> variable : context.getExpressionVariables().entrySet()) {
+            builder.param(variable.getKey(), variable.getValue());
         }
 
         return builder;

@@ -133,6 +133,8 @@ public final class ContainerWalker {
     }
 
     private void element(ContainerElementDefinition node, PropertyPath path, String nodeName, boolean keyed, Object key, Object value) {
+        if (traversal.halted(collector)) return;
+
         PropertyPath elementPath = nodeName != null ? path.element(nodeName) : path;
         String binding = BindingPlan.elementBinding(node);
         NamedScope scope = ruleContext.getBindings().addScope();
@@ -225,6 +227,7 @@ public final class ContainerWalker {
         if (value instanceof Object[] elements) {
             for (int i = 0; i < elements.length; i++) {
                 Object element = elements[i];
+                if (traversal.halted(collector)) return;
                 if (element == null || element.getClass().isArray()) continue;
                 traversal.descend(ruleContext, element, arrayBase.inArray(i, value.getClass()), conversions);
             }

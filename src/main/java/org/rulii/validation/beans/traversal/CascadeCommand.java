@@ -70,6 +70,7 @@ final class CascadeCommand implements RuleFlowCommand {
         ContainerWalker plain = null;
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
+            if (traversal.halted(collector)) return;
             if (property.getContainerElements().isEmpty() && !property.isCascaded()) continue;
 
             PropertyPath path = base.property(property.getName());
@@ -77,6 +78,7 @@ final class CascadeCommand implements RuleFlowCommand {
             String name = property.getName();
 
             for (ContainerElementDefinition node : property.getContainerElements()) {
+                if (traversal.halted(collector)) return;
                 ValueDeclaration.Kind kind = node.getSourceDeclaration().getKind();
                 if (!traversal.isReachable(ruleContext, bean, name, kind)) continue;
                 // Element constraints of a reachable property run; element cascades need the property cascadable too.
@@ -97,6 +99,7 @@ final class CascadeCommand implements RuleFlowCommand {
             }
 
             for (ValueDeclaration declaration : property.getCascadedDeclarations()) {
+                if (traversal.halted(collector)) return;
                 if (!traversal.isReachable(ruleContext, bean, name, declaration.getKind())
                         || !traversal.isCascadable(ruleContext, bean, name, declaration.getKind())) {
                     continue;

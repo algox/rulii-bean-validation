@@ -147,6 +147,8 @@ public class ExecutableValidationTest {
         BeanValidationResult<OrderService> violations = (BeanValidationResult<OrderService>) validator.validateParameters(service, place, new Object[] {null, 0});
 
         assertEquals(List.of("place.p0:p0_notNull", "place.p1:p1_min"), report(violations));
+        assertEquals(List.of("place.p0:p0_notNull"), report(BeanValidator.builder().parameterNameProvider(POSITIONAL).failFast(true).build()
+                .forExecutables().validateParameters(service, place, new Object[] {null, 0})), "fail-fast: the first violation only");
         ConstraintViolation<OrderService> first = violations.iterator().next();
         assertSame(service, first.getRootBean());
         assertSame(service, first.getLeafBean());

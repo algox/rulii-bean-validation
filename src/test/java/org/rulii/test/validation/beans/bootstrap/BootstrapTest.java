@@ -274,6 +274,20 @@ public class BootstrapTest {
     }
 
     @Test
+    public void failFastComesFromTheConfigurationOrEitherProperty() {
+        assertFalse(((BeanValidator) Validation.buildDefaultValidatorFactory().getValidator()).isFailFast(), "off by default");
+        assertTrue(((BeanValidator) Validation.byProvider(RuliiValidationProvider.class).configure().failFast(true)
+                .buildValidatorFactory().getValidator()).isFailFast());
+        assertTrue(((BeanValidator) Validation.byDefaultProvider().configure()
+                .addProperty(RuliiConfiguration.FAIL_FAST_PROPERTY, "true").buildValidatorFactory().getValidator()).isFailFast());
+        assertTrue(((BeanValidator) Validation.byDefaultProvider().configure()
+                .addProperty(RuliiConfiguration.HIBERNATE_FAIL_FAST_PROPERTY, "true").buildValidatorFactory().getValidator()).isFailFast(),
+                "the reference implementation's property is honoured");
+        assertFalse(((BeanValidator) Validation.byDefaultProvider().configure()
+                .addProperty(RuliiConfiguration.HIBERNATE_FAIL_FAST_PROPERTY, "no").buildValidatorFactory().getValidator()).isFailFast());
+    }
+
+    @Test
     public void serviceProvidedExtractorsAreDiscoveredByTheBootstrap() {
         ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
         Validator validator = factory.getValidator();

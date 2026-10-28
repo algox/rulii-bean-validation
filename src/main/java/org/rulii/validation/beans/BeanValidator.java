@@ -98,11 +98,12 @@ public final class BeanValidator implements Validator {
     private final RuleFlowAssembler assembler;
     private final ExecutableBeanValidator executableValidator;
     private final boolean registerFlows;
+    private final boolean failFast;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     BeanValidator(RuleRegistry registry, ValueExtractorRegistry extractors, ConstraintMapperRegistry mappers,
                   RuleContextOptions options, ParameterNameProvider parameterNameProvider, MessageInterpolator messageInterpolator,
-                  TraversableResolver traversableResolver, boolean registerFlows) {
+                  TraversableResolver traversableResolver, boolean registerFlows, boolean failFast) {
         super();
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
@@ -111,13 +112,14 @@ public final class BeanValidator implements Validator {
         Assert.isTrue(!registerFlows || registry instanceof MutableRuleRegistry, "registerFlows needs a MutableRuleRegistry.");
         this.registry = registry;
         this.registerFlows = registerFlows;
+        this.failFast = failFast;
         this.traversableResolver = traversableResolver;
         this.messageInterpolator = messageInterpolator;
         // Our own interpolator renders exactly what the rules render; consulting it would only render twice.
         this.consultedInterpolator = messageInterpolator instanceof RuliiMessageInterpolator ? null : messageInterpolator;
         this.options = BeanValidationOptions.wrap(options != null ? options : StandardRuleContextOptions.build(), mappers);
         this.loader = new BeanDefinitionLoader(extractors, mappers, parameterNameProvider);
-        this.materializer = new RuleMaterializer(mappers);
+        this.materializer = new RuleMaterializer(mappers, failFast);
         this.assembler = new RuleFlowAssembler(this::getRuleFlow, extractors);
         this.executableValidator = new ExecutableBeanValidator(this);
     }
@@ -149,7 +151,7 @@ public final class BeanValidator implements Validator {
         GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = violations(object, object.getClass(), null, null);
 
-        run(plan, violations, step -> {
+        run(plan, violations, failFast, step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
             bind(bindings, object, traversal(step));
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
@@ -175,12 +177,13 @@ public final class BeanValidator implements Validator {
      * rethrown as itself, anything else as a {@link BeanValidationException} keeping the rulii chain as
      * its cause. The rulii-native entry points ({@link #validateIn}, the flows) keep rulii's wrapping.
      */
-    static void run(GroupPlan plan, BeanRuleViolations violations, Consumer<RequestedGroups> step) {
+    static void run(GroupPlan plan, BeanRuleViolations violations, boolean failFast, Consumer<RequestedGroups> step) {
         try {
             for (GroupPlan.Pass pass : plan.getPasses()) {
                 for (RequestedGroups groups : pass.steps()) {
                     int before = violations.size();
                     step.accept(groups);
+                    if (failFast && violations.size() > 0) return;
                     if (pass.sequence() && violations.size() > before) break;
                 }
             }
@@ -227,7 +230,7 @@ public final class BeanValidator implements Validator {
         BeanRuleViolations violations = violations(object, object.getClass(), null, null);
         List<Class<?>> sequence = rules.getDefinition().getDefaultGroupSequence();
 
-        run(plan, violations, step -> {
+        run(plan, violations, failFast, step -> {
             Traversal traversal = traversal(step);
             ScopedBindings bindings = Bindings.builder().scoped();
             bind(bindings, object, traversal);
@@ -281,7 +284,7 @@ public final class BeanValidator implements Validator {
         BeanRuleViolations violations = violations(null, beanType, null, null);
         List<Class<?>> sequence = entry.rules.getDefinition().getDefaultGroupSequence();
 
-        run(plan, violations, step -> {
+        run(plan, violations, failFast, step -> {
             Traversal traversal = traversal(step);
             ScopedBindings bindings = Bindings.builder().scoped();
             bind(bindings, null, traversal);
@@ -595,8 +598,18 @@ public final class BeanValidator implements Validator {
         });
     }
 
+    /**
+     * Whether a call stops at its first violation (fail-fast mode): the result then holds that one
+     * violation and nothing after it was validated. Off unless the builder or the bootstrap turned it on.
+     *
+     * @return true for fail-fast.
+     */
+    public boolean isFailFast() {
+        return failFast;
+    }
+
     Traversal traversal(RequestedGroups groups) {
-        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver);
+        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver, failFast);
     }
 
     /**

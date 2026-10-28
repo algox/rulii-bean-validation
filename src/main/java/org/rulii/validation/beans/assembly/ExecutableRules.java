@@ -20,6 +20,8 @@ package org.rulii.validation.beans.assembly;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.rule.Rule;
 import org.rulii.ruleset.RuleSet;
+import org.rulii.ruleset.RuleSetBuilder;
+import org.rulii.ruleset.RuleSetConditions;
 import org.rulii.validation.beans.group.RequestedGroups;
 import org.rulii.validation.beans.mapper.ConstraintMapperException;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
@@ -74,13 +76,16 @@ public final class ExecutableRules implements MaterializedRules {
     private final Map<String, MaterializedRule> byName;
     private final Map<ContainerElementDefinition, ElementRules> byNode;
     private final String name;
+    private final boolean failFast;
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> parameterRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> returnValueRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
 
     ExecutableRules(ExecutableDefinition definition, ExecutableBindingPlan bindingPlan, List<MaterializedRule> parameterRules,
-                    List<MaterializedRule> crossParameterRules, List<MaterializedRule> returnValueRules, List<ElementRules> elementRules) {
+                    List<MaterializedRule> crossParameterRules, List<MaterializedRule> returnValueRules, List<ElementRules> elementRules,
+                    boolean failFast) {
         super();
+        this.failFast = failFast;
         Assert.notNull(definition, "definition cannot be null.");
         Assert.notNull(bindingPlan, "bindingPlan cannot be null.");
         this.definition = definition;
@@ -242,7 +247,7 @@ public final class ExecutableRules implements MaterializedRules {
                 if (rule.isActive(groups)) rules.add(rule.getRule());
             }
 
-            return RuleSet.builder().with(name + "_parameters")
+            return builder(name + "_parameters")
                     .description("Rules of the arguments of " + definition.getExecutable() + " for groups " + groups.getGroupNames())
                     .category(getBeanClass().getName())
                     .tags(groups.getGroupNames())
@@ -265,7 +270,7 @@ public final class ExecutableRules implements MaterializedRules {
                 if (rule.isActive(groups)) rules.add(rule.getRule());
             }
 
-            return RuleSet.builder().with(name + "_returnValue")
+            return builder(name + "_returnValue")
                     .description("Rules of the return value of " + definition.getExecutable() + " for groups " + groups.getGroupNames())
                     .category(getBeanClass().getName())
                     .tags(groups.getGroupNames())
@@ -287,12 +292,21 @@ public final class ExecutableRules implements MaterializedRules {
                 }
             }
 
-            return RuleSet.builder().with(name + "_" + RuleMaterializer.segment(node))
+            return builder(name + "_" + RuleMaterializer.segment(node))
                     .description("Rules of " + node.getSourceDeclaration().describe() + " " + node.getName() + " for groups " + groups.getGroupNames())
                     .category(getBeanClass().getName())
                     .tags(groups.getGroupNames())
                     .rules(rules).build();
         });
+    }
+
+    /**
+     * A rule set builder named as given; in fail-fast mode the set stops at its first failing rule.
+     */
+    private RuleSetBuilder builder(String ruleSetName) {
+        RuleSetBuilder result = RuleSet.builder().with(ruleSetName);
+        if (failFast) result.stopCondition(RuleSetConditions.stopWhenOneFails());
+        return result;
     }
 
     @Override

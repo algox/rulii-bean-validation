@@ -71,7 +71,9 @@ final class RunParameterRulesCommand implements RuleFlowCommand {
 
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
             rules.parameterRuleSet(groups).run(ruleContext);
+            if (traversal.halted(collector)) return;
             if (redefined) ValidateExecutableCommand.walkParameterElements(rules, values, base, new ContainerWalker(ruleContext, rules, false));
+            if (traversal.halted(collector)) return;
             ValidateRules.runParameters(ruleContext, collector, traversal, rules, ValidateExecutableCommand.bean(ruleContext), groups);
         });
     }

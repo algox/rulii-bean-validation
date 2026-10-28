@@ -91,6 +91,7 @@ public final class Traversal {
     private final ValueExtractorRegistry extractors;
     private final RuleRegistry registry;
     private final TraversableResolver resolver;
+    private final boolean failFast;
     private final Map<Object, Set<RequestedGroups>> validated = new IdentityHashMap<>();
     private final Map<Object, Map<String, Boolean>> resolutions = new IdentityHashMap<>();
     private final Set<Class<?>> currentGroups = new CurrentGroups();
@@ -130,6 +131,23 @@ public final class Traversal {
      */
     public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
                      RuleRegistry registry, TraversableResolver resolver) {
+        this(groups, flows, extractors, registry, resolver, false);
+    }
+
+    /**
+     * Creates the traversal of a call, fail-fast or not.
+     *
+     * @param groups the groups being processed.
+     * @param flows the flow of a bean class, by runtime type.
+     * @param extractors the value extractors of the call.
+     * @param registry the registry {@code @Validate} names resolve through; null to use the context's.
+     * @param resolver the traversable resolver; null, or the traverse-all one, consults nothing.
+     * @param failFast whether the call stops at its first violation: every loop of the traversal
+     *                 returns once the collector holds one (the rule sets stop on their own, built with
+     *                 a stop condition).
+     */
+    public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
+                     RuleRegistry registry, TraversableResolver resolver, boolean failFast) {
         super();
         Assert.notNull(groups, "groups cannot be null.");
         Assert.notNull(flows, "flows cannot be null.");
@@ -139,6 +157,26 @@ public final class Traversal {
         this.extractors = extractors;
         this.registry = registry;
         this.resolver = TraversableResolvers.consults(resolver) ? resolver : null;
+        this.failFast = failFast;
+    }
+
+    /**
+     * Whether the call stops at its first violation.
+     *
+     * @return true for a fail-fast call.
+     */
+    public boolean isFailFast() {
+        return failFast;
+    }
+
+    /**
+     * Whether a fail-fast call has reported its violation: the loops of the traversal return when it has.
+     *
+     * @param collector the collector of the call.
+     * @return true if nothing more is to be validated.
+     */
+    public boolean halted(BeanRuleViolations collector) {
+        return failFast && collector != null && collector.size() > 0;
     }
 
     /**
@@ -399,6 +437,7 @@ public final class Traversal {
         RequestedGroups rest = current.without(Default.class);
 
         if (!rest.isEmpty()) inGroups(rest, () -> body.accept(rest));
+        if (halted(collector)) return;
 
         for (Class<?> member : defaultSequence) {
             RequestedGroups step = RequestedGroups.of(member);
@@ -438,7 +477,7 @@ public final class Traversal {
         Assert.notNull(path, "path cannot be null.");
         Assert.notNull(conversions, "conversions cannot be null.");
 
-        if (value == null) return;
+        if (value == null || halted(collector(ruleContext))) return;
 
         if (conversions.isEmpty()) {
             descendIn(ruleContext, value, path);

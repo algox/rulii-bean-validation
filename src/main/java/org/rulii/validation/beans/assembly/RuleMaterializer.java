@@ -135,6 +135,7 @@ public final class RuleMaterializer {
     private static final String EXPR_VALUE = "value";
 
     private final ConstraintMapperRegistry mappers;
+    private final boolean failFast;
 
     /**
      * Creates the materializer.
@@ -142,9 +143,20 @@ public final class RuleMaterializer {
      * @param mappers the constraint mappers.
      */
     public RuleMaterializer(ConstraintMapperRegistry mappers) {
+        this(mappers, false);
+    }
+
+    /**
+     * Creates the materializer, fail-fast or not.
+     *
+     * @param mappers the constraint mappers.
+     * @param failFast whether the rule sets it builds stop at their first failing rule.
+     */
+    public RuleMaterializer(ConstraintMapperRegistry mappers, boolean failFast) {
         super();
         Assert.notNull(mappers, "mappers cannot be null.");
         this.mappers = mappers;
+        this.failFast = failFast;
     }
 
     public ConstraintMapperRegistry getConstraintMapperRegistry() {
@@ -188,7 +200,7 @@ public final class RuleMaterializer {
             expr(expr, site, unique(className + EXPR_SUFFIX, names), true, classRules);
         }
 
-        return new BeanRules(bean, plan, propertyRules, elementRules, classRules);
+        return new BeanRules(bean, plan, propertyRules, elementRules, classRules, failFast);
     }
 
     /**
@@ -209,7 +221,7 @@ public final class RuleMaterializer {
 
         property(rules.getBindingPlan(), property, true, new HashSet<>(), propertyRules, elementRules);
 
-        return new BeanRules(rules.getDefinition(), rules.getBindingPlan(), propertyRules, elementRules, List.of());
+        return new BeanRules(rules.getDefinition(), rules.getBindingPlan(), propertyRules, elementRules, List.of(), failFast);
     }
 
     private void property(BindingPlan plan, PropertyDefinition property, boolean bindingOnly, Set<String> names,
@@ -340,7 +352,7 @@ public final class RuleMaterializer {
             }
         }
 
-        return new ExecutableRules(executable, plan, parameterRules, crossParameterRules, returnValueRules, elementRules);
+        return new ExecutableRules(executable, plan, parameterRules, crossParameterRules, returnValueRules, elementRules, failFast);
     }
 
     /**

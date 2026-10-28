@@ -72,6 +72,7 @@ final class ValidateRules {
         PropertyPath base = collector.getCurrentPath();
 
         for (PropertyDefinition property : rules.getDefinition().getProperties()) {
+            if (traversal.halted(collector)) return;
             if (!anyActive(property.getValidateRules(), groups)) continue;
             if (!traversal.isReachable(ruleContext, bean, property.getName(), property.getPropertySource().getPrimary().getKind())) continue;
 
@@ -82,7 +83,7 @@ final class ValidateRules {
             }
         }
 
-        if (!anyActive(rules.getDefinition().getValidateRules(), groups)) return;
+        if (traversal.halted(collector) || !anyActive(rules.getDefinition().getValidateRules(), groups)) return;
 
         try (BeanRuleViolations.Frame ignored = collector.enter(base.bean(), bean)) {
             run(ruleContext, traversal, rules.getBeanClass(), rules.getDefinition().getValidateRules(), groups);
@@ -156,10 +157,13 @@ final class ValidateRules {
 
     private static void run(RuleContext ruleContext, Traversal traversal, Class<?> beanClass, List<ValidateDefinition> definitions,
                             RequestedGroups groups) {
+        BeanRuleViolations collector = Traversal.collector(ruleContext);
+
         for (ValidateDefinition definition : definitions) {
             if (!groups.activates(definition.getGroups())) continue;
 
             for (String name : definition.getRuleNames()) {
+                if (traversal.halted(collector)) return;
                 resolve(ruleContext, traversal, beanClass, definition, name).run(ruleContext);
             }
         }

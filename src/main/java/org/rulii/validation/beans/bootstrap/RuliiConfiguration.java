@@ -69,6 +69,12 @@ import java.util.Set;
  */
 public final class RuliiConfiguration implements Configuration<RuliiConfiguration>, ConfigurationState {
 
+    /** Property switching fail-fast mode on when set to {@code true}: {@value}. */
+    public static final String FAIL_FAST_PROPERTY = "rulii.validation.fail_fast";
+
+    /** The reference implementation's fail-fast property, honoured the same way: {@value}. */
+    public static final String HIBERNATE_FAIL_FAST_PROPERTY = "hibernate.validator.fail_fast";
+
     private final RuliiValidationProvider provider;
     private final BootstrapState state;
     private MessageInterpolator messageInterpolator;
@@ -80,6 +86,7 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     private final Map<String, String> properties = new LinkedHashMap<>();
     private RuleRegistry registry;
     private boolean registerFlows;
+    private boolean failFast;
     private final List<ConstraintMapper<?>> mappers = new ArrayList<>();
     private RuleContextOptions options;
     private MessageInterpolator defaultMessageInterpolator;
@@ -123,6 +130,28 @@ public final class RuliiConfiguration implements Configuration<RuliiConfiguratio
     public RuliiConfiguration registerFlows(boolean registerFlows) {
         this.registerFlows = registerFlows;
         return this;
+    }
+
+    /**
+     * Whether validation stops at the first violation (fail-fast mode). Also switched on by the property
+     * {@value #FAIL_FAST_PROPERTY}, or the reference implementation's {@value #HIBERNATE_FAIL_FAST_PROPERTY},
+     * set to {@code true} through {@link #addProperty}, so a property-driven setup migrates unchanged.
+     *
+     * @param failFast true to stop at the first violation.
+     * @return this configuration.
+     */
+    public RuliiConfiguration failFast(boolean failFast) {
+        this.failFast = failFast;
+        return this;
+    }
+
+    /**
+     * Whether fail-fast mode was requested, through {@link #failFast} or either property.
+     *
+     * @return true for fail-fast.
+     */
+    public boolean isFailFast() {
+        return failFast || Boolean.parseBoolean(properties.get(FAIL_FAST_PROPERTY)) || Boolean.parseBoolean(properties.get(HIBERNATE_FAIL_FAST_PROPERTY));
     }
 
     /**
