@@ -15,8 +15,7 @@ which.
 - [7. Messages](#7-messages)
 - [8. Exceptions](#8-exceptions)
 - [9. What the specification says and this library does not](#what-the-specification-says-and-this-library-does-not)
-- [10. Performance](#10-performance)
-- [11. What you gain](#11-what-you-gain)
+- [10. What you gain](#10-what-you-gain)
 
 ---
 
@@ -257,27 +256,7 @@ outcome for an ordinary bean, and most match Hibernate Validator's own behaviour
 
 ---
 
-## 10. Performance
-
-Validation runs on the rulii engine: every object opens a scope, binds its properties and runs a rule set, and
-every rule resolves its parameters through the engine. That buys the trace, the listing and the composability,
-and it costs more per call than Hibernate Validator's direct dispatch.
-
-Measured on a seven-object graph (an order with a customer, an address and five items, twenty constraints) on
-JDK 17, single-threaded, median of seven rounds:
-
-| | valid object | nine violations |
-|---|---|---|
-| Hibernate Validator 9.0 | 5 µs | 8 µs |
-| rulii-bean-validation | 97 µs | 121 µs |
-
-Metadata is read once per class and cached, so the first validation of a class costs more and the numbers above
-are steady state. For a request-scoped validation this is not where the time goes; for a hot loop over tens of
-thousands of objects per second, measure before you migrate.
-
----
-
-## 11. What you gain
+## 10. What you gain
 
 The reason to migrate is on the other side of the ledger, and the [README](README.md) covers it: constraints
 that are named, described and tagged rules you can list and trace; cross-field invariants in one `@Expr` line;
