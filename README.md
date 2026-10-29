@@ -441,8 +441,7 @@ same options, the latter also the specification's `clockProvider`:
 ## What is Different by Design
 
 - This is not a certified implementation of the specification and does not aim to pass its TCK. The
-  [gap analysis](MIGRATION.md#what-the-specification-says-and-this-library-does-not) in the migration guide lists
-  every known difference.
+  [gap analysis](GAP-ANALYSIS.md) lists every known difference, chapter by chapter.
 - XML configuration (`META-INF/validation.xml`, constraint mapping files) is never read.
 - Method validation is a call you make through `forExecutables()`; interception (`@ValidateOnExecution`, proxies)
   stays with your framework, as it does with every provider.
@@ -456,6 +455,7 @@ same options, the latter also the specification's `clockProvider`:
 
 - [rulii core](https://github.com/algox/rulii): rules, rule sets, rule flows, the registry, scripting, tracing.
 - [Migration guide](MIGRATION.md): moving from Hibernate Validator.
+- [Gap analysis](GAP-ANALYSIS.md): the specification, chapter by chapter, and where this library deviates.
 - Javadoc on every public type; the Jakarta Validation [specification](https://jakarta.ee/specifications/bean-validation/3.1/)
   for the semantics this library follows.
 
