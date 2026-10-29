@@ -63,6 +63,13 @@ Validator validator = Validation.byProvider(RuliiValidationProvider.class)
         .getValidator();
 ```
 
+**Spring Boot.** With [rulii-spring](https://github.com/algox/rulii-spring) on the classpath there is nothing to select:
+its auto-configuration defines the application's `Validator` bean pinned to this provider, before Boot's own validation
+auto-configuration runs, so Hibernate Validator is never bootstrapped even if it is still present. The same wiring gives
+`` the Spring rule registry, so a rule bean is attachable by its bean name. Excluding `hibernate-validator`
+is still worth doing, for the one code path rulii-spring cannot reach: a library that calls
+`Validation.buildDefaultValidatorFactory()` itself.
+
 The `javax.validation` namespace is not supported. A project still on it migrates to `jakarta.validation` first.
 
 ---

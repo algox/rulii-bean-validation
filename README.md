@@ -193,6 +193,10 @@ RuleViolations violations = validator.validateIn(context, order);
 `validateProperty`, `validateValue` and `forExecutables()` for method and constructor validation are there too,
 with the semantics the specification gives them.
 
+**In Spring Boot.** Add [rulii-spring](https://github.com/algox/rulii-spring) and the application's `Validator` bean is
+this library's, wired into the Spring rulii context: `` names are bean names, constraint validators are Spring
+beans, and the provider is selected even with Hibernate Validator still on the classpath.
+
 ---
 
 ## Attaching rulii Rules with `@Validate`
