@@ -21,6 +21,7 @@ import jakarta.validation.constraintvalidation.ValidationTarget;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.SourceDefinition;
 import org.rulii.model.function.Function;
+import org.rulii.rule.Rule;
 import org.rulii.util.RuleUtils;
 import org.rulii.validation.Severity;
 import org.rulii.validation.ValueValidationRuleBuilder;
@@ -53,7 +54,8 @@ import java.util.Map;
  * parameters of a method or constructor as a whole, an {@code Object[]}.</p>
  *
  * <p>The target also carries what the rules say about themselves to tools that list them: a
- * {@link #getDescription() description} naming the declaration and where it is, the
+ * {@link #getDescription() description} naming the declaration and where it is (which {@link #build} appends to
+ * what the rule checks), the
  * {@link #getCategory() category} (the bean class) and the {@link #getTags() tags} (the kind of
  * declaration, the annotation, the groups). {@code configure} sets them on every rule it configures;
  * a target created without them leaves the rules as the builders make them.</p>
@@ -243,6 +245,47 @@ public final class ConstraintTarget {
      */
     public <T extends ValueValidationRuleBuilder<T, ?>> T configure(T builder) {
         return configure(builder, false);
+    }
+
+    /**
+     * Configures the builder of a value rule, describes the rule as what it checks and where it is declared
+     * ({@code code size must be between 3 and 20 (@Size on Order.code)}) and builds it. The rule skips null values.
+     *
+     * @param builder the builder, with its own attributes already set.
+     * @param <T> the builder type.
+     * @return the rule, as a list of one for a mapper.
+     */
+    public <T extends ValueValidationRuleBuilder<T, ?>> List<Rule> single(T builder) {
+        return single(builder, false);
+    }
+
+    /**
+     * Configures the builder of a value rule, describes the rule as what it checks and where it is declared,
+     * and builds it.
+     *
+     * @param builder the builder, with its own attributes already set.
+     * @param failOnNull whether the rule is to evaluate null values (a presence rule) rather than skip them.
+     * @param <T> the builder type.
+     * @return the rule, as a list of one for a mapper.
+     */
+    public <T extends ValueValidationRuleBuilder<T, ?>> List<Rule> single(T builder, boolean failOnNull) {
+        return List.of(build(builder, failOnNull));
+    }
+
+    /**
+     * Configures the builder of a value rule, describes the rule as what it checks ({@link ValueValidationRuleBuilder#describe()})
+     * followed, when the target carries one, by where it is declared in parentheses, and builds it.
+     *
+     * @param builder the builder, with its own attributes already set.
+     * @param failOnNull whether the rule is to evaluate null values (a presence rule) rather than skip them.
+     * @param <T> the builder type.
+     * @return the rule.
+     */
+    public <T extends ValueValidationRuleBuilder<T, ?>> Rule build(T builder, boolean failOnNull) {
+        configure(builder, failOnNull);
+        String what = builder.describe();
+        builder.description(description != null ? what + " (" + description + ")" : what);
+        return builder.build();
     }
 
     /**

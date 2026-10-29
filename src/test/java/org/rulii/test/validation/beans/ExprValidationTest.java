@@ -237,7 +237,7 @@ public class ExprValidationTest {
         assertFalse(endRule.isFailOnNull(), "skipNull: a null value is skipped");
         assertEquals("jakarta-el", endRule.getScript().getLanguageName());
         assertEquals("${start == null || end.isAfter(start)}", endRule.getScript().getSourceText());
-        assertTrue(end.getRule().getDefinition().getDescription().startsWith("@Expr(jakarta-el: ${start == null || end.isAfter(start)}) on "),
+        assertTrue(end.getRule().getDefinition().getDescription().startsWith("end must satisfy ${start == null || end.isAfter(start)} (@Expr on "),
                 end.getRule().getDefinition().getDescription());
         assertEquals(Trip.class.getName(), end.getRule().getDefinition().getCategory());
         assertEquals(List.of("expr", "Expr", "Default"), end.getRule().getDefinition().getTags());

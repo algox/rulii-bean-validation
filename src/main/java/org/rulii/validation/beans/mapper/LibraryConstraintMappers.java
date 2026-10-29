@@ -85,71 +85,71 @@ public final class LibraryConstraintMappers {
     private static final String ANY_REGEXP = ".*";
 
     private static final List<ConstraintMapper<?>> MAPPERS = List.of(
-            StandardConstraintMappers.of(URL.class, UrlValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.url(t.value())).protocol(a.protocol()).host(a.host()).port(a.port())
+            StandardConstraintMappers.of(URL.class, UrlValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.url(t.value()).protocol(a.protocol()).host(a.host()).port(a.port())
                             .regexp(ANY_REGEXP.equals(a.regexp()) ? null : a.regexp()).flags(StandardConstraintMappers.flags(a.flags())))),
-            StandardConstraintMappers.of(UUID.class, UuidValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.uuid(t.value())).allowEmpty(a.allowEmpty()).allowNil(a.allowNil()).versions(a.version())
+            StandardConstraintMappers.of(UUID.class, UuidValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.uuid(t.value()).allowEmpty(a.allowEmpty()).allowNil(a.allowNil()).versions(a.version())
                             .variants(a.variant()).letterCase(UuidValidationRule.LetterCase.valueOf(a.letterCase().name())))),
-            StandardConstraintMappers.of(UniqueElements.class, UniqueElementsValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.uniqueElements(t.value())))),
-            StandardConstraintMappers.of(Normalized.class, NormalizedValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.normalized(t.value())).form(a.form()))),
-            StandardConstraintMappers.of(CodePointLength.class, CodePointLengthValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.codePointLength(t.value(), a.min(), a.max())).normalization(a.normalizationStrategy().getForm()))),
-            StandardConstraintMappers.of(LuhnCheck.class, LuhnCheckValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.luhnCheck(t.value())).startIndex(a.startIndex()).endIndex(a.endIndex())
+            StandardConstraintMappers.of(UniqueElements.class, UniqueElementsValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.uniqueElements(t.value()))),
+            StandardConstraintMappers.of(Normalized.class, NormalizedValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.normalized(t.value()).form(a.form()))),
+            StandardConstraintMappers.of(CodePointLength.class, CodePointLengthValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.codePointLength(t.value(), a.min(), a.max()).normalization(a.normalizationStrategy().getForm()))),
+            StandardConstraintMappers.of(LuhnCheck.class, LuhnCheckValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.luhnCheck(t.value()).startIndex(a.startIndex()).endIndex(a.endIndex())
                             .checkDigitIndex(a.checkDigitIndex()).ignoreNonDigitCharacters(a.ignoreNonDigitCharacters()))),
-            StandardConstraintMappers.of(Mod10Check.class, Mod10CheckValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.mod10Check(t.value())).multiplier(a.multiplier()).weight(a.weight()).startIndex(a.startIndex())
+            StandardConstraintMappers.of(Mod10Check.class, Mod10CheckValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.mod10Check(t.value()).multiplier(a.multiplier()).weight(a.weight()).startIndex(a.startIndex())
                             .endIndex(a.endIndex()).checkDigitIndex(a.checkDigitIndex()).ignoreNonDigitCharacters(a.ignoreNonDigitCharacters()))),
-            StandardConstraintMappers.of(Mod11Check.class, Mod11CheckValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.mod11Check(t.value())).threshold(a.threshold()).startIndex(a.startIndex()).endIndex(a.endIndex())
+            StandardConstraintMappers.of(Mod11Check.class, Mod11CheckValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.mod11Check(t.value()).threshold(a.threshold()).startIndex(a.startIndex()).endIndex(a.endIndex())
                             .checkDigitIndex(a.checkDigitIndex()).ignoreNonDigitCharacters(a.ignoreNonDigitCharacters())
                             .treatCheck10As(a.treatCheck10As()).treatCheck11As(a.treatCheck11As())
                             .processingDirection(Mod11CheckValidationRule.ProcessingDirection.valueOf(a.processingDirection().name())))),
-            StandardConstraintMappers.of(EAN.class, EanValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.ean(t.value())).type(EanValidationRule.Type.valueOf(a.type().name())))),
-            StandardConstraintMappers.of(ISBN.class, IsbnValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.isbn(t.value())).type(IsbnValidationRule.Type.valueOf(a.type().name())))),
-            StandardConstraintMappers.of(DurationMin.class, DurationMinValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.durationMin(t.value(), duration(a.days(), a.hours(), a.minutes(), a.seconds(), a.millis(), a.nanos())))
+            StandardConstraintMappers.of(EAN.class, EanValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.ean(t.value()).type(EanValidationRule.Type.valueOf(a.type().name())))),
+            StandardConstraintMappers.of(ISBN.class, IsbnValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.isbn(t.value()).type(IsbnValidationRule.Type.valueOf(a.type().name())))),
+            StandardConstraintMappers.of(DurationMin.class, DurationMinValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.durationMin(t.value(), duration(a.days(), a.hours(), a.minutes(), a.seconds(), a.millis(), a.nanos()))
                             .inclusive(a.inclusive()))),
-            StandardConstraintMappers.of(DurationMax.class, DurationMaxValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.durationMax(t.value(), duration(a.days(), a.hours(), a.minutes(), a.seconds(), a.millis(), a.nanos())))
+            StandardConstraintMappers.of(DurationMax.class, DurationMaxValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.durationMax(t.value(), duration(a.days(), a.hours(), a.minutes(), a.seconds(), a.millis(), a.nanos()))
                             .inclusive(a.inclusive()))),
             StandardConstraintMappers.of(Alpha.class, AlphaValidationRule.SUPPORTED_TYPES, (a, t) -> {
-                AlphaValidationRuleBuilder builder = t.configure(Validators.alpha(t.value()));
+                AlphaValidationRuleBuilder builder = Validators.alpha(t.value());
                 if (a.allowSpace()) builder.allowSpace();
-                return StandardConstraintMappers.single(builder);
+                return t.single(builder);
             }),
             StandardConstraintMappers.of(AlphaNumeric.class, AlphaNumericValidationRule.SUPPORTED_TYPES, (a, t) -> {
-                AlphaNumericValidationRuleBuilder builder = t.configure(Validators.alphaNumeric(t.value()));
+                AlphaNumericValidationRuleBuilder builder = Validators.alphaNumeric(t.value());
                 if (a.allowSpace()) builder.allowSpace();
-                return StandardConstraintMappers.single(builder);
+                return t.single(builder);
             }),
             StandardConstraintMappers.of(Numeric.class, NumericValidationRule.SUPPORTED_TYPES, (a, t) -> {
-                NumericValidationRuleBuilder builder = t.configure(Validators.numeric(t.value()));
+                NumericValidationRuleBuilder builder = Validators.numeric(t.value());
                 if (a.allowSpace()) builder.allowSpace();
-                return StandardConstraintMappers.single(builder);
+                return t.single(builder);
             }),
             StandardConstraintMappers.of(Decimal.class, DecimalValidationRule.SUPPORTED_TYPES, (a, t) -> {
-                DecimalValidationRuleBuilder builder = t.configure(Validators.decimal(t.value()));
+                DecimalValidationRuleBuilder builder = Validators.decimal(t.value());
                 if (a.allowSpace()) builder.allowSpace();
-                return StandardConstraintMappers.single(builder);
+                return t.single(builder);
             }),
-            StandardConstraintMappers.of(Ascii.class, AsciiValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.ascii(t.value())))),
-            StandardConstraintMappers.of(LowerCase.class, LowerCaseValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.lowerCase(t.value())))),
-            StandardConstraintMappers.of(UpperCase.class, UpperCaseValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.upperCase(t.value())))),
-            StandardConstraintMappers.of(StartsWith.class, StartsWithValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.startsWith(t.value(), a.value())))),
-            StandardConstraintMappers.of(EndsWith.class, EndsWithValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.endsWith(t.value(), a.value())))),
-            StandardConstraintMappers.of(In.class, InValidationRule.SUPPORTED_TYPES, (a, t) -> StandardConstraintMappers.single(
-                    t.configure(Validators.in(t.value(), List.of(a.value())))))
+            StandardConstraintMappers.of(Ascii.class, AsciiValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.ascii(t.value()))),
+            StandardConstraintMappers.of(LowerCase.class, LowerCaseValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.lowerCase(t.value()))),
+            StandardConstraintMappers.of(UpperCase.class, UpperCaseValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.upperCase(t.value()))),
+            StandardConstraintMappers.of(StartsWith.class, StartsWithValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.startsWith(t.value(), a.value()))),
+            StandardConstraintMappers.of(EndsWith.class, EndsWithValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.endsWith(t.value(), a.value()))),
+            StandardConstraintMappers.of(In.class, InValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(
+                    Validators.in(t.value(), List.of(a.value()))))
     );
 
     private LibraryConstraintMappers() {

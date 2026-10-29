@@ -153,6 +153,11 @@ public class ReportAsSingleViolationRule extends ValueValidationRule {
     }
 
     @Override
+    public String describe() {
+        return getValueName() + " must satisfy all of its " + composingRules.size() + " composing constraints";
+    }
+
+    @Override
     public String toString() {
         return "ReportAsSingleViolationRule{" + composingRules.size() + " composing rules}";
     }

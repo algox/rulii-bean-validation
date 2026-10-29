@@ -94,6 +94,11 @@ public class ExprValidationRule extends ValueValidationRule {
     }
 
     @Override
+    public String describe() {
+        return getValueName() + " must satisfy " + script.getSourceText();
+    }
+
+    @Override
     public String toString() {
         return "ExprValidationRule{" + script.getLanguageName() + ": " + script.getSourceText() + ", errorCode=" + getErrorCode() + '}';
     }

@@ -487,8 +487,7 @@ public final class RuleMaterializer {
             hosted.add(rule.getRule());
         }
 
-        Rule wrapper = target.configure(ReportAsSingleViolationRule.builder(target.value(), hosted), true)
-                .parameters(attributes(constraint)).build();
+        Rule wrapper = target.build(ReportAsSingleViolationRule.builder(target.value(), hosted).parameters(attributes(constraint)), true);
         out.add(new MaterializedRule(wrapper, constraint, host, target, site.placement(), own));
     }
 
@@ -513,55 +512,25 @@ public final class RuleMaterializer {
      */
     private void expr(ExprDefinition expr, Site site, String ruleName, boolean runOnNull, List<MaterializedRule> out) {
         Script<?> script = compile(expr, site);
-        String description = "@Expr(" + script.getLanguageName() + ": " + script.getSourceText() + ") on " + site.location();
+        String description = "@Expr on " + site.location();
         ConstraintTarget target = new ConstraintTarget(site.beanClass(), site.propertyName(), site.bindingName(), site.valueName(),
                 site.type(), ruleName, expr.getErrorCode(), expr.getSeverity(), exprMessage(expr.getMessage(), site.valueName()),
                 expr.getSource(), site.value(), site.validationTarget(), description, site.beanClass().getName(),
                 tags(EXPR_TAG, expr.getAnnotationType(), expr.getGroups(), false));
-        Rule rule = target.configure(ExprValidationRule.builder(target.value(), script), runOnNull).build();
+        Rule rule = target.build(ExprValidationRule.builder(target.value(), script), runOnNull);
         out.add(new MaterializedRule(rule, expr, null, target, site.placement()));
     }
 
     /**
-     * The description of a constraint's rules: the annotation with its attributes (the three every
-     * constraint declares left out), what it composes if anything, and where it is declared, as in
-     * {@code @Size(max=5, min=2) on Order.code}.
+     * Where a constraint's rules are declared: the annotation, what it composes if anything, and the declaration,
+     * as in {@code @Size on Order.code}. The attributes are not repeated here: the rule says them in its own words
+     * ({@link org.rulii.validation.ValueValidationRule#describe()}), and {@link ConstraintTarget#build} joins the two.
      */
     private static String description(ConstraintDefinition constraint, ConstraintDefinition composedBy, Site site) {
         StringBuilder result = new StringBuilder("@").append(constraint.getAnnotationType().getSimpleName());
-        Map<String, Object> attributes = attributes(constraint);
-
-        if (!attributes.isEmpty()) {
-            result.append('(');
-            boolean first = true;
-
-            for (Map.Entry<String, Object> attribute : attributes.entrySet()) {
-                if (!first) result.append(", ");
-                result.append(attribute.getKey()).append('=').append(render(attribute.getValue()));
-                first = false;
-            }
-
-            result.append(')');
-        }
 
         if (composedBy != null) result.append(" composing @").append(composedBy.getAnnotationType().getSimpleName());
         return result.append(" on ").append(site.location()).toString();
-    }
-
-    private static String render(Object value) {
-        if (value instanceof String text) return "\"" + text + "\"";
-        if (value instanceof Class<?> type) return type.getSimpleName();
-        if (value instanceof Object[] array) {
-            StringBuilder result = new StringBuilder("[");
-
-            for (int i = 0; i < array.length; i++) {
-                if (i > 0) result.append(", ");
-                result.append(render(array[i]));
-            }
-
-            return result.append(']').toString();
-        }
-        return String.valueOf(value);
     }
 
     /**

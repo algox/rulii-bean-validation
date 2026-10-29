@@ -40,7 +40,6 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import org.rulii.rule.Rule;
-import org.rulii.validation.ValueValidationRuleBuilder;
 import org.rulii.validation.rules.Validators;
 import org.rulii.validation.rules.asssert.AssertFalseValidationRule;
 import org.rulii.validation.rules.asssert.AssertTrueValidationRule;
@@ -97,28 +96,28 @@ public final class StandardConstraintMappers {
     private static final String EMAIL_ANY_REGEXP = ".*";
 
     private static final List<ConstraintMapper<?>> MAPPERS = List.of(
-            of(AssertFalse.class,     AssertFalseValidationRule.SUPPORTED_TYPES,     (a, t) -> single(t.configure(Validators.assertFalse(t.value())))),
-            of(AssertTrue.class,      AssertTrueValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.assertTrue(t.value())))),
-            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMax(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive()))),
-            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES,      (a, t) -> single(t.configure(Validators.decimalMin(t.value(), new BigDecimal(a.value()))).inclusive(a.inclusive()))),
-            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.digits(t.value(), a.integer(), a.fraction())))),
+            of(AssertFalse.class,     AssertFalseValidationRule.SUPPORTED_TYPES,     (a, t) -> t.single(Validators.assertFalse(t.value()))),
+            of(AssertTrue.class,      AssertTrueValidationRule.SUPPORTED_TYPES,      (a, t) -> t.single(Validators.assertTrue(t.value()))),
+            of(DecimalMax.class,      DecimalMaxValidationRule.SUPPORTED_TYPES,      (a, t) -> t.single(Validators.decimalMax(t.value(), new BigDecimal(a.value())).inclusive(a.inclusive()))),
+            of(DecimalMin.class,      DecimalMinValidationRule.SUPPORTED_TYPES,      (a, t) -> t.single(Validators.decimalMin(t.value(), new BigDecimal(a.value())).inclusive(a.inclusive()))),
+            of(Digits.class,          DigitsValidationRule.SUPPORTED_TYPES,          (a, t) -> t.single(Validators.digits(t.value(), a.integer(), a.fraction()))),
             of(Email.class,           EmailValidationRule.SUPPORTED_TYPES,           StandardConstraintMappers::email),
-            of(Future.class,          FutureValidationRule.SUPPORTED_TYPES,          (a, t) -> single(t.configure(Validators.future(t.value())))),
-            of(FutureOrPresent.class, FutureOrPresentValidationRule.SUPPORTED_TYPES, (a, t) -> single(t.configure(Validators.futureOrPresent(t.value())))),
-            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.max(t.value(), a.value())))),
-            of(Min.class,             MinValidationRule.SUPPORTED_TYPES,             (a, t) -> single(t.configure(Validators.min(t.value(), a.value())))),
-            of(Negative.class,        NegativeValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.negative(t.value())))),
-            of(NegativeOrZero.class,  NegativeOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.negativeOrZero(t.value())))),
-            of(NotBlank.class,        NotBlankValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.notBlank(t.value()), true))),
-            of(NotEmpty.class,        NotEmptyValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.notEmpty(t.value()), true))),
-            of(NotNull.class,         NotNullValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.notNull(t.value()), true))),
-            of(Null.class,            NullValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.isNull(t.value()), true))),
-            of(Past.class,            PastValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.past(t.value())))),
-            of(PastOrPresent.class,   PastOrPresentValidationRule.SUPPORTED_TYPES,   (a, t) -> single(t.configure(Validators.pastOrPresent(t.value())))),
-            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES,         (a, t) -> single(t.configure(Validators.pattern(t.value(), a.regexp())).flags(flags(a.flags())))),
-            of(Positive.class,        PositiveValidationRule.SUPPORTED_TYPES,        (a, t) -> single(t.configure(Validators.positive(t.value())))),
-            of(PositiveOrZero.class,  PositiveOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> single(t.configure(Validators.positiveOrZero(t.value())))),
-            of(Size.class,            SizeValidationRule.SUPPORTED_TYPES,            (a, t) -> single(t.configure(Validators.size(t.value(), a.min(), a.max()))))
+            of(Future.class,          FutureValidationRule.SUPPORTED_TYPES,          (a, t) -> t.single(Validators.future(t.value()))),
+            of(FutureOrPresent.class, FutureOrPresentValidationRule.SUPPORTED_TYPES, (a, t) -> t.single(Validators.futureOrPresent(t.value()))),
+            of(Max.class,             MaxValidationRule.SUPPORTED_TYPES,             (a, t) -> t.single(Validators.max(t.value(), a.value()))),
+            of(Min.class,             MinValidationRule.SUPPORTED_TYPES,             (a, t) -> t.single(Validators.min(t.value(), a.value()))),
+            of(Negative.class,        NegativeValidationRule.SUPPORTED_TYPES,        (a, t) -> t.single(Validators.negative(t.value()))),
+            of(NegativeOrZero.class,  NegativeOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> t.single(Validators.negativeOrZero(t.value()))),
+            of(NotBlank.class,        NotBlankValidationRule.SUPPORTED_TYPES,        (a, t) -> t.single(Validators.notBlank(t.value()), true)),
+            of(NotEmpty.class,        NotEmptyValidationRule.SUPPORTED_TYPES,        (a, t) -> t.single(Validators.notEmpty(t.value()), true)),
+            of(NotNull.class,         NotNullValidationRule.SUPPORTED_TYPES,         (a, t) -> t.single(Validators.notNull(t.value()), true)),
+            of(Null.class,            NullValidationRule.SUPPORTED_TYPES,            (a, t) -> t.single(Validators.isNull(t.value()), true)),
+            of(Past.class,            PastValidationRule.SUPPORTED_TYPES,            (a, t) -> t.single(Validators.past(t.value()))),
+            of(PastOrPresent.class,   PastOrPresentValidationRule.SUPPORTED_TYPES,   (a, t) -> t.single(Validators.pastOrPresent(t.value()))),
+            of(Pattern.class,         PatternValidationRule.SUPPORTED_TYPES,         (a, t) -> t.single(Validators.pattern(t.value(), a.regexp()).flags(flags(a.flags())))),
+            of(Positive.class,        PositiveValidationRule.SUPPORTED_TYPES,        (a, t) -> t.single(Validators.positive(t.value()))),
+            of(PositiveOrZero.class,  PositiveOrZeroValidationRule.SUPPORTED_TYPES,  (a, t) -> t.single(Validators.positiveOrZero(t.value()))),
+            of(Size.class,            SizeValidationRule.SUPPORTED_TYPES,            (a, t) -> t.single(Validators.size(t.value(), a.min(), a.max())))
     );
 
     private StandardConstraintMappers() {
@@ -156,17 +155,13 @@ public final class StandardConstraintMappers {
      * no top-level domain registry, local and single-label hosts allowed.
      */
     private static List<Rule> email(Email email, ConstraintTarget target) {
-        EmailValidationRuleBuilder builder = target.configure(Validators.email(target.value())).anyDomain();
+        EmailValidationRuleBuilder builder = Validators.email(target.value()).anyDomain();
 
         if (!EMAIL_ANY_REGEXP.equals(email.regexp())) {
             builder.pattern(email.regexp()).flags(flags(email.flags()));
         }
 
-        return single(builder);
-    }
-
-    static List<Rule> single(ValueValidationRuleBuilder<?, ?> builder) {
-        return List.of(builder.build());
+        return target.single(builder);
     }
 
     static <A extends Annotation> ConstraintMapper<A> of(Class<A> annotationType, List<Class<?>> supportedTypes,

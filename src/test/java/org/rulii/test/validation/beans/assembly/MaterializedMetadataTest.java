@@ -58,22 +58,23 @@ public class MaterializedMetadataTest {
         BeanRules rules = VALIDATOR.getBeanRules(Item.class);
 
         RuleDefinition size = definition(rules, "code_size");
-        assertTrue(size.getDescription().startsWith("@Size(max=5, min=2) on "), size.getDescription());
+        assertTrue(size.getDescription().startsWith("code size must be between 2 and 5 (@Size on "), size.getDescription());
         assertTrue(size.getDescription().contains("code"), size.getDescription());
         assertEquals(Item.class.getName(), size.getCategory());
         assertEquals(List.of(RuleMaterializer.CONSTRAINT_TAG, "Size", "Default"), size.getTags());
 
-        // Strings are quoted, arrays listed, the groups tagged by simple name.
+        // The rule says what it checks in its own words, the annotation name and the declaration follow; the groups are tagged by simple name.
         RuleDefinition pattern = definition(rules, "code_pattern");
-        assertTrue(pattern.getDescription().startsWith("@Pattern(flags=[], regexp=\"[a-z]+\") on "), pattern.getDescription());
+        assertTrue(pattern.getDescription().startsWith("code must match [a-z]+ (@Pattern on "), pattern.getDescription());
         assertEquals(List.of(RuleMaterializer.CONSTRAINT_TAG, "Pattern", "OnCreate"), pattern.getTags());
 
         // An annotation without attributes of its own.
-        assertTrue(definition(rules, "name_notBlank").getDescription().startsWith("@NotBlank on "));
+        assertTrue(definition(rules, "name_notBlank").getDescription().startsWith("name must not be blank (@NotBlank on "));
 
-        // The target carries the same, for mappers that build rules their own way.
+        // The target carries the declaration, for mappers that build rules their own way; the rule appends it to what it checks.
         ConstraintTarget target = rules.getRule("code_size").getTarget();
-        assertEquals(size.getDescription(), target.getDescription());
+        assertEquals("@Size on " + Item.class.getName() + ".code", target.getDescription());
+        assertTrue(size.getDescription().endsWith(" (" + target.getDescription() + ")"), size.getDescription());
         assertEquals(size.getCategory(), target.getCategory());
         assertEquals(size.getTags(), target.getTags());
         assertThrows(UnsupportedOperationException.class, () -> target.getTags().clear());
@@ -84,11 +85,11 @@ public class MaterializedMetadataTest {
         BeanRules rules = VALIDATOR.getBeanRules(RuleMaterializerTest.Composed.class);
 
         RuleDefinition composing = definition(rules, "code_validCode_size");
-        assertTrue(composing.getDescription().startsWith("@Size(max=2147483647, min=3) composing @ValidCode on "), composing.getDescription());
+        assertTrue(composing.getDescription().startsWith("code size must be between 3 and 2147483647 (@Size composing @ValidCode on "), composing.getDescription());
         assertEquals(List.of(RuleMaterializer.CONSTRAINT_TAG, "Size", "Default"), composing.getTags(), "a flattened composition hosts nothing");
 
         RuleDefinition composition = definition(rules, "strict_strictCode");
-        assertTrue(composition.getDescription().startsWith("@StrictCode on "), composition.getDescription());
+        assertTrue(composition.getDescription().contains(" composing constraints (@StrictCode on "), composition.getDescription());
         assertEquals(List.of(RuleMaterializer.CONSTRAINT_TAG, "StrictCode", "OnCreate"), composition.getTags());
 
         RuleDefinition hosted = definition(rules, "strict_strictCode_size");
