@@ -119,7 +119,7 @@ public final class BeanValidator implements Validator {
         this.consultedInterpolator = messageInterpolator instanceof RuliiMessageInterpolator ? null : messageInterpolator;
         this.options = BeanValidationOptions.wrap(options != null ? options : StandardRuleContextOptions.build(), mappers);
         this.loader = new BeanDefinitionLoader(extractors, mappers, parameterNameProvider);
-        this.materializer = new RuleMaterializer(mappers, failFast);
+        this.materializer = new RuleMaterializer(mappers, this.options.getConverterRegistry(), failFast);
         this.assembler = new RuleFlowAssembler(this::getRuleFlow, extractors);
         this.executableValidator = new ExecutableBeanValidator(this);
     }
@@ -237,6 +237,7 @@ public final class BeanValidator implements Validator {
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
             rules.getBindingPlan().load(bindings, object);
             RuleContext context = context(bindings);
+            rules.getBindingPlan().bind(context);
 
             try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
                 traversal.forDefaultSequence(context, sequence, current -> {

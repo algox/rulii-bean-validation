@@ -21,9 +21,11 @@ import org.rulii.bind.Binding;
 import org.rulii.bind.Bindings;
 import org.rulii.bind.ReservedBindings;
 import org.rulii.bind.load.BindingLoader;
+import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.util.TypeReference;
 import org.rulii.validation.beans.model.BeanDefinition;
+import org.rulii.validation.beans.model.BindDeclarationException;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.DeclarationConstraintSource;
@@ -34,12 +36,16 @@ import org.rulii.validation.beans.model.PropertySource;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
@@ -61,6 +67,11 @@ import java.util.function.Supplier;
  * Accessors exist for every declaration validation reads: the primaries, and the secondaries that
  * carry a constraint, a cascade or constrained container elements. An overriding getter reads the
  * primary binding, since the call is virtual either way.</p>
+ *
+ * <p>The class's {@code @Bind} bindings ({@link PlannedBind}) live beside the properties in the same
+ * scope; {@link #bind(RuleContext)} creates them once the flow's context exists, since an expression
+ * is evaluated against it. A binding may not take a reserved name or the binding name of a property;
+ * either fails the plan.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -109,26 +120,43 @@ public final class BindingPlan implements BindingLoader<Object> {
     private final Map<String, String> properties;
     private final Map<ValueDeclaration, PropertyAccessor> accessors;
     private final Set<ValueDeclaration> primaries;
+    private final List<PlannedBind> binds;
 
     private BindingPlan(BeanDefinition bean, Map<String, PropertyDefinition> bindings, Map<String, String> properties,
-                        Map<ValueDeclaration, PropertyAccessor> accessors, Set<ValueDeclaration> primaries) {
+                        Map<ValueDeclaration, PropertyAccessor> accessors, Set<ValueDeclaration> primaries, List<PlannedBind> binds) {
         super();
         this.bean = bean;
         this.bindings = bindings;
         this.properties = properties;
         this.accessors = accessors;
         this.primaries = primaries;
+        this.binds = binds;
     }
 
     /**
-     * Plans the bindings of the given bean class and creates the accessors it needs.
+     * Plans the bindings of the given bean class, without {@code @Bind} bindings, and creates the
+     * accessors it needs.
      *
      * @param bean the bean definition.
      * @return the plan.
      * @throws InaccessiblePropertyException if a declaration validation reads cannot be made accessible.
      */
     public static BindingPlan of(BeanDefinition bean) {
+        return of(bean, List.of());
+    }
+
+    /**
+     * Plans the bindings of the given bean class and creates the accessors it needs.
+     *
+     * @param bean the bean definition.
+     * @param binds the class's {@code @Bind} bindings, planned by the materializer.
+     * @return the plan.
+     * @throws InaccessiblePropertyException if a declaration validation reads cannot be made accessible.
+     * @throws BindDeclarationException if a binding takes a reserved name or the binding name of a property.
+     */
+    public static BindingPlan of(BeanDefinition bean, List<PlannedBind> binds) {
         Assert.notNull(bean, "bean cannot be null.");
+        Assert.notNull(binds, "binds cannot be null.");
 
         Map<String, PropertyDefinition> bindings = new LinkedHashMap<>();
         Map<String, String> properties = new LinkedHashMap<>();
@@ -155,8 +183,54 @@ public final class BindingPlan implements BindingLoader<Object> {
             }
         }
 
+        check(binds, bindings.keySet(), "property");
+
         return new BindingPlan(bean, Collections.unmodifiableMap(bindings), Collections.unmodifiableMap(properties),
-                Collections.unmodifiableMap(accessors), Collections.unmodifiableSet(primaries));
+                Collections.unmodifiableMap(accessors), Collections.unmodifiableSet(primaries), List.copyOf(binds));
+    }
+
+    /**
+     * Checks that no planned binding takes a reserved name or one of the names taken in its scope.
+     *
+     * @param binds the bindings.
+     * @param taken the binding names of the scope's properties or parameters.
+     * @param kind {@code property} or {@code parameter}, for the message.
+     * @throws BindDeclarationException if a name is reserved or taken.
+     */
+    static void check(List<PlannedBind> binds, Collection<String> taken, String kind) {
+        for (PlannedBind bind : binds) {
+            String name = bind.getName();
+            String location = bind.getDefinition().getDeclarationSource().describe();
+
+            if (RESERVED_NAMES.contains(name)) {
+                throw new BindDeclarationException("@Bind [" + name + "] on [" + location + "] takes a name reserved by the engine"
+                        + " or by validation; reserved names are " + new TreeSet<>(RESERVED_NAMES) + ".",
+                        bind.getDefinition().getDeclarationSource(), name);
+            }
+
+            if (taken.contains(name)) {
+                throw new BindDeclarationException("@Bind [" + name + "] on [" + location + "] takes the binding name of a " + kind
+                        + "; a binding may not shadow a " + kind + ".", bind.getDefinition().getDeclarationSource(), name);
+            }
+        }
+    }
+
+    /**
+     * Binds the planned bindings into the scope: one binding per {@code @Bind}, in a shared
+     * evaluation frame for the expressions.
+     *
+     * @param ruleContext the context of the flow, whose current scope receives the bindings and which
+     *                    the expressions see.
+     * @param binds the bindings.
+     */
+    static void bind(RuleContext ruleContext, List<PlannedBind> binds) {
+        Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        if (binds.isEmpty()) return;
+        Deque<String> evaluating = new ArrayDeque<>();
+
+        for (PlannedBind bind : binds) {
+            ruleContext.getBindings().bind(bind.binding(ruleContext, evaluating));
+        }
     }
 
     /**
@@ -247,6 +321,26 @@ public final class BindingPlan implements BindingLoader<Object> {
      */
     public Map<String, PropertyDefinition> getBindings() {
         return bindings;
+    }
+
+    /**
+     * The class's {@code @Bind} bindings, as planned: one per name, the hierarchy resolved.
+     *
+     * @return the bindings; unmodifiable, empty if none.
+     */
+    public List<PlannedBind> getBinds() {
+        return binds;
+    }
+
+    /**
+     * Binds the class's {@code @Bind} bindings into the current scope of the given context, after
+     * {@link #load(Bindings, Object)} has bound the properties: a constant as is, an expression
+     * lazily, evaluated on first read against this context and remembered for the scope's lifetime.
+     *
+     * @param ruleContext the context of the flow validating the object.
+     */
+    public void bind(RuleContext ruleContext) {
+        bind(ruleContext, binds);
     }
 
     /**
@@ -381,6 +475,6 @@ public final class BindingPlan implements BindingLoader<Object> {
 
     @Override
     public String toString() {
-        return "BindingPlan{" + bean.getBeanClass().getName() + " " + bindings.keySet() + '}';
+        return "BindingPlan{" + bean.getBeanClass().getName() + " " + bindings.keySet() + (binds.isEmpty() ? "" : " binds=" + binds) + '}';
     }
 }

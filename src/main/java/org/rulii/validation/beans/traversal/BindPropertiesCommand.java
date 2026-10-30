@@ -24,8 +24,8 @@ import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
 
 /**
- * Flow step binding the properties of {@code $this} into the flow's scope, per the class's
- * {@link BindingPlan}.
+ * Flow step binding the properties of {@code $this}, then the class's {@code @Bind} bindings, into the
+ * flow's scope, per the class's {@link BindingPlan}.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -45,6 +45,7 @@ final class BindPropertiesCommand implements RuleFlowCommand {
         Object bean = ctx.getRuleContext().getBindings().getValue(BindingPlan.THIS);
         Assert.notNull(bean, "[" + BindingPlan.THIS + "] is not bound; the flow needs the object to validate.");
         rules.getBindingPlan().load(ctx.getRuleContext().getBindings(), bean);
+        rules.getBindingPlan().bind(ctx.getRuleContext());
     }
 
     @Override

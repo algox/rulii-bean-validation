@@ -17,11 +17,16 @@
  */
 package org.rulii.validation.beans.assembly;
 
+import jakarta.validation.ConstraintDeclarationException;
 import jakarta.validation.ValidationException;
 import jakarta.validation.constraintvalidation.ValidationTarget;
 import jakarta.validation.groups.Default;
 import org.rulii.context.RuleContext;
+import org.rulii.convert.ConversionException;
+import org.rulii.convert.Converter;
+import org.rulii.convert.ConverterRegistry;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.lib.spring.util.ClassUtils;
 import org.rulii.model.UnrulyException;
 import org.rulii.model.function.Function;
 import org.rulii.model.function.Functions;
@@ -37,6 +42,8 @@ import org.rulii.validation.beans.mapper.ConstraintMapperRegistry;
 import org.rulii.validation.beans.mapper.ConstraintTarget;
 import org.rulii.validation.beans.message.MessageTemplates;
 import org.rulii.validation.beans.model.BeanDefinition;
+import org.rulii.validation.beans.model.BindDeclarationException;
+import org.rulii.validation.beans.model.BindDefinition;
 import org.rulii.validation.beans.model.ConstraintDefinition;
 import org.rulii.validation.beans.model.ContainerElementDefinition;
 import org.rulii.validation.beans.model.DeclarationConstraintSource;
@@ -57,6 +64,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 /**
  * Turns a {@link BeanDefinition} into {@link BeanRules}: for every constraint occurrence, a
@@ -91,6 +99,13 @@ import java.util.Set;
  *     one or a script that does not compile fails with an {@link ExprDeclarationException}. A null
  *     property value skips the rule unless {@code skipNull = false}; a class, parameters or
  *     return-value rule always runs.</li>
+ *     <li><b>{@code @Bind}</b>: each occurrence becomes one {@link PlannedBind} on the class's
+ *     {@link BindingPlan} or the executable's {@link ExecutableBindingPlan}: a literal converted once
+ *     to its declared type through the validator's {@link ConverterRegistry} (a {@code String} when
+ *     none is declared), an expression compiled as an {@code @Expr} is, in its declared language, with
+ *     the declared type as its return type. No converter, a literal that does not convert, no
+ *     language, an unknown one, a script that does not compile, a reserved name or one a property or
+ *     parameter takes fails with a {@link BindDeclarationException}.</li>
  *     <li><b>description, category, tags</b>: every rule describes its declaration and where it is
  *     ({@code @Size(max=5, min=2) on Order.code}, {@code @Size(min=3) composing @ValidCode on ...},
  *     {@code @Expr(jakarta-el: ${...}) on ...}), is categorised under the bean class's name (an
@@ -135,10 +150,11 @@ public final class RuleMaterializer {
     private static final String EXPR_VALUE = "value";
 
     private final ConstraintMapperRegistry mappers;
+    private final ConverterRegistry converters;
     private final boolean failFast;
 
     /**
-     * Creates the materializer.
+     * Creates the materializer, with the standard converters.
      *
      * @param mappers the constraint mappers.
      */
@@ -147,20 +163,38 @@ public final class RuleMaterializer {
     }
 
     /**
-     * Creates the materializer, fail-fast or not.
+     * Creates the materializer, fail-fast or not, with the standard converters.
      *
      * @param mappers the constraint mappers.
      * @param failFast whether the rule sets it builds stop at their first failing rule.
      */
     public RuleMaterializer(ConstraintMapperRegistry mappers, boolean failFast) {
+        this(mappers, ConverterRegistry.builder().build(), failFast);
+    }
+
+    /**
+     * Creates the materializer.
+     *
+     * @param mappers the constraint mappers.
+     * @param converters the converters turning a {@code @Bind} literal into its declared type: the
+     *                   validator's, so that a class reads the same whoever validates it.
+     * @param failFast whether the rule sets it builds stop at their first failing rule.
+     */
+    public RuleMaterializer(ConstraintMapperRegistry mappers, ConverterRegistry converters, boolean failFast) {
         super();
         Assert.notNull(mappers, "mappers cannot be null.");
+        Assert.notNull(converters, "converters cannot be null.");
         this.mappers = mappers;
+        this.converters = converters;
         this.failFast = failFast;
     }
 
     public ConstraintMapperRegistry getConstraintMapperRegistry() {
         return mappers;
+    }
+
+    public ConverterRegistry getConverterRegistry() {
+        return converters;
     }
 
     /**
@@ -175,7 +209,7 @@ public final class RuleMaterializer {
     public BeanRules materialize(BeanDefinition bean) {
         Assert.notNull(bean, "bean cannot be null.");
 
-        BindingPlan plan = BindingPlan.of(bean);
+        BindingPlan plan = BindingPlan.of(bean, plan(bean.getBinds()));
         Class<?> beanClass = bean.getBeanClass();
         List<MaterializedRule> propertyRules = new ArrayList<>();
         List<BeanRules.ElementRules> elementRules = new ArrayList<>();
@@ -291,7 +325,8 @@ public final class RuleMaterializer {
     public ExecutableRules materialize(ExecutableDefinition executable) {
         Assert.notNull(executable, "executable cannot be null.");
 
-        ExecutableBindingPlan plan = ExecutableBindingPlan.of(executable);
+        ExecutableBindingPlan plan = ExecutableBindingPlan.of(executable, plan(executable.getBinds()),
+                executable.getReturnValue() != null ? plan(executable.getReturnValue().getBinds()) : List.of());
         Class<?> beanClass = executable.getOwner();
         List<MaterializedRule> parameterRules = new ArrayList<>();
         List<MaterializedRule> crossParameterRules = new ArrayList<>();
@@ -577,30 +612,99 @@ public final class RuleMaterializer {
      *         language, or the script does not compile.
      */
     private static Script<?> compile(ExprDefinition expr, Site site) {
+        return compile("@Expr", site.location(), expr.getLanguage(), expr.getScript(), Boolean.class, (message, cause) -> cause == null
+                ? new ExprDeclarationException(message, expr.getConstraintSource())
+                : new ExprDeclarationException(message, expr.getConstraintSource(), cause));
+    }
+
+    /**
+     * Compiles a script in the language declared for it, else the manager's default language.
+     *
+     * @param what the annotation the script belongs to, for the messages.
+     * @param location where it is declared, for the messages.
+     * @param language the declared language; null for the manager's default.
+     * @param script the script text.
+     * @param returnType the type the script is expected to return.
+     * @param failure creates the exception thrown, from a message and a cause (null when there is none).
+     * @return the compiled script.
+     */
+    private static Script<?> compile(String what, String location, String language, String script, Class<?> returnType,
+                                     BiFunction<String, Throwable, ? extends ConstraintDeclarationException> failure) {
         ScriptProcessorManager manager = ScriptProcessorManager.getInstance();
-        String language = expr.getLanguage();
 
         if (language == null) language = manager.getDefaultLanguage();
 
         if (language == null) {
-            throw new ExprDeclarationException("@Expr on [" + site.location() + "] names no scripting language and none is declared"
-                    + " as the default. Declare one with @Expr(lang), with @ExprDefaults on the class or its package, with"
+            throw failure.apply(what + " on [" + location + "] names no scripting language and none is declared"
+                    + " as the default. Declare one with the annotation's lang, with @ExprDefaults on the class or its package, with"
                     + " ScriptProcessorManager.getInstance().setDefaultLanguage(name) or with the system property ["
-                    + ScriptProcessorManager.DEFAULT_LANGUAGE_PROPERTY + "]. Available languages: " + manager.getAvailableLanguages(),
-                    expr.getConstraintSource());
+                    + ScriptProcessorManager.DEFAULT_LANGUAGE_PROPERTY + "]. Available languages: " + manager.getAvailableLanguages(), null);
         }
 
         if (manager.getScriptProcessorFactory(language) == null) {
-            throw new ExprDeclarationException("@Expr on [" + site.location() + "] is declared in scripting language [" + language
+            throw failure.apply(what + " on [" + location + "] is declared in scripting language [" + language
                     + "] but no ScriptProcessorFactory or JSR-223 engine is available for it. Available languages: "
-                    + manager.getAvailableLanguages(), expr.getConstraintSource());
+                    + manager.getAvailableLanguages(), null);
         }
 
         try {
-            return Script.builder().with(language, expr.getScript()).returnType(Boolean.class).build();
+            return Script.builder().with(language, script).returnType(returnType).build();
         } catch (UnrulyException e) {
-            throw new ExprDeclarationException("@Expr on [" + site.location() + "] does not compile in [" + language + "]: "
-                    + e.getMessage() + " Script [" + expr.getScript() + "]", expr.getConstraintSource(), e);
+            throw failure.apply(what + " on [" + location + "] does not compile in [" + language + "]: " + e.getMessage()
+                    + " Script [" + script + "]", e);
+        }
+    }
+
+    /**
+     * Plans the given {@code @Bind} declarations: converts the literals, compiles the expressions.
+     *
+     * @param binds the declarations.
+     * @return the planned bindings, in the same order.
+     * @throws BindDeclarationException if a literal has no converter to its type or does not convert,
+     *         or an expression names no language, an unknown one, or does not compile.
+     */
+    private List<PlannedBind> plan(List<BindDefinition> binds) {
+        if (binds.isEmpty()) return List.of();
+        List<PlannedBind> result = new ArrayList<>(binds.size());
+
+        for (BindDefinition bind : binds) {
+            result.add(plan(bind));
+        }
+
+        return result;
+    }
+
+    private PlannedBind plan(BindDefinition bind) {
+        String name = bind.getBindingName();
+        String what = "@Bind [" + name + "]";
+        String location = bind.getDeclarationSource().describe();
+        Class<?> declared = bind.getType();
+
+        if (bind.isExpression()) {
+            Class<?> type = declared == Object.class ? Object.class : ClassUtils.resolvePrimitiveIfNecessary(declared);
+            Script<?> script = compile(what, location, bind.getLanguage(), bind.getScript(), type, (message, cause) ->
+                    new BindDeclarationException(message, bind.getDeclarationSource(), name, cause));
+            return PlannedBind.script(bind, type, script);
+        }
+
+        if (declared == Object.class || declared == String.class) {
+            return PlannedBind.constant(bind, String.class, bind.getLiteral());
+        }
+
+        Class<?> type = ClassUtils.resolvePrimitiveIfNecessary(declared);
+        Converter<String, Object> converter = converters.find(String.class, type);
+
+        if (converter == null) {
+            throw new BindDeclarationException(what + " on [" + location + "] declares type [" + declared.getName()
+                    + "] but no converter turns a String into it; register one with the validator's ConverterRegistry.",
+                    bind.getDeclarationSource(), name);
+        }
+
+        try {
+            return PlannedBind.constant(bind, type, converter.convert(bind.getLiteral(), type));
+        } catch (ConversionException e) {
+            throw new BindDeclarationException(what + " on [" + location + "] declares the literal [" + bind.getLiteral()
+                    + "], which does not convert to [" + declared.getName() + "]: " + e.getMessage(), bind.getDeclarationSource(), name, e);
         }
     }
 

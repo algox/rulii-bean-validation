@@ -35,17 +35,20 @@ import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Validation definition of one bean class: its {@link PropertyDefinition properties} in discovery
  * order, its class-level {@link ConstraintDefinition constraints} in hierarchy order, the registry
  * rules attached at class level with {@code @Validate} ({@link ValidateDefinition}) and the script
  * conditions declared at class level with {@code @Expr} ({@link ExprDefinition}), also in
- * hierarchy order, its constrained {@link ExecutableDefinition methods and constructors}, and its
- * redefined {@link #getDefaultGroupSequence() Default group}, if any. Everything declared on
- * superclasses and interfaces is included, cumulatively, except the Default redefinition, which the
- * specification does not inherit.
+ * hierarchy order, the bindings declared at class level with {@code @Bind} ({@link BindDefinition}),
+ * its constrained {@link ExecutableDefinition methods and constructors}, and its redefined
+ * {@link #getDefaultGroupSequence() Default group}, if any. Everything declared on superclasses and
+ * interfaces is included, cumulatively, except the Default redefinition, which the specification does
+ * not inherit, and a binding a subtype redeclares, which replaces the inherited one.
  *
  * <p>Loading walks the class hierarchy once ({@link TypeHierarchies}); the property declarations,
  * the class-level constraints and the methods are collected from the same walk. All declaration
@@ -61,6 +64,7 @@ public final class BeanDefinition implements Definition {
     private final List<ConstraintDefinition> classConstraints;
     private final List<ValidateDefinition> validateRules;
     private final List<ExprDefinition> exprRules;
+    private final List<BindDefinition> binds;
     private final List<ExecutableDefinition> methods;
     private final List<ExecutableDefinition> constructors;
     private final List<Class<?>> defaultGroupSequence;
@@ -69,14 +73,15 @@ public final class BeanDefinition implements Definition {
     private final boolean cascading;
 
     private BeanDefinition(Class<?> beanClass, List<PropertyDefinition> properties, List<ConstraintDefinition> classConstraints,
-                           List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules, List<ExecutableDefinition> methods,
-                           List<ExecutableDefinition> constructors, List<Class<?>> defaultGroupSequence) {
+                           List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules, List<BindDefinition> binds,
+                           List<ExecutableDefinition> methods, List<ExecutableDefinition> constructors, List<Class<?>> defaultGroupSequence) {
         super();
         this.beanClass = beanClass;
         this.properties = properties;
         this.classConstraints = classConstraints;
         this.validateRules = validateRules;
         this.exprRules = exprRules;
+        this.binds = binds;
         this.methods = methods;
         this.constructors = constructors;
         this.defaultGroupSequence = defaultGroupSequence;
@@ -120,6 +125,8 @@ public final class BeanDefinition implements Definition {
      *         (see {@link GroupConversions}), or for the other declaration errors detected while loading.
      * @throws ValidateDeclarationException if a {@code @Validate} declares no name, a blank name, or
      *         a name already referenced for the same property or at class level.
+     * @throws BindDeclarationException if a {@code @Bind} is invalid, declared on a getter, named
+     *         after a property, repeated on one type, or declared by two unrelated types of the hierarchy.
      * @throws IllegalExecutableConstraintException if a method or constructor is constrained against
      *         the specification's rules (see {@link ExecutableDefinition}).
      * @throws AmbiguousConstraintTargetException if a method constraint could validate the parameters
@@ -143,11 +150,20 @@ public final class BeanDefinition implements Definition {
             properties.add(PropertyDefinition.load(propertySource, registry));
         }
 
-        ValidateDefinition.checkDistinct(loader.validateRules, "class [" + beanClass.getName() + "]");
+        String owner = "class [" + beanClass.getName() + "]";
+        ValidateDefinition.checkDistinct(loader.validateRules, owner);
+        List<BindDefinition> binds = BindDefinition.resolve(loader.binds, owner);
+        Set<String> propertyNames = new HashSet<>();
+
+        for (PropertyDefinition property : properties) {
+            propertyNames.add(property.getName());
+        }
+
+        BindDefinition.checkAgainst(binds, propertyNames, owner, "property");
 
         return new BeanDefinition(beanClass, Collections.unmodifiableList(properties),
                 Collections.unmodifiableList(loader.classConstraints), Collections.unmodifiableList(loader.validateRules),
-                Collections.unmodifiableList(loader.exprRules), loader.executables.getMethods(registry, names),
+                Collections.unmodifiableList(loader.exprRules), binds, loader.executables.getMethods(registry, names),
                 ExecutableDiscovery.constructors(beanClass, registry, names), defaultGroupSequence(beanClass));
     }
 
@@ -271,6 +287,16 @@ public final class BeanDefinition implements Definition {
     }
 
     /**
+     * The {@code @Bind} bindings declared at class level, resolved over the hierarchy: one per name,
+     * a subtype's declaration replacing an inherited one, in the order the names were first met.
+     *
+     * @return the definitions; empty if none.
+     */
+    public List<BindDefinition> getBinds() {
+        return binds;
+    }
+
+    /**
      * The constrained methods, getters included, in discovery order.
      *
      * @return the definitions; empty if none.
@@ -356,7 +382,8 @@ public final class BeanDefinition implements Definition {
     public String toString() {
         return "BeanDefinition{beanClass=" + beanClass.getName() + ", properties=" + properties.size()
                 + ", classConstraints=" + classConstraints.size() + ", validateRules=" + validateRules.size()
-                + ", exprRules=" + exprRules.size() + ", methods=" + methods.size() + ", constructors=" + constructors.size()
+                + ", exprRules=" + exprRules.size() + ", binds=" + binds.size() + ", methods=" + methods.size()
+                + ", constructors=" + constructors.size()
                 + (defaultGroupSequence != null ? ", defaultGroupSequence=" + defaultGroupSequence : "") + '}';
     }
 
@@ -370,6 +397,7 @@ public final class BeanDefinition implements Definition {
         private final List<ConstraintDefinition> classConstraints = new ArrayList<>();
         private final List<ValidateDefinition> validateRules = new ArrayList<>();
         private final List<ExprDefinition> exprRules = new ArrayList<>();
+        private final List<BindDefinition> binds = new ArrayList<>();
 
         private Loader(Class<?> beanClass) {
             super();
@@ -382,6 +410,7 @@ public final class BeanDefinition implements Definition {
             classConstraints.addAll(ConstraintDefinition.load(type));
             validateRules.addAll(ValidateDefinition.load(type));
             exprRules.addAll(ExprDefinition.load(type));
+            binds.addAll(BindDefinition.load(type));
         }
 
         @Override

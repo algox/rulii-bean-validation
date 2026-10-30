@@ -24,6 +24,7 @@ which.
 1. Replace `org.hibernate.validator:hibernate-validator` with `org.rulii:rulii-bean-validation`. Keep your EL
    implementation if messages use `${...}`.
 2. Make sure Hibernate Validator is really gone from the classpath, Spring Boot's validation starter included.
+   With rulii-spring 2.2 or later this library is already there, and only the exclusion is left to do.
 3. Replace `Validation.byProvider(HibernateValidator.class)` with `RuliiValidationProvider.class`, and
    `HibernateValidatorConfiguration` calls with their `RuliiConfiguration` counterparts from the table below.
 4. Change imports of `org.hibernate.validator.constraints.*` to `org.rulii.validation.beans.constraints.*` for the
@@ -63,12 +64,14 @@ Validator validator = Validation.byProvider(RuliiValidationProvider.class)
         .getValidator();
 ```
 
-**Spring Boot.** With [rulii-spring](https://github.com/algox/rulii-spring) on the classpath there is nothing to select:
-its auto-configuration defines the application's `Validator` bean pinned to this provider, before Boot's own validation
-auto-configuration runs, so Hibernate Validator is never bootstrapped even if it is still present. The same wiring gives
-`` the Spring rule registry, so a rule bean is attachable by its bean name. Excluding `hibernate-validator`
-is still worth doing, for the one code path rulii-spring cannot reach: a library that calls
-`Validation.buildDefaultValidatorFactory()` itself.
+**Spring Boot.** [rulii-spring](https://github.com/algox/rulii-spring) 2.2 and later brings this library in, so there
+is nothing to add and nothing to select: its auto-configuration defines the application's `Validator` bean pinned to
+this provider, before Boot's own validation auto-configuration runs, so Hibernate Validator is never bootstrapped even
+if it is still present. The same wiring gives `@Validate` the Spring rule registry, so a rule bean is attachable by its
+bean name. Keep `spring-boot-starter-validation` for Boot's wiring and its EL implementation, but exclude
+`hibernate-validator` from it, for the one code path rulii-spring cannot reach: a library that calls
+`Validation.buildDefaultValidatorFactory()` itself. To stay on Hibernate Validator for now, set
+`rulii.validation.enabled=false`; rulii-spring then pins the `Validator` bean to Hibernate Validator instead.
 
 The `javax.validation` namespace is not supported. A project still on it migrates to `jakarta.validation` first.
 
@@ -267,6 +270,6 @@ outcome for an ordinary bean, and most match Hibernate Validator's own behaviour
 
 The reason to migrate is on the other side of the ledger, and the [README](README.md) covers it: constraints
 that are named, described and tagged rules you can list and trace; cross-field invariants in one `@Expr` line;
-business rules that stay out of the bean and are swapped at runtime with `@Validate`; `RuleSet` and `RuleFlow`
-orchestration; scripted conditions in any language; and one engine for validation and the decisions that follow
-it.
+business rules that stay out of the bean and are swapped at runtime with `@Validate`, parameterised per class or
+method with `@Bind`; `RuleSet` and `RuleFlow` orchestration; scripted conditions in any language; and one engine
+for validation and the decisions that follow it.

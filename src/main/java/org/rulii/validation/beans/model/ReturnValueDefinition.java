@@ -29,10 +29,11 @@ import java.util.List;
 
 /**
  * Definition of the return value of a method, or of the object a constructor creates: the constraints
- * declared on it, the {@code @Validate} and {@code @Expr} rules attached to it, whether it is cascaded ({@code @Valid}),
- * and the constrained positions within its type. Return-value constraints and rules accumulate over
- * the methods a method overrides, so a return value is read from one declaration per method of the
- * chain, the validated method's first.
+ * declared on it, the {@code @Validate} and {@code @Expr} rules attached to it, the {@code @Bind}
+ * bindings declared for it, whether it is cascaded ({@code @Valid}), and the constrained positions
+ * within its type. Return-value constraints and rules accumulate over the methods a method overrides,
+ * so a return value is read from one declaration per method of the chain, the validated method's
+ * first; bindings accumulate too, an override's declaration replacing an inherited name.
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -46,10 +47,12 @@ public final class ReturnValueDefinition implements Definition {
     private final GroupConversions groupConversions;
     private final List<ValidateDefinition> validateRules;
     private final List<ExprDefinition> exprRules;
+    private final List<BindDefinition> binds;
 
     private ReturnValueDefinition(List<ValueDeclaration> declarations, List<ConstraintDefinition> constraints,
                                   List<ContainerElementDefinition> containerElements, List<ValueDeclaration> cascadedDeclarations,
-                                  GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules) {
+                                  GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules,
+                                  List<BindDefinition> binds) {
         super();
         this.declarations = declarations;
         this.constraints = constraints;
@@ -58,6 +61,7 @@ public final class ReturnValueDefinition implements Definition {
         this.groupConversions = groupConversions;
         this.validateRules = validateRules;
         this.exprRules = exprRules;
+        this.binds = binds;
     }
 
     /**
@@ -67,6 +71,8 @@ public final class ReturnValueDefinition implements Definition {
      * @param registry the value extractors available at validation time.
      * @return the definition.
      * @throws GroupConversionNotSupportedException if {@code @ConvertGroup} is declared on the return value.
+     * @throws BindDeclarationException if a {@code @Bind} is invalid, or a name is declared by two
+     *         unrelated types of the chain.
      */
     public static ReturnValueDefinition load(List<ValueDeclaration> declarations, ValueExtractorRegistry registry) {
         Assert.notEmpty(declarations, "declarations cannot be empty.");
@@ -77,6 +83,7 @@ public final class ReturnValueDefinition implements Definition {
         GroupConversions conversions = GroupConversions.NONE;
         List<ValidateDefinition> validateRules = new ArrayList<>();
         List<ExprDefinition> exprRules = new ArrayList<>();
+        List<BindDefinition> binds = new ArrayList<>();
 
         for (ValueDeclaration declaration : declarations) {
             Assert.isTrue(declaration.getKind() == ValueDeclaration.Kind.RETURN_VALUE || declaration.getKind() == ValueDeclaration.Kind.GETTER,
@@ -88,13 +95,15 @@ public final class ReturnValueDefinition implements Definition {
             conversions = conversions.merge(read.groupConversions(), declaration.describe());
             validateRules.addAll(read.validateRules());
             exprRules.addAll(read.exprRules());
+            binds.addAll(read.binds());
         }
 
-        ValidateDefinition.checkDistinct(validateRules, "the return value of [" + declarations.get(0).describe() + "]");
+        String owner = "the return value of [" + declarations.get(0).describe() + "]";
+        ValidateDefinition.checkDistinct(validateRules, owner);
 
         return new ReturnValueDefinition(List.copyOf(declarations), Collections.unmodifiableList(constraints), elements,
                 Collections.unmodifiableList(cascaded), conversions, Collections.unmodifiableList(validateRules),
-                Collections.unmodifiableList(exprRules));
+                Collections.unmodifiableList(exprRules), BindDefinition.resolve(binds, owner));
     }
 
     /**
@@ -175,7 +184,17 @@ public final class ReturnValueDefinition implements Definition {
     }
 
     /**
-     * Whether anything is to be validated for the return value.
+     * The {@code @Bind} bindings declared for the return value, resolved over the chain: one per name,
+     * an override's declaration replacing an inherited one.
+     *
+     * @return the bindings; empty if none.
+     */
+    public List<BindDefinition> getBinds() {
+        return binds;
+    }
+
+    /**
+     * Whether anything is to be validated for the return value. A binding does not count.
      *
      * @return true if constrained, cascaded, holding constrained positions or carrying {@code @Validate}
      *         or {@code @Expr} rules.
@@ -198,6 +217,6 @@ public final class ReturnValueDefinition implements Definition {
     public String toString() {
         return "ReturnValueDefinition{" + getName() + ", constraints=" + constraints.size() + ", elements="
                 + containerElements.size() + ", cascaded=" + isCascaded() + ", validateRules=" + validateRules.size()
-                + ", exprRules=" + exprRules.size() + '}';
+                + ", exprRules=" + exprRules.size() + ", binds=" + binds.size() + '}';
     }
 }

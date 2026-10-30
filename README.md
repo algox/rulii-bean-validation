@@ -193,9 +193,10 @@ RuleViolations violations = validator.validateIn(context, order);
 `validateProperty`, `validateValue` and `forExecutables()` for method and constructor validation are there too,
 with the semantics the specification gives them.
 
-**In Spring Boot.** Add [rulii-spring](https://github.com/algox/rulii-spring) and the application's `Validator` bean is
-this library's, wired into the Spring rulii context: `` names are bean names, constraint validators are Spring
-beans, and the provider is selected even with Hibernate Validator still on the classpath.
+**In Spring Boot.** [rulii-spring](https://github.com/algox/rulii-spring) brings this library in, and the application's
+`Validator` bean is this library's, wired into the Spring rulii context: `@Validate` names are bean names, constraint
+validators are Spring beans, and the provider is selected even with Hibernate Validator still on the classpath
+(`rulii.validation.enabled=false` keeps Hibernate Validator instead).
 
 ---
 
@@ -340,6 +341,34 @@ The violation reports at the bean with the rule's error code and message, next t
 rule runs after the constraints of its group step; a missing value is still handed to it as null, which is what
 the precondition is for, as in any rulii rule. On a property the rule also receives `$value`; on a method, the
 arguments by parameter name.
+
+**Declaration-site context: `@Bind`.** One registered rule, parameterised per site. `@Bind` is to a rule what
+`max = 10` is to `@Size`: a fact about the declaration, bound by name beside the properties (or the arguments of a
+method) for every rule and script that runs there:
+
+```java
+@Validate("withinLimit") @Bind(name = "limit", value = "2", type = Integer.class)
+public class TableBooking { @NotNull Integer seats; }
+
+@Validate("withinLimit") @Bind(name = "limit", value = "500", type = Integer.class)
+public class HallBooking { @NotNull Integer seats; }
+```
+
+```java
+Rule.builder().name("withinLimit")
+        .given(condition((Integer seats, Integer limit) -> seats == null || seats <= limit))
+        .otherwise(action((RuleViolations violations) -> violations.add("withinLimit", "seats.limit")))
+        .build();
+```
+
+A literal is bound as a `String`, or converted once to the declared `type` through the validator's converters. An
+`expr` is a script in the `@Expr` languages, evaluated lazily, on the first read, against the same scope, the
+other bindings of the site included: `@Bind(name = "twice", expr = "${base * 2}")`. Class-level bindings are
+inherited and a subclass can redeclare one; on a method or constructor `applyTo` puts the binding beside the
+arguments or the return value, following the inheritance rules of the constraints there. The name must be free: a
+property's, a parameter's or a reserved name fails when the class is first read, as does a literal that does not
+convert. What `@Bind` is not for: a value that changes for a business reason, which belongs in the registry, and
+anything that reaches a service, which is the rule's own wiring.
 
 **A rule set or a flow: when the logic has shape.** Group the rules of a context in a `RuleSet`, or orchestrate
 them in a `RuleFlow` that branches, loops over items, stops early or runs checks in parallel. The flow sees the

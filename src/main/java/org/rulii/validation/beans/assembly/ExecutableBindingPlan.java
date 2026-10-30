@@ -19,7 +19,9 @@ package org.rulii.validation.beans.assembly;
 
 import org.rulii.bind.Binding;
 import org.rulii.bind.Bindings;
+import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
+import org.rulii.validation.beans.model.BindDeclarationException;
 import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.model.ParameterDefinition;
 
@@ -38,6 +40,11 @@ import java.util.Map;
  * as the bean plan does for properties. The return value is bound by the caller under
  * {@link BindingPlan#RETURN_VALUE}.
  *
+ * <p>The executable's {@code @Bind} bindings ({@link PlannedBind}) live beside the arguments in the
+ * parameters flow, or beside the return value in the return-value flow, as declared;
+ * {@link #bind(RuleContext, boolean)} creates the side's bindings once the flow's context exists. A
+ * parameters-side binding may not take a reserved name or the binding name of a parameter.</p>
+ *
  * @author Max Arulananthan
  * @since 1.0
  */
@@ -45,21 +52,43 @@ public final class ExecutableBindingPlan {
 
     private final ExecutableDefinition executable;
     private final Map<Integer, String> bindings;
+    private final List<PlannedBind> parameterBinds;
+    private final List<PlannedBind> returnValueBinds;
 
-    private ExecutableBindingPlan(ExecutableDefinition executable, Map<Integer, String> bindings) {
+    private ExecutableBindingPlan(ExecutableDefinition executable, Map<Integer, String> bindings, List<PlannedBind> parameterBinds,
+                                  List<PlannedBind> returnValueBinds) {
         super();
         this.executable = executable;
         this.bindings = bindings;
+        this.parameterBinds = parameterBinds;
+        this.returnValueBinds = returnValueBinds;
+    }
+
+    /**
+     * Plans the bindings of an executable's parameters, without {@code @Bind} bindings.
+     *
+     * @param executable the executable definition.
+     * @return the plan.
+     */
+    public static ExecutableBindingPlan of(ExecutableDefinition executable) {
+        return of(executable, List.of(), List.of());
     }
 
     /**
      * Plans the bindings of an executable's parameters.
      *
      * @param executable the executable definition.
+     * @param parameterBinds the {@code @Bind} bindings of the parameters side, planned by the materializer.
+     * @param returnValueBinds the {@code @Bind} bindings of the return-value side, planned by the materializer.
      * @return the plan.
+     * @throws BindDeclarationException if a binding takes a reserved name, or a parameters-side one the
+     *         binding name of a parameter.
      */
-    public static ExecutableBindingPlan of(ExecutableDefinition executable) {
+    public static ExecutableBindingPlan of(ExecutableDefinition executable, List<PlannedBind> parameterBinds,
+                                           List<PlannedBind> returnValueBinds) {
         Assert.notNull(executable, "executable cannot be null.");
+        Assert.notNull(parameterBinds, "parameterBinds cannot be null.");
+        Assert.notNull(returnValueBinds, "returnValueBinds cannot be null.");
         Map<Integer, String> bindings = new LinkedHashMap<>();
 
         for (ParameterDefinition parameter : executable.getParameters()) {
@@ -67,7 +96,11 @@ public final class ExecutableBindingPlan {
             bindings.put(parameter.getIndex(), unique(BindingPlan.RESERVED_NAMES.contains(name) ? name + "$" : name, bindings.values()));
         }
 
-        return new ExecutableBindingPlan(executable, Collections.unmodifiableMap(bindings));
+        BindingPlan.check(parameterBinds, bindings.values(), "parameter");
+        BindingPlan.check(returnValueBinds, List.of(), "parameter");
+
+        return new ExecutableBindingPlan(executable, Collections.unmodifiableMap(bindings), List.copyOf(parameterBinds),
+                List.copyOf(returnValueBinds));
     }
 
     private static String unique(String candidate, Iterable<String> taken) {
@@ -95,6 +128,36 @@ public final class ExecutableBindingPlan {
      */
     public Map<Integer, String> getBindings() {
         return bindings;
+    }
+
+    /**
+     * The {@code @Bind} bindings of the parameters side, as planned.
+     *
+     * @return the bindings; unmodifiable, empty if none.
+     */
+    public List<PlannedBind> getParameterBinds() {
+        return parameterBinds;
+    }
+
+    /**
+     * The {@code @Bind} bindings of the return-value side, as planned: one per name, the chain resolved.
+     *
+     * @return the bindings; unmodifiable, empty if none.
+     */
+    public List<PlannedBind> getReturnValueBinds() {
+        return returnValueBinds;
+    }
+
+    /**
+     * Binds one side's {@code @Bind} bindings into the current scope of the given context, after the
+     * arguments or the return value are bound: a constant as is, an expression lazily, evaluated on
+     * first read against this context and remembered for the scope's lifetime.
+     *
+     * @param ruleContext the context of the flow validating the call.
+     * @param parameters true for the parameters side, false for the return-value side.
+     */
+    public void bind(RuleContext ruleContext, boolean parameters) {
+        BindingPlan.bind(ruleContext, parameters ? parameterBinds : returnValueBinds);
     }
 
     /**
@@ -155,6 +218,8 @@ public final class ExecutableBindingPlan {
 
     @Override
     public String toString() {
-        return "ExecutableBindingPlan{" + executable.getName() + " " + List.copyOf(bindings.values()) + '}';
+        return "ExecutableBindingPlan{" + executable.getName() + " " + List.copyOf(bindings.values())
+                + (parameterBinds.isEmpty() ? "" : " binds=" + parameterBinds)
+                + (returnValueBinds.isEmpty() ? "" : " returnValueBinds=" + returnValueBinds) + '}';
     }
 }

@@ -77,6 +77,7 @@ final class ValidateExecutableCommand extends CollectingCommand {
     protected void run(RuleFlowExecutionContext ctx) {
         RuleContext ruleContext = ctx.getRuleContext();
         BeanRuleViolations collector = Traversal.collector(ruleContext);
+        rules.getBindingPlan().bind(ruleContext, parameters);
 
         try (BeanRuleViolations.Frame ignored = collector.enter(path(collector.getCurrentPath()), rules, bean(ruleContext))) {
             super.run(ctx);

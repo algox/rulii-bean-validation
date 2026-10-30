@@ -166,15 +166,23 @@ public final class ExprDefinition implements RuleDeclaration {
             groups.add(group);
         }
 
-        return new ExprDefinition(declarationSource, annotation, language(declarationSource, annotation), Collections.unmodifiableList(groups));
+        return new ExprDefinition(declarationSource, annotation, language(declarationSource, annotation.lang(), "@Expr"),
+                Collections.unmodifiableList(groups));
     }
 
     /**
-     * The declared language: the annotation's, else the declaring class's {@code @ExprDefaults}, else
-     * its package's; null when none names one.
+     * The declared language of a script: the one declared on the annotation, else the declaring
+     * class's {@code @ExprDefaults}, else its package's; null when none names one. Shared with
+     * {@code @Bind}, whose expressions follow the same chain.
+     *
+     * @param declarationSource where the annotation is declared.
+     * @param declared the annotation's own {@code lang}.
+     * @param what the annotation, for the message ({@code @Expr}, {@code @Bind [name]}).
+     * @return the language name, or null.
+     * @throws ExprDeclarationException if the {@code @ExprDefaults} in scope declares a blank language.
      */
-    private static String language(ConstraintSource declarationSource, Expr annotation) {
-        if (StringUtils.hasText(annotation.lang())) return annotation.lang().trim();
+    static String language(ConstraintSource declarationSource, String declared, String what) {
+        if (StringUtils.hasText(declared)) return declared.trim();
 
         Class<?> declaringClass = declarationSource.getDeclaringClass();
         ExprDefaults defaults = declaringClass.getDeclaredAnnotation(ExprDefaults.class);
@@ -188,7 +196,7 @@ public final class ExprDefinition implements RuleDeclaration {
         if (defaults == null) return null;
 
         if (!StringUtils.hasText(defaults.lang())) {
-            throw new ExprDeclarationException("@ExprDefaults on " + owner + " declares a blank lang; needed by @Expr on ["
+            throw new ExprDeclarationException("@ExprDefaults on " + owner + " declares a blank lang; needed by " + what + " on ["
                     + declarationSource.describe() + "].", declarationSource);
         }
 

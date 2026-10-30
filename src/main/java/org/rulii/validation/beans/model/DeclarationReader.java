@@ -53,11 +53,14 @@ import java.util.List;
  * @param groupConversions the {@code @ConvertGroup} conversions of the cascade.
  * @param validateRules the {@code @Validate} rules attached to the declaration.
  * @param exprRules the {@code @Expr} conditions attached to the declaration.
+ * @param binds the {@code @Bind} bindings attached to the declaration; a return value's only, the
+ *              other kinds not being targets.
  * @author Max Arulananthan
  * @since 1.0
  */
 record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerElementDefinition> elements, boolean cascaded,
-                         GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules) {
+                         GroupConversions groupConversions, List<ValidateDefinition> validateRules, List<ExprDefinition> exprRules,
+                         List<BindDefinition> binds) {
 
     /**
      * Reads a declaration.
@@ -68,6 +71,7 @@ record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerE
      * @throws ConstraintDeclarationException if value unwrapping is requested but cannot be resolved to
      *         exactly one extractor, both {@code Unwrap} and {@code Skip} are requested, or a
      *         {@code @ConvertGroup} breaks a rule (see {@link GroupConversions}).
+     * @throws BindDeclarationException if a {@code @Bind} is declared on a getter, or is invalid.
      */
     static DeclarationReader read(ValueDeclaration declaration, ValueExtractorRegistry registry) {
         Assert.notNull(declaration, "declaration cannot be null.");
@@ -102,11 +106,12 @@ record DeclarationReader(List<ConstraintDefinition> constraints, List<ContainerE
         }
 
         return new DeclarationReader(Collections.unmodifiableList(onValue), Collections.unmodifiableList(elements), cascaded,
-                conversions, ValidateDefinition.load(declaration), ExprDefinition.load(declaration));
+                conversions, ValidateDefinition.load(declaration), ExprDefinition.load(declaration), BindDefinition.load(declaration));
     }
 
     /**
-     * Whether the declaration contributes anything to validate.
+     * Whether the declaration contributes anything to validate. A binding is context, not a check, and
+     * does not count.
      */
     boolean isConstrained() {
         return !constraints.isEmpty() || !elements.isEmpty() || cascaded || !validateRules.isEmpty() || !exprRules.isEmpty();
