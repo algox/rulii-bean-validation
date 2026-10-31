@@ -50,9 +50,7 @@ import org.rulii.context.RuleContext;
 import org.rulii.model.InputParameter;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.rule.Rule;
-import org.rulii.model.UnrulyException;
 import org.rulii.ruleflow.RuleFlow;
-import org.rulii.ruleset.RuleSet;
 import org.rulii.ruleflow.RuleFlowListener;
 import org.rulii.ruleflow.command.RuleFlowCommand;
 import org.rulii.validation.RuleViolation;
@@ -71,7 +69,6 @@ import org.rulii.validation.beans.model.DefaultParameterNameProvider;
 import org.rulii.validation.beans.model.ExecutableDefinition;
 import org.rulii.validation.beans.validator.ConstraintValidatorException;
 import org.rulii.validation.beans.model.IllegalExecutableConstraintException;
-import org.rulii.validation.beans.traversal.RuleFlowAssembler;
 import org.rulii.validation.rules.Validators;
 
 import java.lang.annotation.ElementType;
@@ -664,99 +661,6 @@ public class ExecutableValidationTest {
         assertNotNull(validator.getParametersRuleFlow(Desk.class, book));
         assertNotNull(validator.getReturnValueRuleFlow(Desk.class, label));
         assertNull(validator.getReturnValueRuleFlow(Desk.class, book));
-    }
-
-    @Test
-    public void registerFlowsPublishesTheFlowsInTheRegistry() throws Exception {
-        RuleRegistry registry = RuleRegistry.builder()
-                .register(Validators.notNull(Validators.binding("p0")).name("startRequired").build())
-                .register(Validators.notNull(Validators.binding(BindingPlan.VALUE)).name("resultRequired").build())
-                .build();
-        BeanValidator validator = BeanValidator.builder().parameterNameProvider(POSITIONAL).registry(registry).registerFlows(true).build();
-        Method book = method(Desk.class, "book", LocalDate.class, LocalDate.class);
-        Method label = method(Desk.class, "label");
-        String beanFlow = RuleFlowAssembler.flowName(Desk.class);
-
-        assertTrue(validator.isRegisteringFlows());
-        assertTrue(registry.getRuleFlows().isEmpty(), "lazy: nothing is registered before a class is first used");
-
-        // The bean flow comes with the class, the executable flows with the executable.
-        validator.forExecutables().validateParameters(new Desk("d1"), book, new Object[] {LocalDate.of(2026, 1, 1), null});
-        assertSame(validator.getRuleFlow(Desk.class), registry.getRuleFlow(beanFlow));
-        RuleFlow<?> parameters = validator.getParametersRuleFlow(Desk.class, book);
-        assertSame(parameters, registry.getRuleFlow(parameters.getName()));
-        assertNull(registry.getRuleFlow(RuleFlowAssembler.returnValueFlowName(validator.getBeanDefinition(Desk.class),
-                validator.getBeanDefinition(Desk.class).getMethod("label"))), "not built yet");
-        validator.forExecutables().validateReturnValue(new Desk("d1"), label, "x");
-        RuleFlow<?> returnValue = validator.getReturnValueRuleFlow(Desk.class, label);
-        assertSame(returnValue, registry.getRuleFlow(returnValue.getName()));
-
-        // Listed by the class's category and told apart by tag.
-        assertEquals(List.of(beanFlow, parameters.getName(), returnValue.getName()),
-                registry.getByCategory(Desk.class.getName()).stream().map(org.rulii.model.Runnable::getName).toList());
-        assertEquals(List.of(parameters.getName()), registry.getByTags(RuleFlowAssembler.PARAMETERS_TAG).stream()
-                .map(org.rulii.model.Runnable::getName).toList());
-
-        // A registered flow runs by name from anywhere, with the bean bound as $this.
-        RuleFlow<?> flow = RuleFlow.builder().name("audit").run(beanFlow).build();
-        Bindings bindings = Bindings.builder().standard();
-        bindings.bind(BindingPlan.THIS, Object.class, new Desk("d2"));
-        RuleContext context = RuleContext.builder().with(bindings).registry(registry).build();
-        flow.run(context);
-
-        // A second validator over the same registry leaves the first one's flows in place.
-        BeanValidator other = BeanValidator.builder().parameterNameProvider(POSITIONAL).registry(registry).registerFlows(true).build();
-        other.validate(new Desk("d3"));
-        assertSame(validator.getRuleFlow(Desk.class), registry.getRuleFlow(beanFlow));
-        assertNotSame(other.getRuleFlow(Desk.class), registry.getRuleFlow(beanFlow));
-
-        // Off by default; needs a mutable registry.
-        assertFalse(BeanValidator.builder().registry(registry).build().isRegisteringFlows());
-        assertThrows(UnrulyException.class, () -> BeanValidator.builder().registerFlows(true).build(), "no registry");
-        assertThrows(UnrulyException.class, () -> BeanValidator.builder().registry(new ReadOnlyRegistry(registry)).registerFlows(true).build());
-    }
-
-    /**
-     * A registry nothing can be added to.
-     */
-    private static final class ReadOnlyRegistry implements RuleRegistry {
-
-        private final RuleRegistry delegate;
-
-        private ReadOnlyRegistry(RuleRegistry delegate) {
-            super();
-            this.delegate = delegate;
-        }
-
-        @Override
-        public boolean isNameInUse(String name) {
-            return delegate.isNameInUse(name);
-        }
-
-        @Override
-        public int getCount() {
-            return delegate.getCount();
-        }
-
-        @Override
-        public List<Rule> getRules() {
-            return delegate.getRules();
-        }
-
-        @Override
-        public List<RuleSet> getRuleSets() {
-            return delegate.getRuleSets();
-        }
-
-        @Override
-        public <R, T extends org.rulii.model.Runnable<R>> T get(String name) {
-            return delegate.get(name);
-        }
-
-        @Override
-        public Set<String> getNames() {
-            return delegate.getNames();
-        }
     }
 
     // --- fixtures: constraints -----------------------------------------------------------------------

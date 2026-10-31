@@ -442,15 +442,10 @@ for (MaterializedRule rule : rules.getRules()) {
 RuleFlow<?> flow = validator.getRuleFlow(Order.class);
 ```
 
-With `registerFlows(true)` the validator registers each class's flow in its registry as the class is first used,
-so tools that list the registry see validation next to everything else:
-
-```java
-List<Runnable<?>> orderValidation = validator.getRuleRegistry().getByCategory(Order.class.getName());
-```
-
 Methods and constructors get a parameters flow and a return-value flow of their own, through
-`getParametersRuleFlow` and `getReturnValueRuleFlow`.
+`getParametersRuleFlow` and `getReturnValueRuleFlow`. `getBeanClasses()` lists the classes a validator has read so
+far, and the static `BeanDefinition.isCandidate(Class)` tells, from annotations alone, whether a class declares anything the
+validator would read; tools that discover beans use both.
 
 ---
 
@@ -463,7 +458,6 @@ same options, the latter also the specification's `clockProvider`:
 |---|---|
 | `registry(RuleRegistry)` | where `@Validate` names resolve; without one, the registry of the context the validation runs in |
 | `failFast(boolean)` | stop at the first violation; also the properties `rulii.validation.fail_fast` and `hibernate.validator.fail_fast` |
-| `registerFlows(boolean)` | register each class's validation flow in the registry as the class is first used |
 | `mapper(ConstraintMapper)` | how a constraint annotation becomes rules; add your own or replace a built-in mapping |
 | `extractor(ValueExtractor)` | value extraction for a container type of your own |
 | `constraintValidatorFactory`, `messageInterpolator`, `traversableResolver`, `parameterNameProvider` | the specification's hooks, consulted as specified |

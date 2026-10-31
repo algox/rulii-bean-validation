@@ -20,17 +20,29 @@ package org.rulii.validation.beans.model;
 import jakarta.validation.GroupDefinitionException;
 import jakarta.validation.GroupSequence;
 import jakarta.validation.ParameterNameProvider;
+import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.Definition;
 import org.rulii.model.SourceDefinition;
+import org.rulii.validation.beans.Bind;
+import org.rulii.validation.beans.Expr;
+import org.rulii.validation.beans.Validate;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.group.GroupPlan;
 import org.rulii.validation.beans.util.reflect.TypeHierarchies;
 import org.rulii.validation.beans.util.reflect.TypeHierarchyVisitor;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedArrayType;
+import java.lang.reflect.AnnotatedParameterizedType;
+import java.lang.reflect.AnnotatedType;
+import java.lang.reflect.AnnotatedWildcardType;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.lang.reflect.RecordComponent;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -205,6 +217,80 @@ public final class BeanDefinition implements Definition {
 
     private static GroupDefinitionException definition(Class<?> beanClass, String problem) {
         return new GroupDefinitionException("@GroupSequence on [" + beanClass.getName() + "] " + problem);
+    }
+
+    /**
+     * Whether a class declares anything {@link #load} would read: a constraint (an annotation annotated
+     * {@code @Constraint}, or a container of such), {@code @Valid}, {@code @Validate}, {@code @Expr}
+     * or {@code @Bind} on the class or a supertype, on a field, a record component, a method or a
+     * constructor, on a parameter, or as a type-use annotation of a field, return or parameter type,
+     * container element positions included. Reads annotations only: it builds no definition, so it is
+     * cheap enough to ask of every class in a package. A class that passes may still fail to load
+     * (a declaration error is found by {@link #load}); a class that fails has an empty definition.
+     *
+     * @param beanClass the class.
+     * @return true if the class is a candidate; false for primitives and arrays.
+     */
+    public static boolean isCandidate(Class<?> beanClass) {
+        Assert.notNull(beanClass, "beanClass cannot be null.");
+        if (beanClass.isPrimitive() || beanClass.isArray()) return false;
+
+        Candidate candidate = new Candidate();
+        TypeHierarchies.walk(beanClass, candidate);
+        if (candidate.found) return true;
+
+        for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
+            if (!constructor.isSynthetic() && declares(constructor)) return true;
+        }
+
+        return false;
+    }
+
+    private static boolean declares(Executable executable) {
+        if (declares(executable.getDeclaredAnnotations())) return true;
+        if (executable instanceof Method method && declares(method.getAnnotatedReturnType())) return true;
+
+        for (Parameter parameter : executable.getParameters()) {
+            if (declares(parameter.getDeclaredAnnotations()) || declares(parameter.getAnnotatedType())) return true;
+        }
+
+        return false;
+    }
+
+    private static boolean declares(AnnotatedType type) {
+        if (type == null) return false;
+        if (declares(type.getAnnotations())) return true;
+
+        if (type instanceof AnnotatedParameterizedType parameterized) {
+            for (AnnotatedType argument : parameterized.getAnnotatedActualTypeArguments()) {
+                if (declares(argument)) return true;
+            }
+        } else if (type instanceof AnnotatedArrayType array) {
+            return declares(array.getAnnotatedGenericComponentType());
+        } else if (type instanceof AnnotatedWildcardType wildcard) {
+            for (AnnotatedType bound : wildcard.getAnnotatedUpperBounds()) {
+                if (declares(bound)) return true;
+            }
+
+            for (AnnotatedType bound : wildcard.getAnnotatedLowerBounds()) {
+                if (declares(bound)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean declares(Annotation[] annotations) {
+        for (Annotation annotation : annotations) {
+            if (annotation instanceof Valid || annotation instanceof Validate
+                    || annotation instanceof Expr || annotation instanceof Expr.List
+                    || annotation instanceof Bind || annotation instanceof Bind.List
+                    || ConstraintDefinition.isConstraint(annotation) || ConstraintDefinition.isConstraintContainer(annotation)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static boolean cascades(List<ContainerElementDefinition> elements) {
@@ -427,6 +513,38 @@ public final class BeanDefinition implements Definition {
         @Override
         public void visitRecordComponent(RecordComponent component) {
             properties.visitRecordComponent(component);
+        }
+    }
+
+    /**
+     * The walk behind {@link #isCandidate}: stops looking once something is found.
+     */
+    private static final class Candidate implements TypeHierarchyVisitor {
+
+        private boolean found;
+
+        private Candidate() {
+            super();
+        }
+
+        @Override
+        public void visitType(Class<?> type) {
+            found |= declares(type.getDeclaredAnnotations());
+        }
+
+        @Override
+        public void visitField(Field field) {
+            found |= declares(field.getDeclaredAnnotations()) || declares(field.getAnnotatedType());
+        }
+
+        @Override
+        public void visitMethod(Method method) {
+            found |= declares(method);
+        }
+
+        @Override
+        public void visitRecordComponent(RecordComponent component) {
+            found |= declares(component.getDeclaredAnnotations()) || declares(component.getAnnotatedType());
         }
     }
 }

@@ -393,6 +393,25 @@ public class BeanValidatorTest {
     }
 
     @Test
+    public void beanClassesAreASnapshotOfWhatWasRead() {
+        BeanValidator validator = validator();
+        assertEquals(Set.of(), validator.getBeanClasses(), "nothing read yet");
+
+        validator.getBeanDefinition(Customer.class);
+        Set<Class<?>> afterOne = validator.getBeanClasses();
+        assertEquals(Set.of(Customer.class), afterOne);
+
+        // Validating an Order cascades into its Customer; both are read. The earlier snapshot does not move.
+        Order order = new Order();
+        order.code = "x";
+        order.customer = new Customer();
+        validator.validate(order);
+        assertEquals(Set.of(Order.class, Customer.class), validator.getBeanClasses());
+        assertEquals(Set.of(Customer.class), afterOne);
+        assertThrows(UnsupportedOperationException.class, () -> validator.getBeanClasses().clear());
+    }
+
+    @Test
     public void validatorInterfaceEdges() {
         Validator validator = validator();
 

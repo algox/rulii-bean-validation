@@ -101,7 +101,7 @@ configuration, where `HibernateValidatorConfiguration` was.
 | `ConstraintValidatorFactory` default | backed by rulii's `ObjectFactory`; with rulii-spring, validators are Spring beans with injection |
 
 Provider-specific options that have no Hibernate counterpart: `registry(RuleRegistry)` for `@Validate`,
-`registerFlows(boolean)`, `mapper(ConstraintMapper)` to change how an annotation becomes rules, and
+`mapper(ConstraintMapper)` to change how an annotation becomes rules, and
 `options(RuleContextOptions)` for the rulii context validation runs in.
 
 ---

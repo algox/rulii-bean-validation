@@ -25,8 +25,6 @@ import jakarta.validation.valueextraction.ValueExtractor;
 import org.rulii.context.RuleContextOptions;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
-import org.rulii.model.UnrulyException;
-import org.rulii.registry.MutableRuleRegistry;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.validation.beans.extract.ValueExtractorRegistry;
 import org.rulii.validation.beans.model.DefaultParameterNameProvider;
@@ -54,9 +52,7 @@ import org.rulii.validation.beans.validator.DefaultConstraintValidatorFactory;
  *   <li>{@link #messageInterpolator(MessageInterpolator)}: a spec interpolator rendering the messages
  *       of constraint violations in place of rulii's message pipeline;</li>
  *   <li>{@link #traversableResolver(TraversableResolver)}: which properties may be validated and
- *       cascaded into (lazy persistence associations, typically);</li>
- *   <li>{@link #registerFlows(boolean)}: whether the flows the validator builds per class are
- *       registered in the registry, so other flows run them by name.</li>
+ *       cascaded into (lazy persistence associations, typically).</li>
  * </ul>
  *
  * @author Max Arulananthan
@@ -74,28 +70,10 @@ public final class BeanValidatorBuilder {
     private ConstraintMapperRegistry mapperRegistry;
     private final ValueExtractorRegistryBuilder extractors = ValueExtractorRegistryBuilder.standard();
     private ValueExtractorRegistry extractorRegistry;
-    private boolean registerFlows;
     private boolean failFast;
 
     BeanValidatorBuilder() {
         super();
-    }
-
-    /**
-     * Whether the validator registers the flows it builds in its {@link #registry(RuleRegistry) registry}:
-     * the bean flow of every class it validates and the parameters and return-value flows of every
-     * executable, as they are first built, under their names ({@code orderValidationFlow},
-     * {@code orderService_placeParametersFlow}, ...), categorised under the bean class. Another flow
-     * then runs them by name, and a registry listing shows them. Off by default. Needs a
-     * {@code MutableRuleRegistry}; a name already in use (a second validator over the same registry
-     * reached that class first) is left as it is.
-     *
-     * @param registerFlows true to register the flows.
-     * @return this builder.
-     */
-    public BeanValidatorBuilder registerFlows(boolean registerFlows) {
-        this.registerFlows = registerFlows;
-        return this;
     }
 
     /**
@@ -270,12 +248,6 @@ public final class BeanValidatorBuilder {
 
         RuleRegistry effectiveRegistry = registry != null ? registry : (options != null ? options.getRuleRegistry() : null);
 
-        if (registerFlows && !(effectiveRegistry instanceof MutableRuleRegistry)) {
-            throw new UnrulyException("registerFlows needs a MutableRuleRegistry to register the flows in; "
-                    + (effectiveRegistry == null ? "no registry is configured." : "the configured registry ["
-                    + effectiveRegistry.getClass().getName() + "] is read-only."));
-        }
-
         return new BeanValidator(effectiveRegistry,
                 extractorRegistry != null ? extractorRegistry : extractors.build(),
                 mapperRegistry != null ? mapperRegistry : mappers.build(),
@@ -283,6 +255,6 @@ public final class BeanValidatorBuilder {
                 parameterNameProvider != null ? parameterNameProvider : new DefaultParameterNameProvider(),
                 messageInterpolator,
                 traversableResolver != null ? traversableResolver : TraversableResolvers.getDefault(),
-                registerFlows, failFast);
+                failFast);
     }
 }

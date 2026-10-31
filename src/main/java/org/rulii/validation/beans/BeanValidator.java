@@ -32,8 +32,6 @@ import org.rulii.context.RuleContextOptions;
 import org.rulii.context.StandardRuleContextOptions;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
-import org.rulii.registry.AlreadyRegisteredException;
-import org.rulii.registry.MutableRuleRegistry;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.ruleflow.RuleFlow;
 import org.rulii.ruleset.RuleSet;
@@ -60,6 +58,7 @@ import org.rulii.validation.beans.traversal.Traversal;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -97,21 +96,18 @@ public final class BeanValidator implements Validator {
     private final RuleMaterializer materializer;
     private final RuleFlowAssembler assembler;
     private final ExecutableBeanValidator executableValidator;
-    private final boolean registerFlows;
     private final boolean failFast;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
 
     BeanValidator(RuleRegistry registry, ValueExtractorRegistry extractors, ConstraintMapperRegistry mappers,
                   RuleContextOptions options, ParameterNameProvider parameterNameProvider, MessageInterpolator messageInterpolator,
-                  TraversableResolver traversableResolver, boolean registerFlows, boolean failFast) {
+                  TraversableResolver traversableResolver, boolean failFast) {
         super();
         Assert.notNull(extractors, "extractors cannot be null.");
         Assert.notNull(mappers, "mappers cannot be null.");
         Assert.notNull(parameterNameProvider, "parameterNameProvider cannot be null.");
         Assert.notNull(traversableResolver, "traversableResolver cannot be null.");
-        Assert.isTrue(!registerFlows || registry instanceof MutableRuleRegistry, "registerFlows needs a MutableRuleRegistry.");
         this.registry = registry;
-        this.registerFlows = registerFlows;
         this.failFast = failFast;
         this.traversableResolver = traversableResolver;
         this.messageInterpolator = messageInterpolator;
@@ -466,6 +462,17 @@ public final class BeanValidator implements Validator {
     }
 
     /**
+     * The classes this validator has read so far: every class validated, cascaded into, or asked for
+     * through {@link #getBeanDefinition}, {@link #getBeanRules} or {@link #getRuleFlow}. A snapshot;
+     * later reads do not show in it.
+     *
+     * @return the classes, unmodifiable; empty until the first use.
+     */
+    public Set<Class<?>> getBeanClasses() {
+        return Set.copyOf(cache.keySet());
+    }
+
+    /**
      * What the validator keeps for an executable, materialized and assembled on first request.
      *
      * @param beanClass the class the executable is called on, or the class a constructor constructs.
@@ -486,37 +493,8 @@ public final class BeanValidator implements Validator {
             ExecutableRules rules = materializer.materialize(def);
             RuleFlow<?> parametersFlow = def.hasConstrainedParameters() ? assembler.assembleParameters(entry.rules, rules) : null;
             RuleFlow<?> returnValueFlow = def.hasConstrainedReturnValue() ? assembler.assembleReturnValue(entry.rules, rules) : null;
-            register(parametersFlow);
-            register(returnValueFlow);
             return new ExecutableEntry(rules, parametersFlow, returnValueFlow);
         });
-    }
-
-    /**
-     * Whether the flows this validator builds are registered in its registry as they are built.
-     *
-     * @return true if they are.
-     * @see BeanValidatorBuilder#registerFlows(boolean)
-     */
-    public boolean isRegisteringFlows() {
-        return registerFlows;
-    }
-
-    /**
-     * Registers a flow just built, when asked to. A name already in use is left alone: another
-     * validator over the same registry built that class first, or the application holds something
-     * under that name; this validator runs its own flow from its cache either way.
-     */
-    private void register(RuleFlow<?> flow) {
-        if (!registerFlows || flow == null) return;
-        MutableRuleRegistry mutable = (MutableRuleRegistry) registry;
-        if (mutable.isNameInUse(flow.getName())) return;
-
-        try {
-            mutable.register(flow);
-        } catch (AlreadyRegisteredException e) {
-            // Registered between the check and now, by another thread or validator: theirs stands.
-        }
     }
 
     /**
@@ -594,7 +572,6 @@ public final class BeanValidator implements Validator {
         return cache.computeIfAbsent(beanClass, type -> {
             BeanRules rules = materializer.materialize(loader.load(type));
             RuleFlow<?> flow = assembler.assemble(rules);
-            register(flow);
             return new Entry(rules, flow);
         });
     }
@@ -648,7 +625,7 @@ public final class BeanValidator implements Validator {
 
     @Override
     public String toString() {
-        return "BeanValidator{classes=" + cache.size() + ", registry=" + (registry != null) + ", registerFlows=" + registerFlows + '}';
+        return "BeanValidator{classes=" + cache.size() + ", registry=" + (registry != null) + '}';
     }
 
     /**
