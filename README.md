@@ -198,6 +198,11 @@ with the semantics the specification gives them.
 validators are Spring beans, and the provider is selected even with Hibernate Validator still on the classpath
 (`rulii.validation.enabled=false` keeps Hibernate Validator instead).
 
+**Seeing it.** The [rulii explorer](https://github.com/algox/rulii-explorer) shows these beans: with
+`rulii.explorer.beans.enabled=true` its Beans section lists every validated class member by member, opens the rule this
+library built for each constraint, draws the cascades between beans and the `@Validate` rules they run, and flags a
+`@Validate` name nothing is registered under.
+
 ---
 
 ## Attaching rulii Rules with `@Validate`
