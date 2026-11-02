@@ -1,4 +1,4 @@
-[rulii Maven Central]:https://central.sonatype.com/artifact/org.rulii/rulii
+[rulii-bean-validation Maven Central]:https://central.sonatype.com/artifact/org.rulii/rulii-bean-validation
 [Apache 2.0 License]:https://opensource.org/licenses/Apache-2.0
 
 # _rulii-bean-validation_
@@ -8,6 +8,10 @@
 ---
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-orange.svg)][Apache 2.0 License]
+[![Maven Central Version](https://img.shields.io/maven-central/v/org.rulii/rulii-bean-validation)][rulii-bean-validation Maven Central]
+[![Javadoc](https://javadoc.io/badge2/org.rulii/rulii-bean-validation/javadoc.svg)](https://javadoc.io/doc/org.rulii/rulii-bean-validation/latest)
+![Build](https://github.com/algox/rulii-bean-validation/actions/workflows/maven.yml/badge.svg)
+[![codecov](https://codecov.io/gh/algox/rulii-bean-validation/branch/develop/graph/badge.svg)](https://codecov.io/gh/algox/rulii-bean-validation)
 
 ---
 
@@ -21,6 +25,7 @@
 
 - [What is it?](#what-is-it)
 - [Why rulii bean validation?](#why-rulii-bean-validation)
+- [What's New in 1.0.0](#whats-new-in-100)
 - [Annotations for invariants, rules for decisions](#annotations-for-invariants-rules-for-decisions)
 - [Getting Started](#getting-started)
 - [Validating a Bean](#validating-a-bean)
@@ -78,6 +83,33 @@ annotations do and adds what they cannot:
   constructor validation, the metadata API and the default message interpolation are all in place. The
   [migration guide](MIGRATION.md) lists what differs.
 - **Two dependencies.** rulii core and the `jakarta.validation` API. Nothing else is pulled in.
+
+---
+
+## What's New in 1.0.0
+
+The first release, on rulii 2.2.0, the `jakarta.validation` API 3.1 and Java 17.
+
+- **A Bean Validation provider** — `RuliiValidationProvider` is found through `META-INF/services`, so
+  `Validation.buildDefaultValidatorFactory()` works unchanged; `BeanValidator.builder()` builds a validator without
+  the Jakarta bootstrap, and `validateIn(context, bean)` validates inside an existing rulii `RuleContext`. Standard
+  constraints, groups and sequences, cascading, container elements, method and constructor validation, the metadata
+  API and message interpolation are in place. See [Validating a Bean](#validating-a-bean).
+- **Every constraint is a rulii rule** — named, described, categorised under the bean class and tagged with its
+  groups, so it appears in the trace and in the registry; every violation is a `RuleViolation` and a
+  `ConstraintViolation` at once. See [Your Constraints as rulii Rules](#your-constraints-as-rulii-rules).
+- **`@Validate` and `@Expr`** — attach a rule, rule set or flow from a rulii `RuleRegistry` to a class, property,
+  method or constructor, and write inline conditions in any scripting language rulii knows, with the language from
+  the annotation, `@ExprDefaults` or `rulii.script.defaultLanguage`. See
+  [Attaching rulii Rules with `@Validate`](#attaching-rulii-rules-with-validate) and
+  [Inline Conditions with `@Expr`](#inline-conditions-with-expr).
+- **The constraints Hibernate Validator users know** — `@UUID`, `@ISBN`, `@EAN`, `@CreditCardNumber`, `@LuhnCheck`,
+  `@Mod10Check`, `@Mod11Check`, `@UniqueElements`, `@Normalized`, `@CodePointLength`, `@Length`, `@Range`, `@URL`,
+  `@DurationMin`, `@DurationMax`, plus rulii's own, each backed by a rulii validator. See [Constraints](#constraints).
+- **Spring Boot** — [rulii-spring](https://github.com/algox/rulii-spring) 2.2 makes this library the application's
+  `Validator`, and [rulii-explorer](https://github.com/algox/rulii-explorer) 1.1 shows the validated beans.
+
+Full details in the [changelog](change-log.md).
 
 ---
 
@@ -488,7 +520,7 @@ same options, the latter also the specification's `clockProvider`:
 - [rulii core](https://github.com/algox/rulii): rules, rule sets, rule flows, the registry, scripting, tracing.
 - [Migration guide](MIGRATION.md): moving from Hibernate Validator.
 - [Gap analysis](GAP-ANALYSIS.md): the specification, chapter by chapter, and where this library deviates.
-- Javadoc on every public type; the Jakarta Validation [specification](https://jakarta.ee/specifications/bean-validation/3.1/)
+- [Javadoc](https://javadoc.io/doc/org.rulii/rulii-bean-validation/latest) on every public type; the Jakarta Validation [specification](https://jakarta.ee/specifications/bean-validation/3.1/)
   for the semantics this library follows.
 
 ---
