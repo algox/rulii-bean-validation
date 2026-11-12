@@ -15,7 +15,7 @@
 
 ---
 
-**📖 rulii documentation at [rulii.com](https://rulii.com)** &middot; **🧪 Sample projects at [rulii-samples](https://github.com/algox/rulii-samples)**
+**📖 rulii documentation at [rulii.org](https://rulii.org)** &middot; **🧪 Sample projects at [rulii-samples](https://github.com/algox/rulii-samples)**
 
 **➡️ Coming from Hibernate Validator? Read the [migration guide](MIGRATION.md).**
 
