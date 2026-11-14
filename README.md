@@ -65,7 +65,7 @@ annotations do and adds what they cannot:
 | | Bean Validation alone | with rulii bean validation |
 |---|---|---|
 | Standard constraints, groups, cascading, containers, method validation | ✅ | ✅ unchanged |
-| Cross-field invariant (`end` after `start`) | class-level annotation + a validator class | one line: `@Expr("${end.isAfter(start)}", errorCode = "trip.end")` |
+| Cross-field invariant (`end` after `start`) | class-level annotation + a validator class | one line: `@Expr(value = "#{end.isAfter(start)}", errorCode = "trip.end")` |
 | Validation that depends on context (the customer, the operation, a limit that changes) | not its job | a rulii `Rule`, `RuleSet` or `RuleFlow`, attached with `@Validate`, swappable at runtime |
 | Orchestration (run these checks only if those passed, branch, loop over items, run in parallel) | none | `RuleFlow` |
 | Scripted conditions | EL inside messages only | any JSR-223 language, GraalJS, Groovy, Jakarta EL, in `@Expr` and in registry rules |
@@ -302,14 +302,16 @@ when the class is first read:
 public class Trip {
     public LocalDate start;
 
-    @Expr(value = "${start == null || end.isAfter(start)}", errorCode = "trip.end")
+    @Expr(value = "#{start == null || end.isAfter(start)}", errorCode = "trip.end")
     public LocalDate end;
 
-    @Expr(value = "${seats < 10}", errorCode = "trip.seats.max", message = "too many seats: ${value}")
+    @Expr(value = "#{seats < 10}", errorCode = "trip.seats.max", message = "too many seats: ${value}")
     public Integer seats;
 }
 ```
 
+- Jakarta EL is written here as `#{...}`. `${...}` evaluates the same, but with rulii-spring it is read as a Spring
+  property placeholder, so `#{...}` is the form that works everywhere.
 - The script sees the same scope a `@Validate` rule does: sibling properties by name, `$this`, `$root`, `$parent`,
   `$groups`, and on an executable the arguments or `$returnValue`.
 - The language comes from `lang` on the annotation, else the nearest `@ExprDefaults` on the class or its package,
@@ -345,7 +347,7 @@ the widest, and none of them needs a `ConstraintValidator` class or a class-leve
 **An invariant: `@Expr`.** One line on the class, no validator class, no registration:
 
 ```java
-@Expr(value = "${end == null || end.isAfter(start)}", errorCode = "trip.end")
+@Expr(value = "#{end == null || end.isAfter(start)}", errorCode = "trip.end")
 public class Trip { ... }
 ```
 
@@ -417,7 +419,7 @@ Rule.builder().name("withinLimit")
 
 A literal is bound as a `String`, or converted once to the declared `type` through the validator's converters. An
 `expr` is a script in the `@Expr` languages, evaluated lazily, on the first read, against the same scope, the
-other bindings of the site included: `@Bind(name = "twice", expr = "${base * 2}")`. Class-level bindings are
+other bindings of the site included: `@Bind(name = "twice", expr = "#{base * 2}")`. Class-level bindings are
 inherited and a subclass can redeclare one; on a method or constructor `applyTo` puts the binding beside the
 arguments or the return value, following the inheritance rules of the constraints there. The name must be free: a
 property's, a parameter's or a reserved name fails when the class is first read, as does a literal that does not
@@ -481,7 +483,7 @@ and is tagged `constraint`, `expr` or `hosted`, the annotation's name, and its g
 ```
 code size must be between 2 and 5 (@Size on com.acme.Order.code)
 reference must not be null (@NotNull on com.acme.Order.reference)
-end must satisfy ${start == null || end.isAfter(start)} (@Expr on com.acme.Trip.end)
+end must satisfy #{start == null || end.isAfter(start)} (@Expr on com.acme.Trip.end)
 ```
 
 The transformation is public. For a class you can get its rules and its per-class `RuleFlow`, a self-contained
