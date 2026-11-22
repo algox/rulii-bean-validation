@@ -25,7 +25,7 @@
 
 - [What is it?](#what-is-it)
 - [Why rulii bean validation?](#why-rulii-bean-validation)
-- [What's New in 1.0.0](#whats-new-in-100)
+- [What's New in 1.1.0](#whats-new-in-110)
 - [Annotations for invariants, rules for decisions](#annotations-for-invariants-rules-for-decisions)
 - [Getting Started](#getting-started)
 - [Validating a Bean](#validating-a-bean)
@@ -44,9 +44,11 @@
 ## What is it?
 
 _rulii-bean-validation_ reads the `jakarta.validation` constraints on your beans (`@NotNull`, `@Size`, `@Valid`,
-your own `@Constraint` annotations) and turns them into [rulii](https://github.com/algox/rulii) rules. Validation
-then runs on the rulii engine: every constraint is an ordinary rule with a name, a description, a category and
-tags, every violation is a rulii `RuleViolation`, and the whole run is visible in the rulii trace.
+your own `@Constraint` annotations) and turns them into [rulii](https://github.com/algox/rulii) rules. Every
+constraint is an ordinary rule with a name, a description, a category and tags, every violation is a rulii
+`RuleViolation`, and every rule that runs is visible in the rulii trace. The engine does the work that needs an
+engine (your own rules, scripts, flows, custom validators); a predefined constraint such as `@NotNull` or `@Size`
+is checked directly by the validator behind its rule, so the common case costs what it should.
 
 To the rest of your code it is a Bean Validation provider. `BeanValidator` implements `jakarta.validation.Validator`,
 the result of a validation is a `Set<ConstraintViolation<T>>`, and the standard bootstrap finds the provider through
@@ -86,28 +88,27 @@ annotations do and adds what they cannot:
 
 ---
 
-## What's New in 1.0.0
+## What's New in 1.1.0
 
-The first release, on rulii 2.2.0, the `jakarta.validation` API 3.1 and Java 17.
+Requires rulii 2.3.0 (1.0.0 runs on rulii 2.2.0). The annotations, the API and the violations are unchanged: this
+release is about what a validation call costs.
 
-- **A Bean Validation provider** — `RuliiValidationProvider` is found through `META-INF/services`, so
-  `Validation.buildDefaultValidatorFactory()` works unchanged; `BeanValidator.builder()` builds a validator without
-  the Jakarta bootstrap, and `validateIn(context, bean)` validates inside an existing rulii `RuleContext`. Standard
-  constraints, groups and sequences, cascading, container elements, method and constructor validation, the metadata
-  API and message interpolation are in place. See [Validating a Bean](#validating-a-bean).
-- **Every constraint is a rulii rule** — named, described, categorised under the bean class and tagged with its
-  groups, so it appears in the trace and in the registry; every violation is a `RuleViolation` and a
-  `ConstraintViolation` at once. See [Your Constraints as rulii Rules](#your-constraints-as-rulii-rules).
-- **`@Validate` and `@Expr`** — attach a rule, rule set or flow from a rulii `RuleRegistry` to a class, property,
-  method or constructor, and write inline conditions in any scripting language rulii knows, with the language from
-  the annotation, `@ExprDefaults` or `rulii.script.defaultLanguage`. See
-  [Attaching rulii Rules with `@Validate`](#attaching-rulii-rules-with-validate) and
-  [Inline Conditions with `@Expr`](#inline-conditions-with-expr).
-- **The constraints Hibernate Validator users know** — `@UUID`, `@ISBN`, `@EAN`, `@CreditCardNumber`, `@LuhnCheck`,
-  `@Mod10Check`, `@Mod11Check`, `@UniqueElements`, `@Normalized`, `@CodePointLength`, `@Length`, `@Range`, `@URL`,
-  `@DurationMin`, `@DurationMax`, plus rulii's own, each backed by a rulii validator. See [Constraints](#constraints).
-- **Spring Boot** — [rulii-spring](https://github.com/algox/rulii-spring) 2.2 makes this library the application's
-  `Validator`, and [rulii-explorer](https://github.com/algox/rulii-explorer) 1.1 shows the validated beans.
+- **Predefined constraints are checked directly** — a rule backed by one of rulii's own validators (`@NotNull`,
+  `@Size`, `@Min`, `@Email` and the rest of the standard and library constraints) is no longer run through the
+  engine: its value is read and the validator behind it is asked. Everything that is a rulii feature still runs in
+  the engine, in declaration order with the rest. See [How a constraint runs](#how-a-constraint-runs).
+- **A class with nothing but predefined constraints needs no engine around it** — no bindings and no rule flow:
+  `validate` reads its properties and asks the validators, at the root of a call and wherever a cascade reaches an
+  object of such a class. A class that declares nothing to validate returns its empty report at once.
+- **What it adds up to** — on our benchmark machine a bean of ten satisfied constraints validates in about 1.5 µs,
+  where 1.0.0 on rulii 2.2.0 took 29 µs, and an order cascading into a hundred lines in about 39 µs, where it took
+  1.7 ms. For scale, Hibernate Validator 9.1 validates the same bean in about 0.75 µs and the same order in about
+  17 µs on that machine.
+- **What a listener sees** — a `RuleListener` still sees every rule. A `RuleSetListener` no longer hears from a
+  validation call, and a `RuleFlowListener` hears of the flows that actually run. `validateIn` is not affected. See
+  [How a constraint runs](#how-a-constraint-runs).
+- **Spring Boot** — with [rulii-spring](https://github.com/algox/rulii-spring) 2.3 this library is opt-in: add it
+  beside rulii-spring and it becomes the application's `Validator`.
 
 Full details in the [changelog](change-log.md).
 
@@ -130,20 +131,21 @@ The test for an `@Expr` is simple: *would this condition ever change for a busin
 
 ## Getting Started
 
-Java 17 or later. The library depends on rulii core and the Jakarta Validation API, both brought in transitively.
+Java 17 or later. The library depends on rulii core (2.3.0 or later) and the Jakarta Validation API, both brought
+in transitively.
 
 **Maven**
 ```xml
 <dependency>
     <groupId>org.rulii</groupId>
     <artifactId>rulii-bean-validation</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
 **Gradle**
 ```groovy
-implementation 'org.rulii:rulii-bean-validation:1.0.0'
+implementation 'org.rulii:rulii-bean-validation:1.1.0'
 ```
 
 **Using more than one rulii library?** Import the [rulii-bom](https://github.com/algox/rulii-bom) once and
@@ -155,7 +157,7 @@ drop the versions. It pins a matching set of rulii, rulii-spring, rulii-bean-val
         <dependency>
             <groupId>org.rulii</groupId>
             <artifactId>rulii-bom</artifactId>
-            <version>2.2.0</version>
+            <version>2.3.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
@@ -239,13 +241,17 @@ RuleContext context = RuleContext.builder().with(bindings).registry(registry).bu
 RuleViolations violations = validator.validateIn(context, order);
 ```
 
+Here every object is validated by its rule flow, with its properties bound in your context, so your rules and your
+listeners see all of it.
+
 `validateProperty`, `validateValue` and `forExecutables()` for method and constructor validation are there too,
 with the semantics the specification gives them.
 
-**In Spring Boot.** [rulii-spring](https://github.com/algox/rulii-spring) brings this library in, and the application's
-`Validator` bean is this library's, wired into the Spring rulii context: `@Validate` names are bean names, constraint
-validators are Spring beans, and the provider is selected even with Hibernate Validator still on the classpath
-(`rulii.validation.enabled=false` keeps Hibernate Validator instead).
+**In Spring Boot.** Add this library beside [rulii-spring](https://github.com/algox/rulii-spring) 2.3 and the
+application's `Validator` bean is this library's, wired into the Spring rulii context: `@Validate` names are bean
+names, constraint validators are Spring beans, and the provider is selected even with Hibernate Validator still on
+the classpath (`rulii.validation.enabled=false` keeps Hibernate Validator instead). In rulii-spring 2.2 the library
+came with rulii-spring; from 2.3 adding the dependency is the switch.
 
 **Seeing it.** The [rulii explorer](https://github.com/algox/rulii-explorer) shows these beans: with
 `rulii.explorer.beans.enabled=true` its Beans section lists every validated class member by member, opens the rule this
@@ -502,6 +508,30 @@ Methods and constructors get a parameters flow and a return-value flow of their 
 `getParametersRuleFlow` and `getReturnValueRuleFlow`. `getBeanClasses()` lists the classes a validator has read so
 far, and the static `BeanDefinition.isCandidate(Class)` tells, from annotations alone, whether a class declares anything the
 validator would read; tools that discover beans use both.
+
+### How a constraint runs
+
+Every constraint has its rule, but a validation call does not make every rule take the same road. What a class
+declares decides it, once, when the class is first read:
+
+| The class declares | How `validate` runs it |
+|---|---|
+| Nothing to validate (`BeanRules.validatesNothing()`) | Returns the empty report; a cascade does not descend into such an object |
+| Nothing but predefined constraints on its properties (`BeanRules.isPlain()`) | No bindings, no flow: each property is read off the object once and the validators are asked |
+| Anything else: `@Valid`, a container element constraint, `@Validate`, `@Expr`, `@Bind`, a custom `ConstraintValidator`, a `@ReportAsSingleViolation` composition, a redefined default group sequence | Its rule flow, with the properties bound; inside it a predefined constraint is still asked directly and everything else is run by the engine |
+
+- **The report is the same on every road**: the same violations, in the same order, with the same paths and
+  messages; groups, group sequences, fail-fast and the traversable resolver apply everywhere.
+- **A predefined constraint** is one whose rule is one of rulii's own validators, built by a standard mapper: all
+  the Jakarta constraints and the library's, except `@Length`, `@Range` and `@CreditCardNumber`, which are
+  `@ReportAsSingleViolation` compositions. A rule your own `ConstraintMapper` builds over a value function of its
+  own is run by the engine.
+- **Tracing.** A `RuleListener` sees every rule on every road: start, pre-condition, condition, otherwise, end. A
+  `RuleFlowListener` sees a flow only where one runs, so not for the first two rows. A `RuleSetListener` sees
+  nothing of a validation call: the rules of a bean are not run as a rule set (the rule sets are still built, for
+  tools and for running on your own, through `BeanRules.ruleSet(...)`).
+- **`validateIn` and a flow run on its own** take the third road for every object: there the caller asked for the
+  engine, its bindings and its trace.
 
 ---
 
