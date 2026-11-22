@@ -32,7 +32,8 @@ Requires rulii 2.3.0 (1.0.0 runs on 2.2.0).
   rules ask for, `ruleViolations`, instead of by searching every scope by type (the traversal asks for it several
   times per object validated), and the `$groups` binding is declared by the class of the traversal's view, which
   a Binding checks far faster than the parameterized `Set<Class<?>>`. Rules match `$groups` as before, by name and
-  as a `Set<Class<?>>` by type.
+  as a `Set<Class<?>>` by type. `validate` binds `$root` itself, exactly as the flow's default for it would, so that
+  default is no longer evaluated on every call.
 - **Behaviour change, only with two collectors in one context:** when a `RuleViolations` is bound as
   `ruleViolations` and another one is bound under a different name beside it or in a scope further in,
   `validateIn` and an embedded bean flow now report to the one bound as `ruleViolations`, which is where the rules

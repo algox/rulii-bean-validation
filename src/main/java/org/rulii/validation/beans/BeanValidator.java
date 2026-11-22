@@ -155,6 +155,9 @@ public final class BeanValidator implements Validator {
             ScopedBindings bindings = Bindings.builder().scoped();
             bind(bindings, object, traversal(step));
             bindings.bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class).value(violations).build());
+            // The flow declares $root with a default, the object itself, which it would evaluate and bind here on
+            // every call: bound up front, the same way, the default is never run.
+            bindings.bind(BindingPlan.ROOT, object);
             getRuleFlow(object.getClass()).run(context(bindings));
         });
 
