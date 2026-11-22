@@ -290,7 +290,7 @@ public final class ExecutableBeanValidator implements ExecutableValidator {
         NamedScope scope = bindings.addScope();
 
         try {
-            BeanValidator.bind(scope.getBindings(), object, validator.traversal(requested));
+            BeanValidator.bind(scope.getBindings(), object, validator.traversal(requested, false));
             if (own != null) {
                 scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
                         .value(own).primary(true).build());

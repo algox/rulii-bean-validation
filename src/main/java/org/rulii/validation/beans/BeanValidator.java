@@ -59,6 +59,7 @@ import java.lang.reflect.Executable;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -94,6 +95,7 @@ public final class BeanValidator implements Validator {
     private final BeanDefinitionLoader loader;
     private final RuleMaterializer materializer;
     private final RuleFlowAssembler assembler;
+    private final Predicate<Class<?>> nothingToValidate = type -> entry(type).rules.validatesNothing();
     private final ExecutableBeanValidator executableValidator;
     private final boolean failFast;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
@@ -145,6 +147,9 @@ public final class BeanValidator implements Validator {
         Assert.notNull(object, "object cannot be null.");
         GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = violations(object, object.getClass(), null, null);
+
+        // A class that declares nothing to validate needs no bindings, no context and no flow: the report is empty.
+        if (validatesNothing(object.getClass())) return new BeanValidationResult<>(object, violations);
 
         run(plan, violations, failFast, step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
@@ -375,7 +380,7 @@ public final class BeanValidator implements Validator {
         NamedScope scope = bindings.addScope();
 
         try {
-            bind(scope.getBindings(), object, traversal(requested));
+            bind(scope.getBindings(), object, traversal(requested, false));
             if (own != null) {
                 scope.getBindings().bind(Binding.builder().with(BindingPlan.RULE_VIOLATIONS, RuleViolations.class)
                         .value(own).primary(true).build());
@@ -588,8 +593,36 @@ public final class BeanValidator implements Validator {
         return failFast;
     }
 
+    /**
+     * Whether validating an instance of the class does nothing ({@link BeanRules#validatesNothing()}), the class
+     * read on first request. A class that cannot be read fails here the way it fails inside a run.
+     */
+    private boolean validatesNothing(Class<?> beanClass) {
+        try {
+            return entry(beanClass).rules.validatesNothing();
+        } catch (UnrulyException e) {
+            throw unwrap(e);
+        }
+    }
+
+    /**
+     * The traversal of one step of a call of the specification API: it does not descend into an object whose
+     * class declares nothing to validate.
+     */
     Traversal traversal(RequestedGroups groups) {
-        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver, failFast);
+        return traversal(groups, true);
+    }
+
+    /**
+     * The traversal of one step of a call.
+     *
+     * @param groups the groups of the step.
+     * @param skipping whether a cascade leaves out the objects whose class declares nothing to validate; false
+     *                 for a run inside a context of the caller's, where every object's flow runs and is traced.
+     */
+    Traversal traversal(RequestedGroups groups, boolean skipping) {
+        return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver, failFast,
+                skipping ? nothingToValidate : null);
     }
 
     /**

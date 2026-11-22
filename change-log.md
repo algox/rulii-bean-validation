@@ -21,6 +21,13 @@ Requires rulii 2.3.0 (1.0.0 runs on 2.2.0).
   run as a rule set any more (the rule sets are still built, for tools and for running on your own). A rule that
   fails to run fails with the same exception and the same named layers; one inner layer of the engine's own
   wrapping is gone from the cause chain. The rules asked directly leave no `DEBUG` line in the engine's log.
+- A class that declares nothing to validate costs nothing to validate. Whether a class has a constraint, a
+  `@Validate` rule, an `@Expr`, a cascade or a `@Bind` is known once the class is read
+  (`BeanRules.validatesNothing()`); when it has none, `validate(object)` returns its empty report without building
+  bindings, a context or a flow, and a cascade (`@Valid`) does not descend into an object of such a class. The call
+  is still checked first: a null object and a group that is not an interface fail as before. **What changes for a
+  caller:** a `RuleFlowListener` on the validator's tracer no longer sees a flow start and end for such an object.
+  `validateIn` and a flow run on its own are not affected: there every object's flow runs and is traced.
 - A validation call does less work around the rules it runs. The violations collector is looked up by the name the
   rules ask for, `ruleViolations`, instead of by searching every scope by type (the traversal asks for it several
   times per object validated), and the `$groups` binding is declared by the class of the traversal's view, which

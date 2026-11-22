@@ -58,6 +58,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * The state of one step of a validation call, bound as {@code $traversal} and shared by every flow
@@ -92,6 +93,7 @@ public final class Traversal {
     private final RuleRegistry registry;
     private final TraversableResolver resolver;
     private final boolean failFast;
+    private final Predicate<Class<?>> skipped;
     private final Map<Object, Set<RequestedGroups>> validated = new IdentityHashMap<>();
     private final Map<Object, Map<String, Boolean>> resolutions = new IdentityHashMap<>();
     private final Set<Class<?>> currentGroups = new CurrentGroups();
@@ -148,7 +150,25 @@ public final class Traversal {
      */
     public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
                      RuleRegistry registry, TraversableResolver resolver, boolean failFast) {
+        this(groups, flows, extractors, registry, resolver, failFast, null);
+    }
+
+    /**
+     * Creates the traversal of a call that leaves some objects out of its cascades.
+     *
+     * @param groups the groups being processed.
+     * @param flows the flow of a bean class, by runtime type.
+     * @param extractors the value extractors of the call.
+     * @param registry the registry {@code @Validate} names resolve through; null to use the context's.
+     * @param resolver the traversable resolver; null, or the traverse-all one, consults nothing.
+     * @param failFast whether the call stops at its first violation.
+     * @param skipped the classes a cascade does not descend into, by runtime type: those that declare nothing to
+     *                validate, so that their flow would bind, run and cascade nothing; null descends into every object.
+     */
+    public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
+                     RuleRegistry registry, TraversableResolver resolver, boolean failFast, Predicate<Class<?>> skipped) {
         super();
+        this.skipped = skipped;
         Assert.notNull(groups, "groups cannot be null.");
         Assert.notNull(flows, "flows cannot be null.");
         Assert.notNull(extractors, "extractors cannot be null.");
@@ -460,8 +480,9 @@ public final class Traversal {
     }
 
     /**
-     * Validates an object reached from the object in scope, at the given path: nothing for null or an
-     * object already validated under the same groups; otherwise the groups are converted, {@code $this}
+     * Validates an object reached from the object in scope, at the given path: nothing for null, for an
+     * object whose class the traversal leaves out (it declares nothing to validate) or for an object
+     * already validated under the same groups; otherwise the groups are converted, {@code $this}
      * and {@code $parent} are rebound in a fresh scope, the collector's path moves to the object, and
      * the flow of the object's runtime class runs once per converted step. A conversion to a sequence
      * runs the sequence for that object alone, stopping at the first step that added violations.
@@ -479,6 +500,8 @@ public final class Traversal {
 
         // Only a fail-fast call can be halted: no other call needs the collector looked up here.
         if (value == null || (failFast && halted(collector(ruleContext)))) return;
+        // A class that declares nothing to validate: its flow would bind, run and cascade nothing.
+        if (skipped != null && skipped.test(value.getClass())) return;
 
         if (conversions.isEmpty()) {
             descendIn(ruleContext, value, path);

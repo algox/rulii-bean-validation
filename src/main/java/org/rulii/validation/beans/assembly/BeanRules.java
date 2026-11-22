@@ -85,6 +85,7 @@ public final class BeanRules implements MaterializedRules {
     private final Map<ContainerElementDefinition, ElementRules> byNode;
     private final String name;
     private final boolean failFast;
+    private final boolean validatesNothing;
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> ruleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> propertyRuleSets = new ConcurrentHashMap<>();
@@ -121,6 +122,8 @@ public final class BeanRules implements MaterializedRules {
         }
 
         this.byName = Collections.unmodifiableMap(names);
+        this.validatesNothing = names.isEmpty() && !definition.isConstrained() && !definition.hasCascades()
+                && bindingPlan.getBinds().isEmpty();
 
         Map<ContainerElementDefinition, ElementRules> nodes = new LinkedHashMap<>();
 
@@ -235,6 +238,19 @@ public final class BeanRules implements MaterializedRules {
      */
     public boolean isEmpty() {
         return byName.isEmpty();
+    }
+
+    /**
+     * Whether validating an instance of the class does nothing at all: the class declares no constraint, no
+     * {@code @Validate} rule and no {@code @Expr} ({@link BeanDefinition#isConstrained()}), cascades into nothing
+     * ({@link BeanDefinition#hasCascades()}) and binds nothing with {@code @Bind}, whose expressions would be
+     * evaluated even with no rule to read them. Known once, when the class is read: a validation call
+     * for such an object has nothing to set up and nothing to run, and a cascade has no reason to descend into it.
+     *
+     * @return true if there is nothing to validate.
+     */
+    public boolean validatesNothing() {
+        return validatesNothing;
     }
 
     /**
