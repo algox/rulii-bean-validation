@@ -58,7 +58,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 /**
  * The state of one step of a validation call, bound as {@code $traversal} and shared by every flow
@@ -93,7 +92,7 @@ public final class Traversal {
     private final RuleRegistry registry;
     private final TraversableResolver resolver;
     private final boolean failFast;
-    private final Predicate<Class<?>> skipped;
+    private final Function<Class<?>, BeanRules> shortcuts;
     private final Map<Object, Set<RequestedGroups>> validated = new IdentityHashMap<>();
     private final Map<Object, Map<String, Boolean>> resolutions = new IdentityHashMap<>();
     private final Set<Class<?>> currentGroups = new CurrentGroups();
@@ -154,7 +153,7 @@ public final class Traversal {
     }
 
     /**
-     * Creates the traversal of a call that leaves some objects out of its cascades.
+     * Creates the traversal of a call that takes the short way through the objects it can.
      *
      * @param groups the groups being processed.
      * @param flows the flow of a bean class, by runtime type.
@@ -162,13 +161,15 @@ public final class Traversal {
      * @param registry the registry {@code @Validate} names resolve through; null to use the context's.
      * @param resolver the traversable resolver; null, or the traverse-all one, consults nothing.
      * @param failFast whether the call stops at its first violation.
-     * @param skipped the classes a cascade does not descend into, by runtime type: those that declare nothing to
-     *                validate, so that their flow would bind, run and cascade nothing; null descends into every object.
+     * @param shortcuts the rules of a bean class, by runtime type, for the objects a cascade need not run a flow
+     *                  for: one whose class declares nothing to validate ({@link BeanRules#validatesNothing()}) is
+     *                  not descended into, and one whose class is plain ({@link BeanRules#isPlain()}) has its rules
+     *                  run without bindings or a flow; null runs the flow of every object.
      */
     public Traversal(RequestedGroups groups, Function<Class<?>, RuleFlow<?>> flows, ValueExtractorRegistry extractors,
-                     RuleRegistry registry, TraversableResolver resolver, boolean failFast, Predicate<Class<?>> skipped) {
+                     RuleRegistry registry, TraversableResolver resolver, boolean failFast, Function<Class<?>, BeanRules> shortcuts) {
         super();
-        this.skipped = skipped;
+        this.shortcuts = shortcuts;
         Assert.notNull(groups, "groups cannot be null.");
         Assert.notNull(flows, "flows cannot be null.");
         Assert.notNull(extractors, "extractors cannot be null.");
@@ -269,6 +270,16 @@ public final class Traversal {
     private boolean ask(boolean reachable, RuleContext ruleContext, Object bean, String propertyName, ValueDeclaration.Kind kind) {
         if (resolver == null) return true;
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        return ask(reachable, ruleContext, null, bean, propertyName, kind);
+    }
+
+    /**
+     * Asks the resolver, once per object, property and element type; the collector is the one given, else the
+     * one bound in the context, looked up only when the resolver is actually asked.
+     */
+    private boolean ask(boolean reachable, RuleContext ruleContext, BeanRuleViolations given, Object bean, String propertyName,
+                        ValueDeclaration.Kind kind) {
+        if (resolver == null) return true;
         Assert.hasText(propertyName, "propertyName cannot be null/empty.");
         Assert.notNull(kind, "kind cannot be null.");
 
@@ -279,7 +290,7 @@ public final class Traversal {
 
         if (known != null) return known;
 
-        BeanRuleViolations collector = collector(ruleContext);
+        BeanRuleViolations collector = given != null ? given : collector(ruleContext);
         Class<?> rootBeanClass = collector != null ? collector.getRootBeanClass() : (bean != null ? bean.getClass() : null);
         PropertyPath pathToObject = collector != null ? collector.getCurrentPath() : PropertyPath.root();
         Path.Node node = PropertyPath.root().property(propertyName).getLeafNode();
@@ -501,7 +512,7 @@ public final class Traversal {
         // Only a fail-fast call can be halted: no other call needs the collector looked up here.
         if (value == null || (failFast && halted(collector(ruleContext)))) return;
         // A class that declares nothing to validate: its flow would bind, run and cascade nothing.
-        if (skipped != null && skipped.test(value.getClass())) return;
+        if (shortcuts != null && shortcuts.apply(value.getClass()).validatesNothing()) return;
 
         if (conversions.isEmpty()) {
             descendIn(ruleContext, value, path);
@@ -527,6 +538,13 @@ public final class Traversal {
         BeanRuleViolations collector = collector(ruleContext);
         Assert.notNull(collector, "descent needs a path-aware collector bound as [" + BindingPlan.RULE_VIOLATIONS
                 + "]; run through the bean flow.");
+        BeanRules plain = shortcuts != null ? shortcuts.apply(value.getClass()) : null;
+
+        if (plain != null && plain.isPlain()) {
+            runPlain(ruleContext, collector, plain, value, path);
+            return;
+        }
+
         RuleFlow<?> flow = getFlow(value.getClass());
         ScopedBindings bindings = ruleContext.getBindings();
         Binding<Object> current = bindings.getBinding(BindingPlan.THIS);
@@ -541,6 +559,49 @@ public final class Traversal {
         } finally {
             bindings.removeScope(scope);
         }
+    }
+
+    /**
+     * Validates an object of a plain class ({@link BeanRules#isPlain()}) at the given path, with the current
+     * groups, without bindings or a flow: the object is recorded as validated, the collector's path moves to it,
+     * and its rules are asked against the values read off it. Nothing of the object is bound, since no rule of
+     * a plain class reads a binding. The traversable resolver is asked about each property as it is in a flow.
+     *
+     * @param ruleContext the context carrying the clock, the messages and the tracer; its bindings are not used.
+     * @param collector the collector of the call.
+     * @param rules the rules of the object's class.
+     * @param value the object.
+     * @param path the path of the object from the root.
+     */
+    public void runPlain(RuleContext ruleContext, BeanRuleViolations collector, BeanRules rules, Object value, PropertyPath path) {
+        Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        Assert.notNull(collector, "collector cannot be null.");
+        Assert.notNull(rules, "rules cannot be null.");
+        Assert.notNull(value, "value cannot be null.");
+        Assert.notNull(path, "path cannot be null.");
+
+        if (!markValidated(value)) return;
+
+        try (BeanRuleViolations.Frame ignored = collector.enter(path, rules, value)) {
+            rules.plan(getGroups()).runPlain(ruleContext, collector, value,
+                    resolver != null ? rule -> isReachable(collector, value, rule) : null);
+        }
+    }
+
+    /**
+     * Whether a property rule of an object may run, asked with the collector at hand instead of the one bound
+     * in a context: {@link #isReachable(RuleContext, Object, MaterializedRule)} for a run without bindings.
+     *
+     * @param collector the collector of the call, positioned at the object.
+     * @param bean the object.
+     * @param rule the rule.
+     * @return true if the rule may run.
+     */
+    public boolean isReachable(BeanRuleViolations collector, Object bean, MaterializedRule rule) {
+        Assert.notNull(collector, "collector cannot be null.");
+        Assert.notNull(rule, "rule cannot be null.");
+        if (resolver == null || rule.getPlacement().getKind() != RulePlacement.Kind.PROPERTY) return true;
+        return ask(true, null, collector, bean, rule.getLeaf(), declarationKind(rule));
     }
 
     /**

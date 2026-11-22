@@ -57,6 +57,7 @@ public final class RulePlan {
     private final String name;
     private final MaterializedRule[] rules;
     private final boolean failFast;
+    private final PropertyAccessor[] readers;
 
     /**
      * Creates the plan.
@@ -67,12 +68,28 @@ public final class RulePlan {
      * @param failFast whether the plan stops at its first failing rule.
      */
     RulePlan(String name, List<MaterializedRule> rules, boolean failFast) {
+        this(name, rules, failFast, null);
+    }
+
+    /**
+     * Creates a plan that can also run without bindings ({@link #runPlain}).
+     *
+     * @param name the name of the rule set the same rules make.
+     * @param rules the rules, in the order they run.
+     * @param failFast whether the plan stops at its first failing rule.
+     * @param readers for each rule, in the same order, what reads its value off the object in scope: the
+     *                declaration the rule reads, or the one its property binding holds; a null entry is the object
+     *                itself. Null when the plan runs with bindings only.
+     */
+    RulePlan(String name, List<MaterializedRule> rules, boolean failFast, PropertyAccessor[] readers) {
         super();
         Assert.hasText(name, "name cannot be null/empty.");
         Assert.notNull(rules, "rules cannot be null.");
+        Assert.isTrue(readers == null || readers.length == rules.size(), "a reader per rule is expected.");
         this.name = name;
         this.rules = rules.toArray(new MaterializedRule[0]);
         this.failFast = failFast;
+        this.readers = readers;
     }
 
     public String getName() {
@@ -115,6 +132,38 @@ public final class RulePlan {
      * @throws UnrulyException if a rule fails to run.
      */
     public void run(RuleContext ruleContext, RuleViolations collector, Object bean, Predicate<MaterializedRule> filter) {
+        run(ruleContext, collector, bean, filter, null);
+    }
+
+    /**
+     * Whether the plan can run without bindings: every rule is asked directly and reads its value off the
+     * object in scope.
+     *
+     * @return true if {@link #runPlain} is available.
+     * @see BeanRules#isPlain()
+     */
+    public boolean isPlain() {
+        return readers != null;
+    }
+
+    /**
+     * Runs the rules without bindings: each value is read off the object in scope, the declaration a property's
+     * binding would hold being read once for all the rules of that property, as the binding has it read once.
+     * The context is not looked into: it carries what a validator and its violation need (the clock, the message
+     * resolver and formatter, the locale) and the tracer the rule events go to.
+     *
+     * @param ruleContext the context carrying the clock, the messages and the tracer.
+     * @param collector the collector the violations go to.
+     * @param bean the object the values are read off.
+     * @param filter which rules run; null runs them all. Asked for every rule before the first one runs.
+     * @throws UnrulyException if a rule fails to run.
+     */
+    public void runPlain(RuleContext ruleContext, RuleViolations collector, Object bean, Predicate<MaterializedRule> filter) {
+        Assert.isTrue(readers != null, "plan [" + name + "] needs bindings to run.");
+        run(ruleContext, collector, bean, filter, new Reads());
+    }
+
+    private void run(RuleContext ruleContext, RuleViolations collector, Object bean, Predicate<MaterializedRule> filter, Reads reads) {
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
         Assert.notNull(collector, "collector cannot be null.");
 
@@ -129,13 +178,38 @@ public final class RulePlan {
                 MaterializedRule rule = rules[i];
                 ValueValidationRule check = rule.getCheck();
                 RuleExecutionStatus status = check != null
-                        ? check(rule, check, ruleContext, collector, bean)
+                        ? check(rule, check, ruleContext, collector, bean, reads, reads != null ? readers[i] : null)
                         : rule.getRule().run(ruleContext).status();
 
                 if (failFast && status.isFail()) break;
             }
         } catch (Exception e) {
             throw new UnrulyException("Error trying to run RuleSet [" + name + "]", e);
+        }
+    }
+
+    /**
+     * The last value read off the object in a run without bindings: the rules of a property follow one another,
+     * so holding one read is holding the property's.
+     */
+    private static final class Reads {
+
+        private PropertyAccessor accessor;
+        private Object value;
+
+        private Reads() {
+            super();
+        }
+
+        private Object read(PropertyAccessor reader, Object bean) {
+            if (reader == null) return bean;
+
+            if (accessor != reader) {
+                value = reader.read(bean);
+                accessor = reader;
+            }
+
+            return value;
         }
     }
 
@@ -154,7 +228,7 @@ public final class RulePlan {
      * failing the way a run of the rule fails.
      */
     private static RuleExecutionStatus check(MaterializedRule materialized, ValueValidationRule check, RuleContext ruleContext,
-                                             RuleViolations collector, Object bean) {
+                                             RuleViolations collector, Object bean, Reads reads, PropertyAccessor reader) {
         Rule rule = materialized.getRule();
         Tracer tracer = ruleContext.getTracer();
         RuleResult result = null;
@@ -162,7 +236,7 @@ public final class RulePlan {
         tracer.fireOnRuleStart(rule);
 
         try {
-            Object value = read(materialized, rule, ruleContext, bean);
+            Object value = read(materialized, rule, ruleContext, bean, reads, reader);
             RuleExecutionStatus status = ask(check, rule, ruleContext, value);
 
             tracer.fireOnRulePreConditionCheck(rule, rule.getPreCondition(), !status.isSkipped());
@@ -187,9 +261,10 @@ public final class RulePlan {
         }
     }
 
-    private static Object read(MaterializedRule materialized, Rule rule, RuleContext ruleContext, Object bean) {
+    private static Object read(MaterializedRule materialized, Rule rule, RuleContext ruleContext, Object bean, Reads reads,
+                               PropertyAccessor reader) {
         try {
-            return materialized.read(ruleContext, bean);
+            return reads != null ? reads.read(reader, bean) : materialized.read(ruleContext, bean);
         } catch (Exception e) {
             throw new UnrulyException("Rule(" + rule.getName() + ") Pre-condition failed.", e);
         }

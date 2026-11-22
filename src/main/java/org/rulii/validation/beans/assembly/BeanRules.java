@@ -86,6 +86,7 @@ public final class BeanRules implements MaterializedRules {
     private final String name;
     private final boolean failFast;
     private final boolean validatesNothing;
+    private final boolean plain;
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> ruleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> propertyRuleSets = new ConcurrentHashMap<>();
@@ -124,6 +125,7 @@ public final class BeanRules implements MaterializedRules {
         this.byName = Collections.unmodifiableMap(names);
         this.validatesNothing = names.isEmpty() && !definition.isConstrained() && !definition.hasCascades()
                 && bindingPlan.getBinds().isEmpty();
+        this.plain = plain();
 
         Map<ContainerElementDefinition, ElementRules> nodes = new LinkedHashMap<>();
 
@@ -251,6 +253,61 @@ public final class BeanRules implements MaterializedRules {
      */
     public boolean validatesNothing() {
         return validatesNothing;
+    }
+
+    /**
+     * Whether an instance of the class can be validated with nothing around its rules: every rule is one of
+     * rulii's own validators asked directly ({@link MaterializedRule#getCheck()}), reading a property or the
+     * object itself, and the class declares nothing that needs the engine or the bindings: no {@code @Validate}
+     * rule, no {@code @Expr}, no {@code @Bind}, no composition or constraint validator, no cascade, no container
+     * element position and no redefined default group sequence. Nothing would read a binding of such an
+     * object, so none is made: the values are read off the object and the validators are asked
+     * ({@link RulePlan#runPlain}). This is the common case of a class annotated with the standard constraints.
+     *
+     * @return true if the rules of the class run without bindings and without a flow.
+     */
+    public boolean isPlain() {
+        return plain;
+    }
+
+    private boolean plain() {
+        if (propertyRules.isEmpty() && classRules.isEmpty()) return false;
+        if (definition.hasCascades() || definition.getDefaultGroupSequence() != null) return false;
+        if (!definition.getValidateRules().isEmpty() || !bindingPlan.getBinds().isEmpty() || !elementRules.isEmpty()) return false;
+
+        for (PropertyDefinition property : definition.getProperties()) {
+            if (!property.getValidateRules().isEmpty() || !property.getContainerElements().isEmpty()) return false;
+        }
+
+        for (MaterializedRule rule : propertyRules) {
+            if (rule.getCheck() == null || rule.getPlacement().getKind() != RulePlacement.Kind.PROPERTY) return false;
+        }
+
+        for (MaterializedRule rule : classRules) {
+            if (rule.getCheck() == null || !BindingPlan.THIS.equals(rule.getBindingName())) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * What reads the value of each rule off the object, for a run without bindings: the declaration the rule
+     * reads itself, else the declaration its property binding holds; null for a rule that validates the object.
+     */
+    private PropertyAccessor[] readers(List<MaterializedRule> rules) {
+        PropertyAccessor[] result = new PropertyAccessor[rules.size()];
+
+        for (int i = 0; i < result.length; i++) {
+            MaterializedRule rule = rules.get(i);
+
+            if (rule.getAccessor() != null) {
+                result[i] = rule.getAccessor();
+            } else if (rule.getLeaf() != null) {
+                result[i] = bindingPlan.getAccessor(definition.getProperty(rule.getLeaf()).getPropertySource().getPrimary());
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -382,7 +439,7 @@ public final class BeanRules implements MaterializedRules {
                 if (rule.isActive(groups)) active.add(rule);
             }
 
-            return new RulePlan(name, active, failFast);
+            return new RulePlan(name, active, failFast, plain ? readers(active) : null);
         });
     }
 

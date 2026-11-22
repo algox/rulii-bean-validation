@@ -53,13 +53,14 @@ import org.rulii.validation.beans.model.PropertyDefinition;
 import org.rulii.validation.beans.traversal.ContainerWalker;
 import org.rulii.validation.beans.traversal.RuleFlowAssembler;
 import org.rulii.validation.beans.traversal.Traversal;
+import org.rulii.validation.beans.traversal.TraversableResolvers;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
+import java.util.function.Function;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -89,13 +90,14 @@ public final class BeanValidator implements Validator {
 
     private final RuleRegistry registry;
     private final TraversableResolver traversableResolver;
+    private final boolean consultsResolver;
     private final MessageInterpolator messageInterpolator;
     private final MessageInterpolator consultedInterpolator;
     private final BeanValidationOptions options;
     private final BeanDefinitionLoader loader;
     private final RuleMaterializer materializer;
     private final RuleFlowAssembler assembler;
-    private final Predicate<Class<?>> nothingToValidate = type -> entry(type).rules.validatesNothing();
+    private final Function<Class<?>, BeanRules> rulesByClass = type -> entry(type).rules;
     private final ExecutableBeanValidator executableValidator;
     private final boolean failFast;
     private final ConcurrentMap<Class<?>, Entry> cache = new ConcurrentHashMap<>();
@@ -111,6 +113,7 @@ public final class BeanValidator implements Validator {
         this.registry = registry;
         this.failFast = failFast;
         this.traversableResolver = traversableResolver;
+        this.consultsResolver = TraversableResolvers.consults(traversableResolver);
         this.messageInterpolator = messageInterpolator;
         // Our own interpolator renders exactly what the rules render; consulting it would only render twice.
         this.consultedInterpolator = messageInterpolator instanceof RuliiMessageInterpolator ? null : messageInterpolator;
@@ -148,8 +151,18 @@ public final class BeanValidator implements Validator {
         GroupPlan plan = GroupPlan.of(groups);
         BeanRuleViolations violations = violations(object, object.getClass(), null, null);
 
+        BeanRules rules = rules(object.getClass());
+
         // A class that declares nothing to validate needs no bindings, no context and no flow: the report is empty.
-        if (validatesNothing(object.getClass())) return new BeanValidationResult<>(object, violations);
+        if (rules.validatesNothing()) return new BeanValidationResult<>(object, violations);
+
+        // A class with nothing but predefined constraints needs none of them either: its values are read off the
+        // object and its validators are asked, with a context that only carries the clock, the messages and the tracer.
+        if (rules.isPlain()) {
+            RuleContext carrier = context(null);
+            run(plan, violations, failFast, step -> plain(carrier, rules, object, violations, step));
+            return new BeanValidationResult<>(object, violations);
+        }
 
         run(plan, violations, failFast, step -> {
             ScopedBindings bindings = Bindings.builder().scoped();
@@ -597,14 +610,30 @@ public final class BeanValidator implements Validator {
     }
 
     /**
-     * Whether validating an instance of the class does nothing ({@link BeanRules#validatesNothing()}), the class
-     * read on first request. A class that cannot be read fails here the way it fails inside a run.
+     * The rules of a class, read on first request, for a call that has to know what the class declares before it
+     * sets anything up. A class that cannot be read fails here the way it fails inside a run.
      */
-    private boolean validatesNothing(Class<?> beanClass) {
+    private BeanRules rules(Class<?> beanClass) {
         try {
-            return entry(beanClass).rules.validatesNothing();
+            return entry(beanClass).rules;
         } catch (UnrulyException e) {
             throw unwrap(e);
+        }
+    }
+
+    /**
+     * Runs the rules of a plain class ({@link BeanRules#isPlain()}) for one step of a call, on the root object:
+     * no bindings, no flow. A traversal is only made when a traversable resolver has to be asked about the
+     * properties, which it is exactly as it is inside a flow.
+     */
+    private void plain(RuleContext carrier, BeanRules rules, Object object, BeanRuleViolations violations, RequestedGroups step) {
+        try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
+            if (consultsResolver) {
+                Traversal traversal = traversal(step);
+                rules.plan(step).runPlain(carrier, violations, object, rule -> traversal.isReachable(violations, object, rule));
+            } else {
+                rules.plan(step).runPlain(carrier, violations, object, null);
+            }
         }
     }
 
@@ -625,7 +654,7 @@ public final class BeanValidator implements Validator {
      */
     Traversal traversal(RequestedGroups groups, boolean skipping) {
         return new Traversal(groups, this::getRuleFlow, loader.getValueExtractorRegistry(), registry, traversableResolver, failFast,
-                skipping ? nothingToValidate : null);
+                skipping ? rulesByClass : null);
     }
 
     /**
@@ -661,7 +690,8 @@ public final class BeanValidator implements Validator {
 
     RuleContext context(Bindings bindings) {
         RuleContextBuilder builder = RuleContext.builder().with(options);
-        builder.bindings(bindings);
+        // No bindings: a context that only carries the clock, the messages and the tracer (a plain run).
+        if (bindings != null) builder.bindings(bindings);
         if (registry != null) builder.registry(registry);
         return builder.build();
     }

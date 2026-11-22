@@ -102,8 +102,8 @@ public class NothingToValidateTest {
         assertTrue(result.getRuleViolations().isEmpty());
         assertEquals(List.of(), flows, "no flow was run");
 
-        assertTrue(validator.validate(new Constrained()).isEmpty());
-        assertEquals(List.of("constrainedValidationFlow"), flows, "a class with something to validate runs its flow");
+        assertTrue(validator.validate(new WithRule()).isEmpty());
+        assertEquals(List.of("withRuleValidationFlow"), flows, "a class with a rule of its own to run runs its flow");
     }
 
     @Test
@@ -124,8 +124,8 @@ public class NothingToValidateTest {
         BeanValidationResult<Holder> result = validator.validate(holder);
 
         assertEquals(List.of("constrained.name"), result.getViolations().stream().map(v -> v.getPropertyPath().toString()).toList());
-        assertEquals(List.of("holderValidationFlow", "constrainedValidationFlow"), flows,
-                "the plain objects, single and in the list, were left out");
+        assertEquals(List.of("holderValidationFlow"), flows,
+                "the objects with nothing to validate were left out, and the constrained one needed no flow of its own");
 
         flows.clear();
         assertTrue(validator.validate(new Cascading()).isEmpty());

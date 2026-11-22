@@ -21,6 +21,17 @@ Requires rulii 2.3.0 (1.0.0 runs on 2.2.0).
   run as a rule set any more (the rule sets are still built, for tools and for running on your own). A rule that
   fails to run fails with the same exception and the same named layers; one inner layer of the engine's own
   wrapping is gone from the cause chain. The rules asked directly leave no `DEBUG` line in the engine's log.
+- A plain class is validated without the engine around its rules. A class is plain when it has nothing but
+  predefined constraints on its properties: every rule is one of rulii's own validators asked directly, and the
+  class declares no `@Validate`, `@Expr` or `@Bind`, no custom `ConstraintValidator` or `@ReportAsSingleViolation`
+  composition, no `@Valid`, no container element constraint and no redefined default group sequence
+  (`BeanRules.isPlain()`). No rule of such a class reads a binding, so none is made: `validate(object)` builds no
+  bindings and runs no flow for it, it reads each property off the object once and asks the validators
+  (`RulePlan.runPlain`), and a cascade does the same when it reaches an object of a plain class. Groups, group
+  sequences, fail-fast and the traversable resolver apply as before, and the report is the same, violation for
+  violation. **What changes for a caller:** a `RuleFlowListener` on the validator's tracer no longer sees a flow
+  start and end for a plain object; a `RuleListener` still sees every rule. `validateIn` and a flow run on its own
+  are not affected: there every object's flow runs, with its bindings, and is traced.
 - A class that declares nothing to validate costs nothing to validate. Whether a class has a constraint, a
   `@Validate` rule, an `@Expr`, a cascade or a `@Bind` is known once the class is read
   (`BeanRules.validatesNothing()`); when it has none, `validate(object)` returns its empty report without building
