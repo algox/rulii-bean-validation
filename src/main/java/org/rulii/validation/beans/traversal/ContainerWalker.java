@@ -147,7 +147,7 @@ public final class ContainerWalker {
 
             if (elementRules && rules.hasElementRules(node)) {
                 try (BeanRuleViolations.Frame ignored = collector.enter(elementPath, rules, bean)) {
-                    traversal.elementRuleSet(rules, node).run(ruleContext);
+                    rules.elementPlan(node, traversal.getGroups()).run(ruleContext, collector, bean);
                 }
             }
 

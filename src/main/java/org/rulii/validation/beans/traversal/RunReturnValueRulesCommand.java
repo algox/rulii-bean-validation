@@ -69,7 +69,8 @@ final class RunReturnValueRulesCommand implements RuleFlowCommand {
         boolean redefined = traversal.appliesDefaultSequence(defaultSequence);
 
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
-            rules.returnValueRuleSet(groups).run(ruleContext);
+            // No rule of an executable reads a declaration off the object in scope: every value is bound.
+            rules.returnValuePlan(groups).run(ruleContext, collector, null);
             if (traversal.halted(collector)) return;
             if (redefined) ValidateExecutableCommand.walkReturnValueElements(returnValue, value, path, new ContainerWalker(ruleContext, rules, false));
             if (traversal.halted(collector)) return;

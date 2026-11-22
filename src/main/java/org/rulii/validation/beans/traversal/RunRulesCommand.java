@@ -21,7 +21,6 @@ import org.rulii.context.RuleContext;
 import org.rulii.lib.spring.util.Assert;
 import org.rulii.ruleflow.RuleFlowExecutionContext;
 import org.rulii.ruleflow.command.RuleFlowCommand;
-import org.rulii.ruleset.RuleSet;
 import org.rulii.validation.beans.BeanRuleViolations;
 import org.rulii.validation.beans.PropertyPath;
 import org.rulii.validation.beans.assembly.BeanRules;
@@ -71,11 +70,10 @@ final class RunRulesCommand implements RuleFlowCommand {
 
         try (BeanRuleViolations.Frame ignored = collector.enter(collector.getCurrentPath(), rules, bean)) {
             traversal.forDefaultSequence(ruleContext, sequence, groups -> {
-                // Only a traversable resolver that may put properties out of reach costs the cached RuleSet.
-                RuleSet<?> ruleSet = traversal.consultsResolver()
-                        ? rules.ruleSet(groups, rule -> traversal.isReachable(ruleContext, bean, rule))
-                        : rules.ruleSet(groups);
-                ruleSet.run(ruleContext);
+                // Only a traversable resolver that may put properties out of reach is asked about each rule.
+                rules.plan(groups).run(ruleContext, collector, bean, traversal.consultsResolver()
+                        ? rule -> traversal.isReachable(ruleContext, bean, rule)
+                        : null);
                 if (traversal.halted(collector)) return;
                 if (redefined) elementRules(ruleContext, collector, traversal, bean);
                 if (traversal.halted(collector)) return;

@@ -266,11 +266,10 @@ public final class RuleMaterializer {
 
         for (ConstraintDefinition constraint : property.getConstraints()) {
             ValueDeclaration declaration = ((DeclarationConstraintSource) constraint.getConstraintSource()).getDeclaration();
-            Function<?> value = bindingOnly || plan.readsBinding(declaration)
-                    ? Validators.binding(binding)
-                    : reading(binding, plan.getAccessor(declaration));
+            PropertyAccessor accessor = bindingOnly || plan.readsBinding(declaration) ? null : plan.getAccessor(declaration);
+            Function<?> value = accessor == null ? Validators.binding(binding) : reading(binding, accessor);
             Site site = new Site(beanClass, name, binding, value, name, declaration.getType(), RulePlacement.property(name),
-                    declaration.describe(), ValidationTarget.ANNOTATED_ELEMENT);
+                    declaration.describe(), ValidationTarget.ANNOTATED_ELEMENT, accessor);
             materialize(constraint, null, site, unique(name + "_" + decapitalize(constraint.getAnnotationType()), names), propertyRules);
         }
 
@@ -391,10 +390,21 @@ public final class RuleMaterializer {
     }
 
     /**
-     * Where a constraint occurrence sits: what the materializer knows regardless of which mapper runs.
+     * Where a constraint occurrence sits: what the materializer knows regardless of which mapper runs. The accessor
+     * is the declaration the value function reads off the object in scope; null when it reads the binding.
      */
     private record Site(Class<?> beanClass, String propertyName, String bindingName, Function<?> value, String valueName,
-                        Class<?> type, RulePlacement placement, String location, ValidationTarget validationTarget) {}
+                        Class<?> type, RulePlacement placement, String location, ValidationTarget validationTarget,
+                        PropertyAccessor accessor) {
+
+        /**
+         * A site whose value is read from its binding.
+         */
+        private Site(Class<?> beanClass, String propertyName, String bindingName, Function<?> value, String valueName,
+                     Class<?> type, RulePlacement placement, String location, ValidationTarget validationTarget) {
+            this(beanClass, propertyName, bindingName, value, valueName, type, placement, location, validationTarget, null);
+        }
+    }
 
     private void elements(Class<?> beanClass, PropertyDefinition property, ContainerElementDefinition node, String prefix,
                           List<BeanRules.ElementRules> out) {
@@ -503,7 +513,7 @@ public final class RuleMaterializer {
 
             for (Rule rule : rules) {
                 if (rule == null) throw new ConstraintMapperException(type, site.location(), "returned a null rule.");
-                own.add(new MaterializedRule(rule, constraint, ownHost, target, site.placement()));
+                own.add(new MaterializedRule(rule, constraint, ownHost, target, site.placement(), List.of(), site.accessor()));
             }
         }
 

@@ -70,7 +70,8 @@ final class RunParameterRulesCommand implements RuleFlowCommand {
         boolean redefined = traversal.appliesDefaultSequence(defaultSequence);
 
         traversal.forDefaultSequence(ruleContext, defaultSequence, groups -> {
-            rules.parameterRuleSet(groups).run(ruleContext);
+            // No rule of an executable reads a declaration off the object in scope: every value is bound.
+            rules.parameterPlan(groups).run(ruleContext, collector, null);
             if (traversal.halted(collector)) return;
             if (redefined) ValidateExecutableCommand.walkParameterElements(rules, values, base, new ContainerWalker(ruleContext, rules, false));
             if (traversal.halted(collector)) return;

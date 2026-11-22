@@ -291,6 +291,107 @@ public class BeanValidatorTest {
     }
 
     @Test
+    public void validateInReportsToTheCollectorBoundAsRuleViolations() {
+        BeanValidator validator = validator();
+        Order order = new Order();
+        order.code = "x";
+
+        // The rules ask for ruleViolations by name. A collector the caller keeps under another name, in a scope
+        // further in, is left alone: the violations go to the one bound as ruleViolations, and that one is returned.
+        BeanRuleViolations named = new BeanRuleViolations(order);
+        RuleViolations audit = new RuleViolations();
+        ScopedBindings bindings = Bindings.builder().scoped();
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, named);
+        bindings.addScope();
+        bindings.bind("audit", RuleViolations.class, audit);
+        RuleContext context = RuleContext.builder().with(bindings).build();
+
+        assertSame(named, validator.validateIn(context, order));
+        assertEquals(List.of("code:code_size", ":customerRequired"), report(named.getBeanViolations()));
+        assertEquals(0, audit.size());
+
+        // The same with a plain collector bound as ruleViolations and a path-aware one beside it.
+        RuleViolations plain = new RuleViolations();
+        BeanRuleViolations beside = new BeanRuleViolations(order);
+        ScopedBindings sameScope = Bindings.builder().scoped();
+        sameScope.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, plain);
+        sameScope.bind("beside", RuleViolations.class, beside);
+
+        assertSame(plain, validator.validateIn(RuleContext.builder().with(sameScope).build(), order));
+        assertEquals(2, plain.size());
+        assertEquals(0, beside.size());
+    }
+
+    @Test
+    public void groupsAreASetOfClassesToTheRulesThatAskForThem() {
+        GROUPS_SEEN.clear();
+        RuleRegistry registry = RuleRegistry.builder()
+                .register(Rule.builder().with(GroupsByName.class).build())
+                .register(Rule.builder().with(GroupsByType.class).build())
+                .register(Rule.builder().with(TagsByType.class).build())
+                .register(Rule.builder().name("groupsBinding")
+                        .then(action((RuleContext ruleContext) -> {
+                            var binding = ruleContext.getBindings().getBinding(BindingPlan.GROUPS);
+                            assertTrue(binding.isAssignable(BindingPlan.GROUPS_TYPE), "read as a Set<Class<?>>");
+                            assertFalse(binding.isEditable());
+                            assertThrows(RuntimeException.class, () -> ruleContext.getBindings().setValue(BindingPlan.GROUPS, Set.of()));
+                        }))
+                        .build())
+                .build();
+        BeanValidator validator = BeanValidator.builder().registry(registry).build();
+
+        assertTrue(validator.validate(new GroupAware()).isEmpty());
+        // By name and by type a Set<Class<?>> parameter gets the groups; a set of anything else does not.
+        assertEquals(List.of("byName=[Default]", "byType=[Default]", "tags=null"), GROUPS_SEEN);
+    }
+
+    private static final List<String> GROUPS_SEEN = new ArrayList<>();
+
+    @Validate({"groupsByName", "groupsByType", "tagsByType", "groupsBinding"})
+    public static class GroupAware {
+        String note;
+    }
+
+    @org.rulii.annotation.Rule(name = "groupsByName")
+    public static class GroupsByName {
+        public GroupsByName() {
+            super();
+        }
+
+        @org.rulii.annotation.Given
+        public boolean given(Set<Class<?>> $groups) {
+            GROUPS_SEEN.add("byName=" + $groups.stream().map(Class::getSimpleName).toList());
+            return true;
+        }
+    }
+
+    @org.rulii.annotation.Rule(name = "groupsByType")
+    public static class GroupsByType {
+        public GroupsByType() {
+            super();
+        }
+
+        @org.rulii.annotation.Given
+        public boolean given(Set<Class<?>> requested) {
+            GROUPS_SEEN.add("byType=" + requested.stream().map(Class::getSimpleName).toList());
+            return true;
+        }
+    }
+
+    @org.rulii.annotation.Rule(name = "tagsByType")
+    public static class TagsByType {
+        public TagsByType() {
+            super();
+        }
+
+        @org.rulii.annotation.Given
+        public boolean given(Set<String> tags) {
+            GROUPS_SEEN.add("tags=" + tags);
+            return true;
+        }
+    }
+
+    @Test
     public void groupsBeingProcessedAreBoundForRules() {
         List<Set<Class<?>>> seen = new ArrayList<>();
         RuleRegistry registry = RuleRegistry.builder()

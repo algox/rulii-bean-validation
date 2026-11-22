@@ -80,6 +80,9 @@ public final class ExecutableRules implements MaterializedRules {
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> parameterRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> returnValueRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Set<Class<?>>, RulePlan> parameterPlans = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Set<Class<?>>, RulePlan> returnValuePlans = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RulePlan>> elementPlans = new ConcurrentHashMap<>();
 
     ExecutableRules(ExecutableDefinition definition, ExecutableBindingPlan bindingPlan, List<MaterializedRule> parameterRules,
                     List<MaterializedRule> crossParameterRules, List<MaterializedRule> returnValueRules, List<ElementRules> elementRules,
@@ -297,6 +300,79 @@ public final class ExecutableRules implements MaterializedRules {
                     .category(getBeanClass().getName())
                     .tags(groups.getGroupNames())
                     .rules(rules).build();
+        });
+    }
+
+    /**
+     * The parameter and cross-parameter rules active for the given groups, as the plan a validation call
+     * runs: the rules of {@link #parameterRuleSet(RequestedGroups)}, in the same order, under the same
+     * name. Cached per expanded group set.
+     *
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active.
+     */
+    public RulePlan parameterPlan(RequestedGroups groups) {
+        Assert.notNull(groups, "groups cannot be null.");
+        return parameterPlans.computeIfAbsent(groups.getGroups(), key -> {
+            List<MaterializedRule> active = new ArrayList<>();
+
+            for (MaterializedRule rule : parameterRules) {
+                if (rule.isActive(groups)) active.add(rule);
+            }
+
+            for (MaterializedRule rule : crossParameterRules) {
+                if (rule.isActive(groups)) active.add(rule);
+            }
+
+            return new RulePlan(name + "_parameters", active, failFast);
+        });
+    }
+
+    /**
+     * The return-value rules active for the given groups, as the plan a validation call runs: the rules
+     * of {@link #returnValueRuleSet(RequestedGroups)}, in the same order, under the same name. Cached per
+     * expanded group set.
+     *
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active.
+     */
+    public RulePlan returnValuePlan(RequestedGroups groups) {
+        Assert.notNull(groups, "groups cannot be null.");
+        return returnValuePlans.computeIfAbsent(groups.getGroups(), key -> {
+            List<MaterializedRule> active = new ArrayList<>();
+
+            for (MaterializedRule rule : returnValueRules) {
+                if (rule.isActive(groups)) active.add(rule);
+            }
+
+            return new RulePlan(name + "_returnValue", active, failFast);
+        });
+    }
+
+    /**
+     * The rules of a container element position active for the given groups, as the plan the container
+     * walk runs per element: the rules of {@link #elementRuleSet(ContainerElementDefinition, RequestedGroups)},
+     * in the same order, under the same name. Cached per position and expanded group set.
+     *
+     * @param node the position.
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active or the position has no constraints.
+     */
+    @Override
+    public RulePlan elementPlan(ContainerElementDefinition node, RequestedGroups groups) {
+        Assert.notNull(node, "node cannot be null.");
+        Assert.notNull(groups, "groups cannot be null.");
+        return elementPlans.computeIfAbsent(node, n -> new ConcurrentHashMap<>()).computeIfAbsent(groups.getGroups(), key -> {
+            ElementRules element = byNode.get(node);
+            List<MaterializedRule> active = new ArrayList<>();
+
+            if (element != null) {
+                for (MaterializedRule rule : element.rules()) {
+                    if (rule.isActive(groups)) active.add(rule);
+                }
+            }
+
+            return new RulePlan(name + "_" + RuleMaterializer.segment(node), active, failFast);
         });
     }
 

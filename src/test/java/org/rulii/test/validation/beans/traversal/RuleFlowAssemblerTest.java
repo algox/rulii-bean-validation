@@ -272,6 +272,65 @@ public class RuleFlowAssemblerTest {
         assertEquals(PropertyPath.root(), inner.getCurrentPath());
     }
 
+    @Test
+    public void collectorIsTheOneBoundAsRuleViolations() {
+        // The rules ask for "ruleViolations" by name before they look by type, so that is the collector looked up.
+        BeanRuleViolations named = new BeanRuleViolations();
+        ScopedBindings bindings = Bindings.builder().scoped();
+        RuleContext context = RuleContext.builder().build(bindings);
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, named);
+        assertSame(named, Traversal.collector(context));
+        assertSame(named, Traversal.anyCollector(context));
+
+        // Another collector under a name of its own, beside it or in a scope further in, does not take its place.
+        bindings.bind("audit", RuleViolations.class, new RuleViolations());
+        assertSame(named, Traversal.collector(context), "another collector in the same scope");
+        assertSame(named, Traversal.anyCollector(context));
+        bindings.addScope();
+        bindings.bind("mine", RuleViolations.class, new BeanRuleViolations());
+        assertSame(named, Traversal.collector(context), "another collector in an inner scope");
+        assertSame(named, Traversal.anyCollector(context));
+        bindings.addScope();
+        bindings.addScope();
+        assertSame(named, Traversal.collector(context), "found from scopes that bind no collector");
+
+        // An inner "ruleViolations" shadows the outer one, as any binding does: a plain one is not path-aware.
+        RuleViolations plain = new RuleViolations();
+        bindings.bind(BindingPlan.RULE_VIOLATIONS, RuleViolations.class, plain);
+        assertNull(Traversal.collector(context));
+        assertSame(plain, Traversal.anyCollector(context));
+    }
+
+    @Test
+    public void collectorIsLookedUpByTypeWhenNothingIsBoundAsRuleViolations() {
+        ScopedBindings bindings = Bindings.builder().scoped();
+        RuleContext context = RuleContext.builder().build(bindings);
+        assertNull(Traversal.collector(context));
+        assertNull(Traversal.anyCollector(context));
+
+        // The only collector of the innermost scope that has one, whatever it is called.
+        BeanRuleViolations outer = new BeanRuleViolations();
+        bindings.bind("collected", RuleViolations.class, outer);
+        assertSame(outer, Traversal.collector(context));
+        assertSame(outer, Traversal.anyCollector(context));
+        bindings.addScope();
+        assertSame(outer, Traversal.collector(context));
+        RuleViolations plain = new RuleViolations();
+        bindings.bind("mine", RuleViolations.class, plain);
+        assertNull(Traversal.collector(context), "the innermost scope with a collector has a plain one");
+        assertSame(plain, Traversal.anyCollector(context));
+        bindings.bind("another", RuleViolations.class, new BeanRuleViolations());
+        assertNull(Traversal.collector(context), "two collectors in the scope: neither is the one");
+
+        // A binding called ruleViolations that holds no collector does not count: the search by type decides.
+        ScopedBindings odd = Bindings.builder().scoped();
+        RuleContext oddContext = RuleContext.builder().build(odd);
+        odd.bind(BindingPlan.RULE_VIOLATIONS, Object.class, "not a collector");
+        odd.bind("collected", RuleViolations.class, outer);
+        assertSame(outer, Traversal.collector(oddContext));
+        assertSame(outer, Traversal.anyCollector(oddContext));
+    }
+
     // ---- fixtures ----
 
     public interface OnCreate {}

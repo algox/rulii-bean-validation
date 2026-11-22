@@ -38,7 +38,7 @@
 
         <logback.classic.version>1.5.38</logback.classic.version>
         <junit.version>6.1.1</junit.version>
-        <rulii.version>2.2.0</rulii.version>
+        <rulii.version>2.3.0-SNAPSHOT</rulii.version>
         <jakarta.validation.api.version>3.1.1</jakarta.validation.api.version>
         <jakarta.el.api.version>5.0.1</jakarta.el.api.version>
         <expressly.version>5.0.0</expressly.version>

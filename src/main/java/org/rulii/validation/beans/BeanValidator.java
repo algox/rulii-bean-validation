@@ -34,7 +34,6 @@ import org.rulii.lib.spring.util.Assert;
 import org.rulii.model.UnrulyException;
 import org.rulii.registry.RuleRegistry;
 import org.rulii.ruleflow.RuleFlow;
-import org.rulii.ruleset.RuleSet;
 import org.rulii.validation.RuleViolations;
 import org.rulii.validation.beans.assembly.BeanRules;
 import org.rulii.validation.beans.assembly.BindingPlan;
@@ -238,10 +237,13 @@ public final class BeanValidator implements Validator {
             try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, object)) {
                 traversal.forDefaultSequence(context, sequence, current -> {
                     // The traversable resolver is asked for this property as it is for any; validateValue, with no object, asks nothing.
-                    RuleSet<?> ruleSet = traversal.consultsResolver()
-                            ? rules.ruleSet(current, rule -> propertyName.equals(rule.getLeaf()) && traversal.isReachable(context, object, rule))
-                            : rules.propertyRuleSet(propertyName, current);
-                    ruleSet.run(context);
+                    if (traversal.consultsResolver()) {
+                        rules.plan(current).run(context, violations, object,
+                                rule -> propertyName.equals(rule.getLeaf()) && traversal.isReachable(context, object, rule));
+                    } else {
+                        rules.propertyPlan(propertyName, current).run(context, violations, object);
+                    }
+
                     ContainerWalker walker = new ContainerWalker(context, rules, false);
 
                     for (ContainerElementDefinition node : property.getContainerElements()) {
@@ -291,7 +293,7 @@ public final class BeanValidator implements Validator {
 
             try (BeanRuleViolations.Frame ignored = violations.enter(PropertyPath.root(), rules, null)) {
                 traversal.forDefaultSequence(context, sequence, current -> {
-                    rules.ruleSet(current).run(context);
+                    rules.plan(current).run(context, violations, null);
                     ContainerWalker walker = new ContainerWalker(context, rules, false);
 
                     for (ContainerElementDefinition node : property.getContainerElements()) {
@@ -593,16 +595,21 @@ public final class BeanValidator implements Validator {
     /**
      * Binds what every run starts from: the object as {@code $this} (null for a value, or for the
      * arguments of a constructor), the traversal, and its current groups as {@code $groups}.
+     * <p>
+     * The groups are declared by the class of the traversal's view, not by {@link BindingPlan#GROUPS_TYPE}:
+     * the view is a {@code Set<Class<?>>} by its own declaration, so a parameter matches it exactly as it
+     * would match the type literal, and a Binding checks a value against a class in a fraction of the time
+     * it takes against a parameterized type. This runs on every validation call.
      *
      * @param bindings the bindings of the run.
      * @param object the object; may be null.
      * @param traversal the traversal of the run.
      */
     static void bind(Bindings bindings, Object object, Traversal traversal) {
+        Set<Class<?>> groups = traversal.getCurrentGroups();
         bindings.bind(Binding.builder().with(BindingPlan.THIS, Object.class).value(object).build());
         bindings.bind(Binding.builder().with(BindingPlan.TRAVERSAL, Traversal.class).value(traversal).build());
-        bindings.bind(Binding.builder().with(BindingPlan.GROUPS, BindingPlan.GROUPS_TYPE).value(traversal.getCurrentGroups())
-                .editable(false).build());
+        bindings.bind(Binding.builder().with(BindingPlan.GROUPS, groups.getClass()).value(groups).editable(false).build());
     }
 
     /**

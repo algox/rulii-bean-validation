@@ -46,8 +46,13 @@ import java.util.function.Predicate;
  * validation call: {@link #ruleSet(RequestedGroups)} assembles the property and class rules active
  * for the request into a {@link RuleSet}, cached per expanded group set, and
  * {@link #elementRuleSet(ContainerElementDefinition, RequestedGroups)} does the same for a container
- * position, whose rules the container walk runs per element. The RuleSets are plain: the violations
- * collector is bound by the caller, and nothing throws on violations.</p>
+ * position. The RuleSets are plain: the violations collector is bound by the caller, and nothing throws
+ * on violations.</p>
+ *
+ * <p>A validation call runs the same rules as a {@link RulePlan} ({@link #plan(RequestedGroups)},
+ * {@link #propertyPlan(String, RequestedGroups)}, {@link #elementPlan(ContainerElementDefinition, RequestedGroups)}),
+ * which asks rulii's own validators directly and leaves every other rule to the engine. The RuleSets
+ * stay what a tool lists and what a caller runs on its own.</p>
  *
  * @author Max Arulananthan
  * @since 1.0
@@ -83,6 +88,9 @@ public final class BeanRules implements MaterializedRules {
     private final ConcurrentHashMap<Set<Class<?>>, RuleSet<?>> ruleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> elementRuleSets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<Set<Class<?>>, RuleSet<?>>> propertyRuleSets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Set<Class<?>>, RulePlan> plans = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<ContainerElementDefinition, ConcurrentHashMap<Set<Class<?>>, RulePlan>> elementPlans = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ConcurrentHashMap<Set<Class<?>>, RulePlan>> propertyPlans = new ConcurrentHashMap<>();
 
     BeanRules(BeanDefinition definition, BindingPlan bindingPlan, List<MaterializedRule> propertyRules,
               List<ElementRules> elementRules, List<MaterializedRule> classRules, boolean failFast) {
@@ -334,6 +342,81 @@ public final class BeanRules implements MaterializedRules {
                     .category(getBeanClass().getName())
                     .tags(groups.getGroupNames())
                     .rules(rules).build();
+        });
+    }
+
+    /**
+     * The property and class rules active for the given groups, as the plan a validation call runs: the
+     * rules of {@link #ruleSet(RequestedGroups)}, in the same order, under the same name. Cached per
+     * expanded group set.
+     *
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active.
+     */
+    public RulePlan plan(RequestedGroups groups) {
+        Assert.notNull(groups, "groups cannot be null.");
+        return plans.computeIfAbsent(groups.getGroups(), key -> {
+            List<MaterializedRule> active = new ArrayList<>();
+
+            for (MaterializedRule rule : propertyRules) {
+                if (rule.isActive(groups)) active.add(rule);
+            }
+
+            for (MaterializedRule rule : classRules) {
+                if (rule.isActive(groups)) active.add(rule);
+            }
+
+            return new RulePlan(name, active, failFast);
+        });
+    }
+
+    /**
+     * The rules of the constraints declared on one property, active for the given groups, as the plan a
+     * validation call runs: the rules of {@link #propertyRuleSet(String, RequestedGroups)}, in the same
+     * order, under the same name. Cached per property and expanded group set.
+     *
+     * @param propertyName the property.
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active.
+     */
+    public RulePlan propertyPlan(String propertyName, RequestedGroups groups) {
+        Assert.hasText(propertyName, "propertyName cannot be null/empty.");
+        Assert.notNull(groups, "groups cannot be null.");
+        return propertyPlans.computeIfAbsent(propertyName, n -> new ConcurrentHashMap<>()).computeIfAbsent(groups.getGroups(), key -> {
+            List<MaterializedRule> active = new ArrayList<>();
+
+            for (MaterializedRule rule : propertyRules) {
+                if (propertyName.equals(rule.getLeaf()) && rule.isActive(groups)) active.add(rule);
+            }
+
+            return new RulePlan(name + "_" + propertyName, active, failFast);
+        });
+    }
+
+    /**
+     * The rules of a container element position active for the given groups, as the plan the container
+     * walk runs per element: the rules of {@link #elementRuleSet(ContainerElementDefinition, RequestedGroups)},
+     * in the same order, under the same name. Cached per position and expanded group set.
+     *
+     * @param node the position.
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active or the position has no constraints.
+     */
+    @Override
+    public RulePlan elementPlan(ContainerElementDefinition node, RequestedGroups groups) {
+        Assert.notNull(node, "node cannot be null.");
+        Assert.notNull(groups, "groups cannot be null.");
+        return elementPlans.computeIfAbsent(node, n -> new ConcurrentHashMap<>()).computeIfAbsent(groups.getGroups(), key -> {
+            ElementRules element = byNode.get(node);
+            List<MaterializedRule> active = new ArrayList<>();
+
+            if (element != null) {
+                for (MaterializedRule rule : element.rules()) {
+                    if (rule.isActive(groups)) active.add(rule);
+                }
+            }
+
+            return new RulePlan(name + "_" + RuleMaterializer.segment(node), active, failFast);
         });
     }
 

@@ -2,6 +2,36 @@
 
 ## [1.1.0] (unreleased)
 
+Requires rulii 2.3.0 (1.0.0 runs on 2.2.0).
+
+#### Performance
+- A predefined constraint is no longer run through the rule engine. A rule backed by one of rulii's own validators
+  (`@NotNull`, `@Size`, `@Min`, `@Email` and the rest of the standard and library constraints) is asked directly:
+  the value is read, the validator decides (`ValueValidationRule.check`, new in rulii 2.3) and a failure is reported
+  with the violation the rule builds (`ValueValidationRule.buildViolation`). No parameter is matched and nothing is
+  resolved on the way. Everything that is a rulii feature still runs in the engine: `@Expr`, `@Validate`, a
+  `@ReportAsSingleViolation` composition, a custom `ConstraintValidator`, and a rule a `ConstraintMapper` of yours
+  builds over a value function of its own. The rules run in declaration order whichever way each one runs, so the
+  violations arrive in the same order and a fail-fast call stops at the same rule. `RulePlan` is the new type that
+  does this; `BeanRules.plan(...)`, `propertyPlan(...)`, `elementPlan(...)` and `ExecutableRules.parameterPlan(...)`,
+  `returnValuePlan(...)`, `elementPlan(...)` build one beside each rule set.
+- **What changes for a caller:** nothing in the violations. A `RuleListener` sees the same events for every rule
+  (start, pre-condition, condition, otherwise, end, error). A `RuleSetListener` no longer hears from a validation
+  call, and a rule the engine runs no longer finds `ruleSet` and `ruleSetStatus` bound: the rules of a bean are not
+  run as a rule set any more (the rule sets are still built, for tools and for running on your own). A rule that
+  fails to run fails with the same exception and the same named layers; one inner layer of the engine's own
+  wrapping is gone from the cause chain. The rules asked directly leave no `DEBUG` line in the engine's log.
+- A validation call does less work around the rules it runs. The violations collector is looked up by the name the
+  rules ask for, `ruleViolations`, instead of by searching every scope by type (the traversal asks for it several
+  times per object validated), and the `$groups` binding is declared by the class of the traversal's view, which
+  a Binding checks far faster than the parameterized `Set<Class<?>>`. Rules match `$groups` as before, by name and
+  as a `Set<Class<?>>` by type.
+- **Behaviour change, only with two collectors in one context:** when a `RuleViolations` is bound as
+  `ruleViolations` and another one is bound under a different name beside it or in a scope further in,
+  `validateIn` and an embedded bean flow now report to the one bound as `ruleViolations`, which is where the rules
+  look first, and `validateIn` returns that one. Before, the collector found by type took the violations, and in two
+  arrangements `validateIn` returned a collector that had stayed empty. A plain `validate` call is not affected.
+
 #### Build
 - The jar manifest now carries the default implementation and specification entries (`Implementation-Title`, `Implementation-Version`, `Implementation-Vendor`), so the library version can be read at runtime through `Package.getImplementationVersion()`, as rulii 2.3 does for its own jar.
 

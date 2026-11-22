@@ -79,4 +79,15 @@ public interface MaterializedRules {
      * @return the RuleSet; empty when the position has no active rules.
      */
     RuleSet<?> elementRuleSet(ContainerElementDefinition node, RequestedGroups groups);
+
+    /**
+     * The rules of a container element position active for the given groups, as the plan the container
+     * walk runs per element: the rules of {@link #elementRuleSet(ContainerElementDefinition, RequestedGroups)},
+     * in the same order.
+     *
+     * @param node the position.
+     * @param groups the requested groups.
+     * @return the plan; empty when nothing is active or the position has no constraints.
+     */
+    RulePlan elementPlan(ContainerElementDefinition node, RequestedGroups groups);
 }

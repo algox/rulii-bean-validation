@@ -477,7 +477,8 @@ public final class Traversal {
         Assert.notNull(path, "path cannot be null.");
         Assert.notNull(conversions, "conversions cannot be null.");
 
-        if (value == null || halted(collector(ruleContext))) return;
+        // Only a fail-fast call can be halted: no other call needs the collector looked up here.
+        if (value == null || (failFast && halted(collector(ruleContext)))) return;
 
         if (conversions.isEmpty()) {
             descendIn(ruleContext, value, path);
@@ -534,28 +535,55 @@ public final class Traversal {
     }
 
     /**
-     * Any violations collector bound in a context, path-aware or not.
+     * Any violations collector bound in a context, path-aware or not: the one bound as
+     * {@code ruleViolations} (see {@link #named}), else the first {@link RuleViolations} binding of the
+     * innermost scope that has one.
      *
      * @param ruleContext the context.
-     * @return the first collector bound; null if none.
+     * @return the collector; null if none.
      */
     public static RuleViolations anyCollector(RuleContext ruleContext) {
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        RuleViolations named = named(ruleContext);
+
+        if (named != null) return named;
+
         List<Binding<RuleViolations>> bindings = ruleContext.getBindings().getBindings(RuleViolations.class);
         return bindings.isEmpty() ? null : bindings.get(0).getValue();
     }
 
     /**
-     * The path-aware collector the rules of a context report to, if that is what is bound: the
-     * only {@link RuleViolations} binding, and a {@link BeanRuleViolations}.
+     * The path-aware collector the rules of a context report to, if that is what is bound: the collector
+     * bound as {@code ruleViolations} (see {@link #named}) when it is a {@link BeanRuleViolations};
+     * with nothing bound under that name, the only {@link RuleViolations} binding of the innermost scope
+     * that has one, when it is a {@link BeanRuleViolations}.
      *
      * @param ruleContext the context.
      * @return the collector; null when none or a plain one is bound.
      */
     public static BeanRuleViolations collector(RuleContext ruleContext) {
         Assert.notNull(ruleContext, "ruleContext cannot be null.");
+        RuleViolations named = named(ruleContext);
+
+        if (named != null) return named instanceof BeanRuleViolations collector ? collector : null;
+
         List<Binding<RuleViolations>> bindings = ruleContext.getBindings().getBindings(RuleViolations.class);
         return bindings.size() == 1 && bindings.get(0).getValue() instanceof BeanRuleViolations collector ? collector : null;
+    }
+
+    /**
+     * The collector bound under the name the rules ask for, {@link BindingPlan#RULE_VIOLATIONS}: a rule's
+     * {@code ruleViolations} parameter is matched by name before it is matched by type, so this is the
+     * collector the rules report to whenever one is bound under that name, and looking a name up costs a
+     * fraction of searching every scope by type. The traversal asks for the collector several times per
+     * object validated.
+     *
+     * @param ruleContext the context.
+     * @return the collector; null when nothing is bound under the name, or what is bound is not a collector.
+     */
+    private static RuleViolations named(RuleContext ruleContext) {
+        Binding<?> binding = ruleContext.getBindings().getBinding(BindingPlan.RULE_VIOLATIONS);
+        return binding != null && binding.getValue() instanceof RuleViolations violations ? violations : null;
     }
 
     @Override

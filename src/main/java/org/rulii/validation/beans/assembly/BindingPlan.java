@@ -100,7 +100,10 @@ public final class BindingPlan implements BindingLoader<Object> {
     public static final String RETURN_VALUE = "$returnValue";
     /** The violations collector. */
     public static final String RULE_VIOLATIONS = "ruleViolations";
-    /** The type of the {@link #GROUPS} binding. */
+    /**
+     * The type the {@link #GROUPS} binding is read as. The binding itself is declared by the class of the
+     * traversal's live view, which is a set of this type.
+     */
     public static final Type GROUPS_TYPE = new TypeReference<Set<Class<?>>>() {}.getType();
 
     /**
